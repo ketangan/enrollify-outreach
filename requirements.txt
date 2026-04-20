@@ -1,0 +1,22 @@
+# Core
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Anthropic API
+anthropic>=0.39.0
+
+# Google APIs
+googlemaps>=4.10.0
+gspread>=6.0.0
+google-auth>=2.27.0
+google-auth-oauthlib>=1.2.0
+
+# Email
+# (stdlib imaplib, smtplib, email — no third-party needed for Zoho basics)
+
+# Dates / timezones
+python-dateutil>=2.8.2
+pytz>=2024.1
+
+# Dev
+pytest>=8.0.0

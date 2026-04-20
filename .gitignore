@@ -1,0 +1,32 @@
+# Secrets
+.env
+config/google-service-account.json
+config/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Local data / cache
+data/*
+!data/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Mac
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
