@@ -3,18 +3,18 @@
 > **⚠️ READ THIS FIRST if you're Claude in a new session.**
 > This document IS the memory. At the start of every session, Ketan pastes this entire file as his first message. Before closing any session, output an updated version of this file in a code block for Ketan to commit to the repo. Every decision, schema change, phase transition, or tool swap must be reflected here. If something is ambiguous, ask — don't guess.
 
-**Last updated:** 2026-04-16
-**Current phase:** 0 — Setup (in progress)
-**Repo:** (to be created by Ketan — GitHub username: see placeholder below)
+**Last updated:** 2026-04-21
+**Current phase:** 0 complete — ready for Phase 1
+**Repo:** (Ketan's private GitHub repo — `enrollify-outreach`)
 
 ---
 
 ## Who & what
 
 - **Owner:** Ketan Gandhi, co-founder of Enrollify (enrollifyapp.com)
-- **Co-founder:** Natasha Julka
-- **Goal of this project:** Automate cold outreach to small activity-based schools (dance studios, preschools, sports academies, etc.) that lack online enrollment systems. Currently done manually — schools sourced via Google Maps, owner contact found via website/LinkedIn, personalized email sent, logged in a Google Sheet.
-- **Target daily volume:** ~20–25 emails (cap set by Zoho free tier + approval throughput)
+- **Co-founder:** Natasha Julka (referenced on the website, but NOT named in cold outreach emails — team size is deliberately not disclosed in outreach)
+- **Goal of this project:** Automate cold outreach to small activity-based schools (dance studios, preschools, sports academies, etc.) that lack online enrollment systems.
+- **Target daily volume:** ~20–25 emails
 - **Budget cap:** $20/month ideal, $100/month absolute max
 - **Geographic start:** LA area (zip 90045 and concentric expansion), then California, then US
 
@@ -37,27 +37,21 @@
 | Data store | Google Sheets | Visibility, mobile-accessible, manual edit friendly |
 | LLM | Claude Haiku via Anthropic API | Cheapest capable model; Ketan's Pro subscription doesn't cover API |
 | Scraping | Google Places API | Free within $200/mo credit, structured data, no ToS risk |
-| Email sending | Zoho Mail free tier | Free custom domain email, proper SPF/DKIM, 25 sends/day (matches our cap) |
-| Email access protocol | IMAP (for drafts & reply detection) | Zoho free tier supports IMAP if manually enabled |
+| Email sending | Zoho Mail Lite ($1/user/month) | Upgraded from free tier — free tier doesn't include IMAP; Mail Lite does |
+| Email access protocol | IMAP (drafts) + SMTP (send) | For programmatic draft writing and sending |
 | Push notifications | Pushover free tier | One-time $5 app purchase, free API, reliable on iOS/Android |
 | Runtime | Python 3.11+ on Ketan's Mac | Manual trigger initially; Phase 9 may add GitHub Actions cron |
 | Secrets | `.env` file, git-ignored | Never commit real keys |
 
 ## Tools NOT chosen and why
 
-- **Clay.com** — all-in-one solution, Ketan rejected due to cost/complexity preference
-- **Hunter.io** — free tier only 25 searches/month, not workable
-- **Apollo.io** — strong but paid; revisit at scale
-- **Apify** — free tier exists but Google Places API is cleaner for this use case
-- **Google Workspace** — $7/mo, Ketan prefers free tier (Zoho)
-- **Cloudflare Email** — only forwards inbound, can't send; insufficient alone
-- **Second outreach domain** — deferred until Enrollify has 5+ paying customers
+- Clay.com, Apollo.io, Hunter.io, Apify, Google Workspace — see earlier rationale
+- Second outreach domain — deferred until Enrollify has 5+ paying customers
+- AI-generated `specific_observation` — rejected in favor of static per-method paragraphs (simpler, cheaper, zero LLM failure mode for this piece)
 
 ---
 
 ## Target school categories
-
-Active list (all processed in parallel):
 
 - Dance studios
 - Music schools
@@ -82,14 +76,23 @@ Any of:
 
 When uncertain: mark as `needs_manual_review`, never auto-email.
 
+## Special case: schools without websites
+
+Schools discovered via Google Places that have **no website** are NOT discarded. Their data is still collected including:
+- Google reviews (text, rating, date, reviewer)
+- Yelp reviews (if available — TBD if scraping allowed within Yelp ToS; may need to skip)
+- Basic business info (name, address, phone, hours, category)
+
+These schools are marked with `status = no_website_collected` and set aside from the main outreach flow. Phase 10 (deferred) may use this data for a separate "website + enrollment" pitch. See deferred features below.
+
 ---
 
 ## Phase plan
 
 | Phase | Status | Goal |
 |---|---|---|
-| 0 | IN PROGRESS | Setup: accounts, keys, sheet, Zoho, repo scaffolding |
-| 1 | Not started | Lead discovery via Google Places API (no LLM) |
+| 0 | **DONE** ✅ | Setup: accounts, keys, sheet, Zoho, repo scaffolding, templates written |
+| 1 | Ready to start | Lead discovery via Google Places API (no LLM) — including no-website schools |
 | 2 | Not started | Dedupe against existing contacted list |
 | 3 | Not started | Enrollment method classification (Claude Haiku) |
 | 4 | Not started | Owner discovery + email guessing + SMTP verify |
@@ -98,104 +101,26 @@ When uncertain: mark as `needs_manual_review`, never auto-email.
 | 7 | Not started | Coverage tracking + zip code expansion logic |
 | 8 | Not started | Mobile-friendly approval UI |
 | 9 | Not started | GitHub Actions cron for unattended runs |
+| **10** | **Deferred** | Website-builder upsell pitch to no-website schools |
 
-**MVP = Phases 0–6.** 7–9 are improvements, decided after MVP proves out.
-
----
-
-## Repo structure (target)
-
-```
-enrollify-outreach/
-├── PROJECT.md                    # This file — source of truth
-├── README.md                     # Brief usage notes
-├── .env.example                  # Template for secrets (commit this)
-├── .env                          # Real secrets (git-ignored)
-├── .gitignore
-├── requirements.txt              # Python deps
-│
-├── src/
-│   ├── __init__.py
-│   ├── config.py                 # Load .env, constants
-│   ├── sheets.py                 # Google Sheets client wrapper
-│   ├── places.py                 # Google Places API (Phase 1)
-│   ├── dedupe.py                 # Phase 2
-│   ├── classify.py               # Enrollment method classifier (Phase 3)
-│   ├── owner_finder.py           # Owner name finder (Phase 4)
-│   ├── email_guesser.py          # Email construction + verification (Phase 4)
-│   ├── drafter.py                # Email draft generation (Phase 5)
-│   ├── zoho.py                   # Zoho IMAP + SMTP client (Phase 5-6)
-│   ├── follow_up.py              # Phase 6
-│   ├── replies.py                # Reply detection (Phase 6)
-│   └── notify.py                 # Pushover wrapper (Phase 6)
-│
-├── config/
-│   ├── templates/                # Email templates (markdown)
-│   │   ├── contact_form.md
-│   │   ├── email.md
-│   │   ├── pdf_form.md
-│   │   └── follow_up.md
-│   └── prompts/                  # Claude prompts (versioned)
-│       ├── classify.txt
-│       ├── find_owner.txt
-│       └── draft_email.txt
-│
-├── scripts/
-│   ├── run_phase_1_discovery.py  # One CLI per phase for manual runs
-│   ├── run_phase_2_dedupe.py
-│   ├── run_phase_3_classify.py
-│   ├── run_phase_4_owners.py
-│   ├── run_phase_5_drafts.py
-│   ├── run_phase_6_followup.py
-│   └── run_daily.py              # Orchestrator — runs full daily pipeline
-│
-├── data/                          # Local cache / debug output (git-ignored)
-│   └── .gitkeep
-│
-└── docs/
-    ├── setup_zoho.md             # Step-by-step Zoho DNS walkthrough
-    ├── setup_google.md           # Google Cloud + Sheets setup
-    ├── setup_anthropic.md        # API key setup
-    └── sheet_schema.md           # Sheet tabs & columns reference
-```
+**MVP = Phases 0–6.** 7–9 are improvements. **10 is deferred** — data is collected during Phase 1 but the outreach feature is not built until Enrollify has 10+ paying customers, per owner's decision to avoid dilution of core product focus.
 
 ---
 
 ## Google Sheet schema
 
 **Spreadsheet name:** `Enrollify Outreach`
-**URL:** (to be filled after Ketan creates the sheet)
-**Share with:** Google service account email (created in Phase 0 setup)
+**Shared with:** Google service account email as Editor
 
-### Tab 1: `Leads` (main working tab)
+### Tab 1: `Leads`
 
-| Column | Type | Description |
-|---|---|---|
-| id | string | `{zip}-{sequence}` — e.g. `90045-001` |
-| name | string | School name |
-| website | URL | Primary website |
-| category | enum | dance / music / sports / preschool / daycare / martial_arts / art / gymnastics / swim / tutoring / language / coding_stem / montessori / other |
-| city | string | |
-| state | string | 2-letter |
-| zip | string | 5-digit |
-| phone | string | |
-| address | string | |
-| discovered_date | date | When added to sheet (ISO) |
-| status | enum | see status values below |
-| enrollment_method | enum | online_system_exclude / email_or_phone_qualify / pdf_form_qualify / contact_form_qualify / needs_manual_review |
-| owner_name | string | |
-| owner_title | string | e.g. "Owner", "Director" |
-| owner_source_url | URL | Where we found them |
-| best_email | email | |
-| email_confidence | enum | high / medium / low / unverified |
-| last_action | string | Short note of last thing done |
-| sent_at | datetime | When initial email sent (ISO) |
-| follow_up_at | date | When to send follow-up (sent_at + 7d) |
-| follow_up_sent_at | datetime | |
-| replied_at | datetime | When a reply was detected |
-| notes | string | Free-text, human-written |
+Columns (order matters — code indexes by position):
 
-### Status enum (lifecycle)
+```
+id | name | website | category | city | state | zip | phone | address | discovered_date | status | enrollment_method | owner_name | owner_title | owner_source_url | best_email | email_confidence | last_action | sent_at | follow_up_at | follow_up_sent_at | replied_at | notes
+```
+
+### Status enum
 
 ```
 pending_classify       → discovered, not yet classified
@@ -211,36 +136,57 @@ replied                → 🚨 reply received, Ketan engaging
 closed_no_reply        → after follow-up, no response — dead lead
 already_contacted      → imported from existing sheet, skip
 do_not_contact         → Ketan manually marked — never email
+no_website_collected   → no website; data collected for Phase 10
+```
+
+### Enrollment method enum
+
+```
+online_system_exclude, email_or_phone_qualify, pdf_form_qualify,
+contact_form_qualify, needs_manual_review
+```
+
+### Email confidence enum
+
+```
+high, medium, low, unverified
 ```
 
 ### Tab 2: `Already_Contacted`
 
-Imported from Ketan's existing Google Sheet. Columns: `school_name`, `email`, `contacted_date`, `outcome`, `notes`. Used by Phase 2 dedupe only.
+Columns: `school_name | email | contacted_date | outcome | notes`
+Imported from Ketan's existing "already emailed" sheet.
 
 ### Tab 3: `Coverage`
 
-| Column | Description |
-|---|---|
-| zip | |
-| city | |
-| total_found | Schools discovered in this zip |
-| qualified | Passed classification |
-| contacted | Sent email |
-| replied | Got a reply |
-| status | not_started / in_progress / complete |
-| started_date | |
-| completed_date | |
+Columns: `zip | city | total_found | qualified | contacted | replied | status | started_date | completed_date`
+
+Status enum: `not_started, in_progress, complete`
 
 ### Tab 4: `Templates`
 
-| Column | Description |
-|---|---|
-| template_id | contact_form / email / pdf_form / follow_up |
-| subject | With `{{placeholders}}` |
-| body | With `{{placeholders}}` |
-| last_updated | |
+Columns: `template_id | subject | body | observation | last_updated`
 
-Placeholders supported: `{{owner_first_name}}`, `{{school_name}}`, `{{category}}`, `{{specific_observation}}`.
+Rows:
+- `contact_form` — initial email for schools using contact forms
+- `email` — initial email for schools using direct email enrollment
+- `pdf_form` — initial email for schools using downloadable PDF forms
+- `follow_up` — follow-up email (`observation` column empty)
+
+Placeholders supported in body: `{{owner_first_name}}`, `{{school_name}}`, `{{category}}`, `{{specific_observation}}`.
+Placeholders supported in observation: `{{school_name}}`.
+
+### NEW — Tab 5: `No_Website_Schools` (for Phase 10)
+
+Added to collect data on schools discovered without websites. Columns:
+
+```
+id | name | category | city | state | zip | phone | address | discovered_date | google_rating | google_review_count | google_reviews_json | yelp_url | yelp_rating | yelp_review_count | yelp_reviews_json | status | notes
+```
+
+`google_reviews_json` and `yelp_reviews_json` hold arrays of review objects serialized as JSON strings (keeps things simple in Sheets).
+
+Status enum for this tab: `collected, pitched, responded, closed_won, closed_lost, do_not_contact`
 
 ---
 
@@ -255,9 +201,9 @@ GOOGLE_PLACES_API_KEY=
 GOOGLE_SHEETS_CREDENTIALS_PATH=./config/google-service-account.json
 GOOGLE_SHEET_ID=
 
-# Zoho Mail
+# Zoho Mail (Mail Lite paid tier)
 ZOHO_EMAIL=ketan@enrollifyapp.com
-ZOHO_APP_PASSWORD=            # NOT your login password — app-specific password
+ZOHO_APP_PASSWORD=
 ZOHO_IMAP_HOST=imap.zoho.com
 ZOHO_IMAP_PORT=993
 ZOHO_SMTP_HOST=smtp.zoho.com
@@ -269,10 +215,84 @@ PUSHOVER_APP_TOKEN=
 
 # Project config
 DEFAULT_DAILY_EMAIL_CAP=20
-WORKING_HOURS_START=9          # 9am PT
-WORKING_HOURS_END=17           # 5pm PT
+WORKING_HOURS_START=9
+WORKING_HOURS_END=17
 TIMEZONE=America/Los_Angeles
 HOME_ZIP=90045
+```
+
+---
+
+## Email templates (finalized)
+
+All 3 initial templates share the same body. Only `observation` differs per method.
+
+### Subject (all initial templates)
+```
+Reimagining enrollment for smaller schools
+```
+
+### Subject (follow-up)
+```
+Re: Reimagining enrollment for smaller schools
+```
+
+### Observations (per method, static)
+
+**contact_form:**
+`I was on {{school_name}}'s site earlier and noticed that families interested in signing up are asked to fill out a contact form to get started.`
+
+**email:**
+`I came across {{school_name}}'s website and saw that prospective families are directed to email the school directly to begin enrollment.`
+
+**pdf_form:**
+`I was browsing {{school_name}}'s website and noticed enrollment starts with a downloadable PDF form that families fill out and return.`
+
+### Body (shared across contact_form, email, pdf_form)
+
+```html
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}}<br><br>
+
+We've been building Enrollify — enrollment software designed specifically for {{category}} schools like yours, where the big platforms are overkill and scheduling tools treat enrollment as an afterthought.<br><br>
+
+Here's what's included:<br>
+<ul>
+<li>Custom-built enrollment forms tailored to your programs and branding</li>
+<li>A clean dashboard where every submission lands organized and searchable</li>
+<li>Built-in reporting on enrollment trends and application activity</li>
+<li>Lead management so prospective families don't slip through the cracks</li>
+<li>AI-generated summaries of each applicant, scored against your criteria</li>
+<li>One-click exports to Brightwheel and other tools you may already use</li>
+<li>Zero setup on your end — no servers, no databases, no maintenance</li>
+</ul><br>
+
+If you'd like to see it in action, I can send over a custom enrollment form built specifically for {{school_name}}, ready to try. No call required, no commitment. If you like it, we'll set you up with an extended free trial on the full platform — everything unlocked.<br><br>
+
+A bit of context: Enrollify is built by a team with decades of experience shipping software at companies large and small, and with direct experience running enrollment for online schools — which is where the idea came from.<br><br>
+
+Happy to send one over if you'd like to see it.<br><br>
+
+Thanks,<br>
+Ketan<br>
+<a href="https://enrollifyapp.com">enrollifyapp.com</a>
+```
+
+### Follow-up body
+
+```html
+Hi {{owner_first_name}},<br><br>
+
+Just wanted to follow up in case my note from last week got buried.<br><br>
+
+We've been working on a small demo inspired by {{school_name}}'s website that shows what enrollment could look like with a simple online form and admin view — instead of managing everything over email.<br><br>
+
+If you're open to it, happy to send over a demo link, or walk you through it briefly if that's easier.<br><br>
+
+Thanks,<br>
+Ketan<br>
+<a href="https://enrollifyapp.com">enrollifyapp.com</a>
 ```
 
 ---
@@ -281,12 +301,20 @@ HOME_ZIP=90045
 
 ### 2026-04-16 — Session 1
 - Agreed on phased approach (0-9)
-- Confirmed tool stack (Zoho, Claude Haiku, Google Places, Sheets, Pushover)
-- Confirmed Ketan will manually execute approval step for MVP; mobile UI is Phase 8
-- Confirmed session protocol: paste PROJECT.md at start, commit updated version at end
-- **Phase 0 started**: repo structure defined, setup walkthroughs produced
+- Confirmed tool stack
+- Confirmed session protocol
 
-### Open questions (not blocking)
-- Zoho free tier IMAP: confirmed supported but needs manual enable — document in setup guide
-- Whether to use Google Sheets API directly or `gspread` library (recommend `gspread`)
-- Whether to version control email templates in repo or only in Sheets (recommend both — Sheets for mutation, repo as backup)
+### 2026-04-21 — Session 2
+- **Phase 0 complete.** Zoho Mail Lite set up (upgraded from free due to IMAP limitation), all DNS records configured, IMAP enabled, app password generated.
+- Google Cloud project, Places API key, Sheets API, service account all set up.
+- Google Sheet created with 4 tabs, dropdowns, conditional formatting.
+- All 4 email templates finalized and in the Sheet.
+- Added **deferred Phase 10**: website-builder upsell to no-website schools. Data collected during Phase 1, outreach feature postponed until Enrollify has 10+ paying customers.
+- Added **Tab 5: `No_Website_Schools`** to schema.
+- Switched `specific_observation` from Claude-generated to static per-method paragraphs (cost + reliability win).
+- Decided Natasha is on the website but NOT named in cold outreach (avoid disclosing team size).
+- Ready for Phase 1.
+
+### Open questions for Phase 1
+- Yelp scraping: is it within Yelp's ToS at our volume? Investigate before writing scraper. If not, skip Yelp for Phase 1, fall back to Google reviews only.
+- Confirm Google Places API returns review data via `places.getDetails` — verify field availability in "New" API.
