@@ -1,0 +1,76 @@
+# Named regions for Phase 1 discovery and Phase 7 expansion.
+#
+# A region can be defined 3 ways:
+#
+# 1. Explicit zip list:
+#      region_name:
+#        - 90045
+#        - 90066
+#
+# 2. By city (resolves to all zips in that city):
+#      region_name:
+#        city: Los Angeles
+#        state: CA
+#
+# 3. By radius around a center zip:
+#      region_name:
+#        center_zip: 90045
+#        radius_miles: 25
+#
+# Add as many regions as you want. Names are free-form.
+
+LA_City:
+  city: Los Angeles
+  state: CA
+
+LA_County:
+  center_zip: 90045
+  radius_miles: 30
+
+Greater_LA:
+  center_zip: 90045
+  radius_miles: 50
+
+Palm_Springs:
+  city: Palm Springs
+  state: CA
+
+Palm_Springs_Area:
+  center_zip: 92262
+  radius_miles: 25
+
+Bakersfield:
+  city: Bakersfield
+  state: CA
+
+Bakersfield_Area:
+  center_zip: 93301
+  radius_miles: 25
+
+Phoenix:
+  city: Phoenix
+  state: AZ
+
+Phoenix_Metro:
+  center_zip: 85001
+  radius_miles: 40
+
+San_Diego:
+  city: San Diego
+  state: CA
+
+San_Diego_Area:
+  center_zip: 92101
+  radius_miles: 30
+
+Bay_Area:
+  center_zip: 94102  # San Francisco
+  radius_miles: 50
+
+Sacramento:
+  city: Sacramento
+  state: CA
+
+Orange_County:
+  center_zip: 92701  # Santa Ana
+  radius_miles: 20

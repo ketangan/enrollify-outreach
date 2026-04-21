@@ -318,3 +318,51 @@ Ketan<br>
 ### Open questions for Phase 1
 - Yelp scraping: is it within Yelp's ToS at our volume? Investigate before writing scraper. If not, skip Yelp for Phase 1, fall back to Google reviews only.
 - Confirm Google Places API returns review data via `places.getDetails` — verify field availability in "New" API.
+
+## Progress log
+
+### 2026-04-16 — Session 1
+- Agreed on phased approach (0-9)
+- Confirmed tool stack
+- Confirmed session protocol
+
+### 2026-04-21 — Session 2 (Phase 1 delivered)
+- Phase 1 code written:
+  - src/config.py, src/sheets.py, src/skip_lists.py
+  - src/regions.py + config/regions.yaml (using pgeocode, not uszipcode)
+  - src/places.py (Google Places API "New" client with pre-filter + auth error handling)
+  - scripts/run_phase_1_discovery.py
+  - scripts/run_cleanup.py
+- Regions pre-configured: LA_City, LA_County, Greater_LA, Palm_Springs, Bakersfield,
+  Phoenix, San_Diego, Bay_Area, Sacramento, Orange_County.
+- Archive cleanup statuses: online_system_exclude, already_contacted, do_not_contact, closed_no_reply.
+- Dev notes:
+  - Ketan's venv is on Python 3.14; pgeocode works fine, uszipcode broke.
+  - "Places API (New)" must be explicitly enabled in Google Cloud — separate from old "Places API".
+  - Sheet tabs must match config.py exactly (case + underscores). Renamed tabs to:
+    Leads, Already_Contacted, Coverage, Templates, No_Website_Schools, Archive.
+  - places.py distinguishes auth errors (fatal, abort) from transient errors (continue).
+
+### 2026-04-21 — Phase 1 first successful run
+- First real run: zip 90045
+- Result: 514 total places discovered, 428 written to Leads (status=pending_classify),
+  51 to No_Website_Schools (status=collected), 35 pre-filtered skips.
+- 5 categories hit 60-result cap: preschool, daycare, martial_arts, gymnastics, montessori.
+  (Documented limitation; deferred fix.)
+- Cost: ~$1-2 of Google Places API credit for one zip.
+- Phase 1 complete for MVP purposes.
+
+### Next session: Phase 2 — dedupe against Already_Contacted
+Before running Phase 3 classification, we filter Leads against Already_Contacted:
+- Match by email (case-insensitive exact) AND school_name (fuzzy match >= 90% similarity)
+- Any match: row status → already_contacted
+- Runs as a standalone script: `python scripts/run_phase_2_dedupe.py`
+- Should be re-runnable idempotently (repeated runs produce same result)
+
+### Known limitations carried into future phases
+- 60-result cap per category/zip in Places API. Dense zips may miss schools.
+  Fix candidates: split by sub-area, use different query phrasings per sub-category. Phase 9 problem.
+- `process_zip` is not idempotent — re-running on a completed zip duplicates rows.
+  Mitigation: use `process_region`, which skips completed zips.
+- Cleanup script deletes rows one at a time (Sheets API batching complexity).
+  Fine at small volumes; revisit if cleanup is run on 1000+ rows.
