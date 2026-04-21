@@ -366,3 +366,18 @@ Before running Phase 3 classification, we filter Leads against Already_Contacted
   Mitigation: use `process_region`, which skips completed zips.
 - Cleanup script deletes rows one at a time (Sheets API batching complexity).
   Fine at small volumes; revisit if cleanup is run on 1000+ rows.
+
+### 2026-04-21 — Phase 2 delivered
+- scripts/run_phase_2_dedupe.py: dedupes Leads against Already_Contacted
+- Matching: normalized website (primary) + 90% fuzzy name match (fallback)
+- Added rapidfuzz to requirements.txt
+- Dry-run default; --commit to apply status=already_contacted
+- First run against 90045: 0 matches (expected — contacted list covers different zips)
+- Bug found & fixed during setup: Leads tab column 11 header was "pending_classify"
+  (the default value) instead of "status". Renamed header.
+
+### Phase status
+- Phase 0: DONE
+- Phase 1: DONE
+- Phase 2: DONE
+- Phase 3 next: enrollment method classification via Claude Haiku
