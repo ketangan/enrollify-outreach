@@ -381,3 +381,28 @@ Before running Phase 3 classification, we filter Leads against Already_Contacted
 - Phase 1: DONE
 - Phase 2: DONE
 - Phase 3 next: enrollment method classification via Claude Haiku
+
+### 2026-04-21 — Phase 3 delivered
+- src/fetcher.py: website fetching + HTML cleanup (homepage + enrollment sub-pages)
+- src/classifier.py: 3-stage classifier (pre-filter → local keywords → Haiku)
+- scripts/run_phase_3_classify.py: CLI with --zip, --limit, --dry-run flags
+- scripts/fix_status.py, scripts/reset_for_reclassify.py: one-off cleanup utilities
+- Added beautifulsoup4 to requirements.txt
+- Prompt tuned once after first run (was too conservative, was flagging ~45% for manual review)
+- Prompt caching enabled for Haiku calls
+
+### Phase 3 first run results (20 leads, zip 90045)
+- 11 online_system_exclude, 3 ready_for_owner_lookup, 6 needs_manual_review
+- Decision source: 2 local, 16 LLM, 2 fetch_failed
+- Cost estimate: ~$0.03 for 20 leads
+
+### Known issues
+- Opus1 (opus1.io) vendor not in skip_lists — add before next run
+- ~10-15% of sites fetch-fail (404, 403, cookie walls) — acceptable
+
+### Phase status
+- Phase 0: DONE
+- Phase 1: DONE
+- Phase 2: DONE
+- Phase 3: DONE (small sample; full 430 can run anytime)
+- Phase 4 next: Owner discovery + email guessing

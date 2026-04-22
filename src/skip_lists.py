@@ -58,6 +58,9 @@ ENROLLMENT_VENDOR_DOMAINS = {
     "tumblebee.com",
     "swimschoolsoftware.com",
     "corelms.com",
+    "gostudiopro.com",
+    "app.gostudiopro.com",
+    "opus1.io",
 }
 
 # Domains that indicate the school is too large / already digital
