@@ -40,7 +40,7 @@ ENROLLMENT_LINK_PATTERNS = [
 # Tags we strip entirely — pure noise
 NOISE_TAGS = [
     "script", "style", "noscript", "svg", "iframe",
-    "nav", "footer", "header", "aside", "form",
+    "nav", "aside", "form",
 ]
 
 MAX_TEXT_PER_PAGE = 2000  # chars
@@ -119,7 +119,7 @@ def fetch(url: str) -> FetchedPage:
     for a in soup.find_all("a", href=True):
         href = a.get("href", "").strip()
         text = a.get_text(" ", strip=True)
-        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+        if not href or href.startswith(("#", "javascript:", "tel:")):
             continue
         abs_url = urljoin(url, href)
         if abs_url in seen:

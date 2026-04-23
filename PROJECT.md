@@ -406,3 +406,22 @@ Before running Phase 3 classification, we filter Leads against Already_Contacted
 - Phase 2: DONE
 - Phase 3: DONE (small sample; full 430 can run anytime)
 - Phase 4 next: Owner discovery + email guessing
+
+
+### 2026-04-22 — Phase 4 delivered
+- src/owner_finder.py: extracts emails via regex + mailto links, Haiku picks best owner + email
+- scripts/run_phase_4_owners.py: processes ready_for_owner_lookup leads
+- Fixes during development:
+  - Removed footer/header from NOISE_TAGS — they contain legit contact info
+  - Extract emails from mailto: hrefs, not just text
+  - Hard safety: empty best_email ALWAYS → needs_manual_review regardless of LLM confidence
+- First run: 2/3 qualified advanced to ready_to_send, 1 to manual review (genuinely no email)
+
+### Known issue (accepted)
+- Phase 3 sometimes misclassifies schools with embedded inquiry forms as contact_form_qualify
+  when they should be online_system_exclude (e.g. Music Teacher LA's /request-info/ form).
+  Caught by human review in Phase 5. Not a fix target for now.
+
+### Phase status
+- Phases 0-4: DONE
+- Phase 5 next: draft generation + morning approval flow
