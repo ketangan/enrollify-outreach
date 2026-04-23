@@ -444,3 +444,15 @@ Before running Phase 3 classification, we filter Leads against Already_Contacted
 ### Phase status
 - Phases 0-5: DONE
 - Phase 6 next: follow-up scheduling + reply detection (Pushover alerts)
+
+### 2026-04-22 — Phase 6 delivered
+- src/zoho_sync.py: IMAP fetch for Sent + Inbox, threaded-reply builder
+- scripts/run_phase_6_sync.py: reconciles Sent folder + detects replies, emails alerts
+- scripts/run_phase_6_followup.py: drafts threaded follow-ups using In-Reply-To headers
+- First sync run: 2 sent emails detected from prior manual send, message_ids captured
+- Reply alerts go to Ketan's own email (skipped Pushover for MVP)
+- Follow-up script creates proper threaded replies (not fresh emails)
+
+### Phase status
+- Phases 0-6 DONE. MVP complete.
+- Phases 7-9 are improvements (coverage automation, mobile UI, cron)
