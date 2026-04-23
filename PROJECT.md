@@ -456,3 +456,20 @@ Before running Phase 3 classification, we filter Leads against Already_Contacted
 ### Phase status
 - Phases 0-6 DONE. MVP complete.
 - Phases 7-9 are improvements (coverage automation, mobile UI, cron)
+
+### 2026-04-22 — Phase 5 + 6 + daily orchestrator delivered
+- scripts/run_daily.py: orchestrator that runs sync → follow-up drafts → initial drafts in sequence
+- Daily routine: `python scripts/run_daily.py` in the morning, review Zoho Drafts, send approved
+- Sub-phases are independently skippable (--skip-sync, --skip-followup, --skip-drafts)
+- Failures in early steps don't block later steps — drafts still get created if sync has issues
+- Generates 1-3 summary emails per run depending on what happened
+
+### Daily loop (MVP operating model)
+1. Morning: `python scripts/run_daily.py`
+2. Review Zoho Drafts folder, click send on approved ones
+3. Respond immediately to any reply alerts
+4. When leads run low: manually run Phase 1/3/4 on a new zip
+
+### Phase status
+- Phases 0-6: DONE. MVP shipped.
+- Phases 7-9: deferred (not built until operating data justifies them)
