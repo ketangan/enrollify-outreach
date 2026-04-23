@@ -425,3 +425,22 @@ Before running Phase 3 classification, we filter Leads against Already_Contacted
 ### Phase status
 - Phases 0-4: DONE
 - Phase 5 next: draft generation + morning approval flow
+
+### 2026-04-22 — Phase 5 delivered
+- src/zoho.py: IMAP APPEND to Drafts folder, SMTP send for summary emails
+- src/drafter.py: template rendering with {{placeholder}} substitution from Templates tab
+- scripts/run_phase_5_drafts.py: full CLI with --dry-run, --limit, --no-summary
+- scripts/preview_draft.py, scripts/reset_phase5.py: debug utilities
+- Python 3.14 compat fix: imaplib.Time2Internaldate requires timezone-aware datetime
+- First real run: 2 drafts uploaded to Zoho successfully, approval email received
+
+### Known limitation (carried forward)
+- Category per lead is set by first matching Phase 1 category query.
+  Multi-discipline schools (e.g. "arts academy" surfaced via music query)
+  end up with a single category. Causes template to say "music schools like yours"
+  when the school is actually multi-discipline. Caught manually in Phase 5 approval
+  review. Not worth fixing for MVP.
+
+### Phase status
+- Phases 0-5: DONE
+- Phase 6 next: follow-up scheduling + reply detection (Pushover alerts)
