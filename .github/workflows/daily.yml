@@ -1,0 +1,60 @@
+name: Daily Outreach
+
+on:
+  schedule:
+    # 7:30 AM Pacific = 14:30 UTC (during PDT, daylight time)
+    # Note: GitHub runs on UTC. During PST (winter), this will be 6:30 AM your time.
+    # Adjust the cron in November/March if that matters.
+    - cron: '30 14 * * 1-5'   # Mon-Fri at 14:30 UTC
+  workflow_dispatch:           # also allow manual trigger from GitHub UI
+
+jobs:
+  run-daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Write Google service account JSON from secret
+        run: |
+          mkdir -p config
+          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}" | base64 -d > config/google-service-account.json
+
+      - name: Run daily pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          GOOGLE_SHEETS_CREDENTIALS_PATH: config/google-service-account.json
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          ZOHO_EMAIL: ${{ secrets.ZOHO_EMAIL }}
+          ZOHO_APP_PASSWORD: ${{ secrets.ZOHO_APP_PASSWORD }}
+          ZOHO_IMAP_HOST: imap.zoho.com
+          ZOHO_IMAP_PORT: 993
+          ZOHO_SMTP_HOST: smtp.zoho.com
+          ZOHO_SMTP_PORT: 465
+          DEFAULT_DAILY_EMAIL_CAP: 20
+          WORKING_HOURS_START: 9
+          WORKING_HOURS_END: 17
+          TIMEZONE: America/Los_Angeles
+          HOME_ZIP: 90045
+        run: |
+          python scripts/run_daily.py
+
+      - name: Cleanup credentials
+        if: always()
+        run: |
+          rm -f config/google-service-account.json
+          
