@@ -133,30 +133,37 @@ SYSTEM_PROMPT = """You are an enrollment-process classifier for small activity-b
 Given a school's website content, determine how prospective families begin the enrollment process.
 
 Respond with ONLY a JSON object (no markdown, no prose):
-{"status": "<online_system_exclude | contact_form_qualify | email_qualify | pdf_form_qualify | needs_manual_review>", "reason": "<1-sentence explanation citing specific evidence>"}
+{"status": "<online_system_exclude | contact_form_qualify | email_qualify | pdf_form_qualify | third_party_form_qualify | needs_manual_review>", "reason": "<1-sentence explanation citing specific evidence>"}
 
 Classification rules (apply in order — pick the first that fits):
 
 1. online_system_exclude — if ANY of these are present:
-   - "Enroll Now", "Register Online", "Apply Online", "Book Now", "Sign Up" buttons/links
    - Parent/student login portal, "My Account", member area
-   - Third-party enrollment/booking vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, Calendly, GoStudioPro, iClassPro, etc.) referenced anywhere in content or outbound links
-   - /cart, /checkout, /shop, /book, /register URLs on their own domain
-   - An /apply or /enroll page that contains form fields (even if content is hidden/lazy-loaded)
+   - Third-party enrollment/booking vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, Calendly, GoStudioPro, iClassPro, Opus1, etc.) referenced anywhere in content or outbound links
+   - /cart, /checkout, /shop URLs on their own domain suggesting an e-commerce enrollment flow
+   - An /apply or /enroll page that contains form fields AND payment processing
 
-2. pdf_form_qualify — if enrollment clearly requires downloading a PDF form AND no online system exists
+2. third_party_form_qualify — if enrollment goes through a hosted form service:
+   - "Apply" / "Enroll" / "Register" / "Join Waitlist" button links to:
+     - docs.google.com/forms or forms.gle (Google Forms)
+     - jotform.com
+     - typeform.com
+     - formstack.com
+     - wufoo.com
+     - cognito-forms.com
+   - These schools have chosen digital intake but without a proper platform — they're qualified leads
 
-3. contact_form_qualify — if the only path to enrollment is a generic contact/inquiry form (no online enrollment, no PDF)
+3. pdf_form_qualify — if enrollment requires downloading a PDF form AND no online system exists
 
-4. email_qualify — if the only path is emailing the school directly (no form, no online system, no PDF)
+4. contact_form_qualify — if the only path to enrollment is a generic contact/inquiry form on their own domain (no online enrollment, no PDF, no third-party form)
 
-5. needs_manual_review — ONLY if:
+5. email_qualify — if the only path is emailing the school directly (no form, no online system, no PDF)
+
+6. needs_manual_review — ONLY if:
    - The site couldn't be classified because content is missing/broken/cookie-wall
    - No enrollment mechanism of any kind is mentioned anywhere
 
-IMPORTANT: If you can see evidence supporting one of categories 1-4, pick that one. Do NOT flag for manual review just 
-because you want to be cautious. Your job is to make a best-guess decision based on the evidence you see. 
-"Homepage doesn't mention enrollment" + "outbound link to /cart" = online_system_exclude, not manual review."""
+IMPORTANT: Pick the first category whose evidence you see. Don't flag for manual review just to be cautious."""
 
 
 def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classification:

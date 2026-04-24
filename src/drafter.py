@@ -19,6 +19,7 @@ ENROLLMENT_METHOD_TO_TEMPLATE = {
     "contact_form_qualify": "contact_form",
     "email_qualify": "email",
     "pdf_form_qualify": "pdf_form",
+    "third_party_form_qualify": "third_party_form",
 }
 
 

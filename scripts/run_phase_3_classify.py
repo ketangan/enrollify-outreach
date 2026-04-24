@@ -19,6 +19,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from anthropic import Anthropic
+from gspread.utils import rowcol_to_a1
+
 
 from src import config, sheets, classifier
 
@@ -124,10 +126,16 @@ def main():
                     new_status, result.reason[:80], result.used_llm, result.pages_fetched)
 
         if not args.dry_run:
-            leads_ws.update_cell(lead["row_idx"], status_col, new_status)
-            leads_ws.update_cell(lead["row_idx"], enrollment_col, result.status)
-            leads_ws.update_cell(lead["row_idx"], notes_col, result.reason[:500])
-            leads_ws.update_cell(lead["row_idx"], last_action_col, "phase3_classified")
+            leads_ws.batch_update([
+                {"range": rowcol_to_a1(lead["row_idx"], status_col),
+                 "values": [[new_status]]},
+                {"range": rowcol_to_a1(lead["row_idx"], enrollment_col),
+                 "values": [[result.status]]},
+                {"range": rowcol_to_a1(lead["row_idx"], notes_col),
+                 "values": [[result.reason[:500]]]},
+                {"range": rowcol_to_a1(lead["row_idx"], last_action_col),
+                 "values": [["phase3_classified"]]},
+            ], value_input_option="USER_ENTERED")
 
         time.sleep(POLITE_DELAY_SECONDS)
 
@@ -140,4 +148,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

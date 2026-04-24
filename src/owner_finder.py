@@ -60,6 +60,17 @@ OWNER_PAGE_PATTERNS = [
     r"contact",
     r"our[-_\s]?story",
     r"who[-_\s]?we[-_\s]?are",
+    r"leadership",
+    r"director",
+    r"principal",
+    r"owner",
+    r"founder",
+    r"meet",
+    r"bio",
+    r"people",
+    r"educators",
+    r"instructor",
+    r"partnership",  
 ]
 
 
@@ -137,26 +148,30 @@ You will receive:
 
 Return a JSON object with this exact shape:
 {
-  "owner_name": "<full name, empty string if unknown>",
+  "owner_name": "<full name of the owner/director/founder, empty string if truly not identifiable>",
   "owner_title": "<e.g. 'Owner', 'Director', 'Founder', empty string if unknown>",
-  "best_email": "<one of the emails from the provided list — pick the one most likely to reach the owner>",
+  "best_email": "<one of the emails from the provided list, or empty string if no emails were provided>",
   "confidence": "<high | medium | low>",
   "reason": "<1-sentence explanation of your choices>"
 }
 
-Selection rules:
-- Prefer the actual owner/founder/director over general staff (teacher, instructor, receptionist)
-- For the email, prefer (in order):
-  1. An email that matches the owner's first or last name (e.g. 'jane@...' when owner is Jane)
-  2. The school's primary 'info@' or 'hello@' or 'contact@' email
-  3. Any other email that seems appropriate
-- Confidence levels:
-  - "high": owner name found AND an owner-named email exists AND best_email is non-empty
-  - "medium": best_email is a real non-empty address from the list (generic OK), even if owner name is missing
-  - "low": best_email is empty OR the only email is a weak candidate (e.g. an instructor not the owner)
-- CRITICAL: If best_email is empty string, confidence MUST be "low". Never return "medium" or "high" with an empty best_email.
-- If NO emails are in the list, return best_email="" and confidence="low"
-- If the page content is clearly not a school (404, parking page, etc.), return all empty with confidence="low" and reason starting with "not_a_school:"
+IMPORTANT — owner name extraction:
+- Extract the owner name WHENEVER it appears in the text, even if no matching email exists.
+- Look for patterns like "[Name], Director", "[Name], Owner", "[Name], Founder", "[Name], Principal", "[Name] joined us in YYYY as director", "Meet [Name], our..."
+- Extract the most senior person (Director > Owner > Founder > Principal > Head of School > Lead Teacher)
+- If multiple people are listed, pick the most senior one (usually listed first, or with "Director"/"Owner"/"Founder" title)
+- Do NOT leave owner_name empty just because there's no matching email — the name is useful on its own
+
+Email selection (separate from name):
+- Pick an email from the provided list only. Never invent one.
+- Prefer (in order): owner-named email > info@/hello@/contact@ > any other
+- If the email list is empty, return best_email=""
+
+Confidence levels:
+- "high": owner name found AND an owner-named email exists AND best_email is non-empty
+- "medium": best_email is a real non-empty address (generic OK), owner name may or may not be known
+- "low": best_email is empty OR the only email is a weak candidate
+- CRITICAL: If best_email is empty string, confidence MUST be "low". Never return "medium" or "high" with empty best_email.
 
 Return ONLY the JSON object. No markdown, no prose."""
 
@@ -189,7 +204,7 @@ def find_owner(website: str, client: Anthropic) -> OwnerResult:
             if href.startswith("mailto:"):
                 email_candidate = href[7:].split("?")[0]  # strip any ?subject=... params
                 all_emails.extend(_extract_emails(email_candidate))
-                
+
     # Dedupe preserving order
     seen = set()
     unique_emails = []

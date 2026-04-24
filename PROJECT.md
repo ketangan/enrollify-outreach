@@ -473,3 +473,35 @@ Before running Phase 3 classification, we filter Leads against Already_Contacted
 ### Phase status
 - Phases 0-6: DONE. MVP shipped.
 - Phases 7-9: deferred (not built until operating data justifies them)
+
+### 2026-04-23 — Templates expanded + third_party_form classification added
+- Discovered in morning review: classifier was bucketing Google Form / Jotform / Typeform
+  schools as contact_form_qualify. These schools are actually among the highest-value leads
+  (already committed to digital intake, just using a clunky free tool).
+- Added 5th enrollment method: `third_party_form_qualify`.
+- Updated classifier prompt in src/classifier.py to detect hosted forms (Google Forms,
+  Jotform, Typeform, Formstack, Wufoo, Cognito Forms).
+- Added 5th template `third_party_form` to Templates tab with dedicated observation
+  paragraph and body positioning Enrollify as upgrade over generic hosted form.
+- Updated ENROLLMENT_METHOD_TO_TEMPLATE mapping in src/drafter.py.
+- Updated all 4 initial templates (contact_form, email, pdf_form, third_party_form) to
+  include "export data and leave, no questions asked" guarantee after the free trial offer.
+- Followup template unchanged.
+
+### Known limitation
+- Already-classified leads retain their old enrollment_method. New classifier only applies
+  to leads entering Phase 3 after this change. To re-classify existing leads, use
+  reset_for_reclassify.py.
+
+### 2026-04-23 — Owner finder improvements
+- Added 11 more URL patterns for owner page detection (leadership, director, principal,
+  founder, meet, bio, people, educators, instructor, partnership, etc.)
+- Decoupled owner name extraction from email selection in Haiku prompt — name now
+  extracted even when no usable email is present
+- Deferred automated Google search for missing owner names until manual workload
+  justifies the complexity/cost
+
+### Known limitation
+- Owner finder still misses JavaScript-rendered team pages, pages behind cookie walls,
+  and sites where owner info lives in non-standard URL patterns.
+- For these, manual Google search remains the fallback.
