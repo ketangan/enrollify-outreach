@@ -31,7 +31,7 @@ jobs:
       - name: Write Google service account JSON from secret
         run: |
           mkdir -p config
-          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}" | base64 -d > config/google-service-account.json
+          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/google-service-account.json
 
       - name: Run daily pipeline
         env:
@@ -57,4 +57,3 @@ jobs:
         if: always()
         run: |
           rm -f config/google-service-account.json
-          
