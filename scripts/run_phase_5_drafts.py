@@ -58,16 +58,19 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict]) -> str
     """Build the HTML body of the morning approval email."""
     rows = []
     for d in drafts_summary:
+        website = d.get('website', '')
+        website_cell = f'<a href="{website}">{website}</a>' if website else ''
         rows.append(f"""
         <tr>
             <td style="padding: 8px; border-bottom: 1px solid #e6dfd0;">{d['school']}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #e6dfd0;">{website_cell}</td>
             <td style="padding: 8px; border-bottom: 1px solid #e6dfd0;">{d['owner'] or '(no owner)'}</td>
             <td style="padding: 8px; border-bottom: 1px solid #e6dfd0;"><a href="mailto:{d['email']}">{d['email']}</a></td>
             <td style="padding: 8px; border-bottom: 1px solid #e6dfd0;">{d['template_id']}</td>
             <td style="padding: 8px; border-bottom: 1px solid #e6dfd0;">{d['subject']}</td>
         </tr>
         """)
-    rows_html = "\n".join(rows) or "<tr><td colspan='5' style='padding: 8px;'><em>No drafts created</em></td></tr>"
+    rows_html = "\n".join(rows) or "<tr><td colspan='6' style='padding: 8px;'><em>No drafts created</em></td></tr>"
 
     failure_section = ""
     if failures:
@@ -79,7 +82,7 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict]) -> str
 
     return f"""
     <html>
-    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a1915; max-width: 760px; margin: 20px auto;">
+    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a1915; max-width: 900px; margin: 20px auto;">
         <h2 style="color: #3d5a3a;">Enrollify Outreach — {len(drafts_summary)} drafts ready</h2>
         <p>Generated {datetime.now().strftime('%A %b %d, %Y at %I:%M %p')}.</p>
         <p>Review and send from your Zoho Drafts folder: <a href="{ZOHO_DRAFTS_WEB_URL}">{ZOHO_DRAFTS_WEB_URL}</a></p>
@@ -87,6 +90,7 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict]) -> str
             <thead>
                 <tr style="background: #f3ede1;">
                     <th style="padding: 8px; text-align: left; border-bottom: 2px solid #d4cbb6;">School</th>
+                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #d4cbb6;">Website</th>
                     <th style="padding: 8px; text-align: left; border-bottom: 2px solid #d4cbb6;">Owner</th>
                     <th style="padding: 8px; text-align: left; border-bottom: 2px solid #d4cbb6;">Email</th>
                     <th style="padding: 8px; text-align: left; border-bottom: 2px solid #d4cbb6;">Template</th>
@@ -172,6 +176,7 @@ def main():
         if args.dry_run:
             drafts_summary.append({
                 "school": lead.get("name", ""),
+                "website": lead.get("website", ""),
                 "owner": lead.get("owner_name", ""),
                 "email": to_email,
                 "template_id": rendered.template_id,
@@ -217,6 +222,7 @@ def main():
 
         drafts_summary.append({
             "school": lead.get("name", ""),
+            "website": lead.get("website", ""),
             "owner": lead.get("owner_name", ""),
             "email": to_email,
             "template_id": rendered.template_id,
@@ -245,4 +251,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
