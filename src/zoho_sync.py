@@ -207,3 +207,69 @@ def build_threaded_reply(
     msg.set_content(plain)
     msg.add_alternative(html_body, subtype="html")
     return msg
+
+def fetch_sent_email_body(message_id: str) -> str:
+    """
+    Fetch the body of a previously-sent email from Zoho's Sent folder by Message-ID.
+    Returns the plain-text body, or empty string on failure.
+    """
+    if not message_id:
+        return ""
+    
+    try:
+        conn = _connect()
+    except Exception as e:
+        logger.warning("IMAP connect failed in fetch_sent_email_body: %s", e)
+        return ""
+    
+    try:
+        conn.select(SENT_FOLDER, readonly=True)
+        # Search by Message-ID — IMAP requires the angle-bracketed form
+        search_id = message_id if message_id.startswith("<") else f"<{message_id}>"
+        status, data = conn.search(None, f'HEADER Message-ID "{search_id}"')
+        if status != "OK" or not data[0]:
+            logger.warning("Sent email not found for message-id %s", message_id[:50])
+            return ""
+        
+        uid = data[0].split()[0]
+        status, msg_data = conn.fetch(uid, "(RFC822)")
+        if status != "OK":
+            return ""
+        
+        raw = msg_data[0][1]
+        msg = email.message_from_bytes(raw)
+        
+        # Prefer plain-text body
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain":
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+        else:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+        return ""
+    except Exception as e:
+        logger.warning("Failed to fetch sent email body: %s", e)
+        return ""
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+
+
+def extract_first_line(body: str) -> str:
+    """
+    Extract the first non-empty content line from an email body.
+    Strips greetings like 'Hi X,' on its own line.
+    """
+    if not body:
+        return ""
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""

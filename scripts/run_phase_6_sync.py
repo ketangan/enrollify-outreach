@@ -70,6 +70,55 @@ def _send_reply_alert(school_name: str, from_email: str, subject: str, snippet: 
     if not ok:
         logger.error("Failed to send reply alert: %s", err)
 
+def _fetch_followup_message_map(original_message_ids: set, since_days: int) -> dict[str, str]:
+    """
+    Fetch sent messages with their In-Reply-To headers.
+    Returns {sent_message_id: in_reply_to_id} for messages that reply to known originals.
+    """
+    import email
+    import imaplib
+    import ssl
+    from datetime import datetime, timedelta, timezone
+    from src import config
+
+    if not original_message_ids:
+        return {}
+
+    result_map = {}
+    try:
+        ctx = ssl.create_default_context()
+        conn = imaplib.IMAP4_SSL(
+            host=config.ZOHO_IMAP_HOST,
+            port=config.ZOHO_IMAP_PORT,
+            ssl_context=ctx,
+        )
+        conn.login(config.ZOHO_EMAIL, config.ZOHO_APP_PASSWORD)
+        conn.select("Sent", readonly=True)
+
+        since_date = (datetime.now(timezone.utc) - timedelta(days=since_days)).strftime("%d-%b-%Y")
+        status, data = conn.search(None, f'(SINCE "{since_date}")')
+        if status != "OK":
+            return {}
+
+        for uid in data[0].split():
+            status, msg_data = conn.fetch(uid, "(RFC822.HEADER)")
+            if status != "OK":
+                continue
+            msg = email.message_from_bytes(msg_data[0][1])
+            message_id = (msg.get("Message-ID") or "").strip()
+            in_reply_to = (msg.get("In-Reply-To") or "").strip()
+            if message_id and in_reply_to and in_reply_to in original_message_ids:
+                result_map[message_id] = in_reply_to
+    except Exception as e:
+        logger.warning("Follow-up detection IMAP fetch failed: %s", e)
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+
+    return result_map
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -109,15 +158,53 @@ def main():
     logger.info("  %d sent messages found", len(sent_msgs))
 
     sent_updates = 0
-    sent_by_message_id = {}  # message_id -> lead (for reply matching below)
+    follow_up_updates = 0
+
+    # Pre-build a lookup: which sent messages are follow-ups?
+    # A sent message is a follow-up if it has In-Reply-To or References pointing
+    # to a lead's original sent_message_id.
+    # We need to fetch headers, not just the parsed SentMessage records.
+    # Easier approach: fetch the raw msg objects again with reply headers.
+    
+    # Build a set of all known original message IDs (from leads marked 'sent')
+    original_message_ids = {
+        lead.get("sent_message_id", "").strip()
+        for lead in leads_list
+        if lead.get("status") == "sent" and lead.get("sent_message_id", "").strip()
+    }
+
+    # Re-fetch raw sent messages WITH their In-Reply-To headers (for follow-up detection)
+    # This is a small extension to fetch_sent_messages.
+    follow_up_message_map = _fetch_followup_message_map(original_message_ids, args.since_days)
 
     for sm in sent_msgs:
         candidates = by_email.get(sm.to_email.lower(), [])
         if not candidates:
             continue
 
-        # Find a candidate that matches: either awaiting_approval (first send)
-        # or already sent but without message_id recorded yet.
+        # Is this a follow-up? Check if it threads to a known original.
+        replied_to = follow_up_message_map.get(sm.message_id)
+        if replied_to and replied_to in original_message_ids:
+            # This is a follow-up. Find the lead with matching original sent_message_id.
+            target = None
+            for lead in candidates:
+                if lead.get("sent_message_id", "").strip() == replied_to:
+                    target = lead
+                    break
+            if target and not target.get("follow_up_sent_at", "").strip():
+                logger.info("  follow-up sent: %s -> %s",
+                            target.get("name", "")[:40], sm.to_email)
+                if not args.dry_run:
+                    leads_ws.batch_update([
+                        {"range": rowcol_to_a1(target["_row_idx"], col["follow_up_sent_at"] + 1),
+                         "values": [[sm.sent_at.isoformat()]]},
+                        {"range": rowcol_to_a1(target["_row_idx"], col["last_action"] + 1),
+                         "values": [["phase6_followup_sent_detected"]]},
+                    ], value_input_option="USER_ENTERED")
+                follow_up_updates += 1
+            continue  # Don't fall through to first-send matching
+
+        # Otherwise, it's a first-time send. Find an awaiting_approval candidate.
         target = None
         for lead in candidates:
             current_status = lead.get("status", "")
@@ -129,10 +216,6 @@ def main():
                 break
 
         if not target:
-            # Track message_id on leads already fully recorded (for reply matching)
-            for lead in candidates:
-                if lead.get("sent_message_id") == sm.message_id:
-                    sent_by_message_id[sm.message_id] = lead
             continue
 
         sent_at_iso = sm.sent_at.isoformat()
@@ -155,9 +238,8 @@ def main():
                  "values": [["phase6_sent_detected"]]},
             ], value_input_option="USER_ENTERED")
         sent_updates += 1
-        sent_by_message_id[sm.message_id] = target
 
-    logger.info("Sent-sync: %d leads updated to `sent`.", sent_updates)
+    logger.info("Sent-sync: %d new sends, %d follow-up sends.", sent_updates, follow_up_updates)
 
     # ==================== REPLY SYNC ====================
     # Rebuild the sent-message-id index from what's actually in the sheet now

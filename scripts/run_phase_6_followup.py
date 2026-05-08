@@ -108,7 +108,13 @@ def main():
     for idx, lead in enumerate(batch, start=1):
         logger.info("[%d/%d] %s", idx, len(batch), lead.get("name", "")[:60])
 
-        rendered = drafter.render_follow_up(lead)
+        # Try to extract the actual greeting from the original sent email
+        sent_message_id = lead.get("sent_message_id", "")
+        original_body = zoho_sync.fetch_sent_email_body(sent_message_id) if sent_message_id else ""
+        greeting = zoho_sync.extract_first_line(original_body) if original_body else ""
+        
+        rendered = drafter.render_follow_up(lead, greeting_override=greeting if greeting else None)
+        
         if rendered is None:
             failures.append({"school": lead.get("name", ""), "error": "render_failed"})
             continue

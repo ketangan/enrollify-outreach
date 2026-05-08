@@ -32,6 +32,15 @@ class RenderedEmail:
 
 _template_cache: dict[str, dict] | None = None
 
+HONORIFICS = {"mr", "mr.", "mrs", "mrs.", "ms", "ms.", "miss", "dr", "dr.", "prof", "prof.", "rev", "rev."}
+
+def _first_name(full_name: str) -> str:
+    if not full_name:
+        return ""
+    parts = full_name.strip().split()
+    while parts and parts[0].lower().rstrip(".") in {h.rstrip(".") for h in HONORIFICS}:
+        parts = parts[1:]
+    return parts[0] if parts else ""
 
 def _load_templates() -> dict[str, dict]:
     """Load + cache templates from the Templates tab. Keyed by template_id."""
@@ -117,8 +126,12 @@ def render_email(lead: dict) -> RenderedEmail | None:
     )
 
 
-def render_follow_up(lead: dict) -> RenderedEmail | None:
-    """Render the follow-up template for a lead."""
+def render_follow_up(lead: dict, greeting_override: str | None = None) -> RenderedEmail | None:
+    """Render the follow-up template for a lead.
+    
+    If greeting_override is provided (e.g. fetched from the original sent email),
+    it replaces the rendered first line of the body.
+    """
     templates = _load_templates()
     tpl = templates.get("follow_up")
     if not tpl:
@@ -133,8 +146,23 @@ def render_follow_up(lead: dict) -> RenderedEmail | None:
         "owner_first_name": first_name,
         "school_name": school_name,
     }
+    body = _render(tpl["body"], ctx)
+    
+    # Override the first line of the body if we have a real greeting from the original
+    if greeting_override:
+        # Body starts with "Hi {{owner_first_name}},<br><br>" — replace up to first <br><br> or first \n\n
+        import re
+        # Replace from start of body through the first blank line (covers HTML <br><br> and plain \n\n)
+        body = re.sub(
+            r"^.*?(?=<br\s*/?>\s*<br\s*/?>|\n\n)",
+            greeting_override,
+            body,
+            count=1,
+            flags=re.DOTALL,
+        )
+
     return RenderedEmail(
         subject=_render(tpl["subject"], ctx),
-        html_body=_render(tpl["body"], ctx),
+        html_body=body,
         template_id="follow_up",
     )
