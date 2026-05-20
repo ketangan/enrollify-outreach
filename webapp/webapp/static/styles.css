@@ -1,0 +1,16 @@
+* { box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+  color: #1a1915;
+  background: #fbf8f3;
+}
+header h1 {
+  font-size: 22px;
+  margin: 0 0 20px;
+}
+main p {
+  margin: 10px 0;
+}
