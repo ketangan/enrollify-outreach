@@ -1,18 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ page_title }}</title>
-  <link rel="stylesheet" href="/static/styles.css">
-</head>
-<body>
-  <header>
-    <h1>Enrollify Outreach Admin</h1>
-  </header>
-  <main>
-    <p>Webapp is running. Scaffold OK.</p>
-    <p>Next: coverage view, lead list, mobile review queue.</p>
-  </main>
-</body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+<h2>Welcome</h2>
+<p>Pages so far:</p>
+<ul>
+  <li><a href="/coverage">Coverage</a> — region progress dashboard</li>
+</ul>
+<p class="muted">More routes coming: leads list, mobile review, jobs, pipeline diagram.</p>
+{% endblock %}

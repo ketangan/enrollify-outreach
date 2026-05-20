@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Coverage by Region</h2>
+<p class="muted">Progress across all configured regions. Click a region name for details.</p>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Region</th>
+      <th>Progress</th>
+      <th>Zips Done</th>
+      <th>Complete</th>
+      <th>Partial</th>
+      <th>In Progress</th>
+      <th>Pending</th>
+      <th>Qualified Leads</th>
+      <th>Capped Zips</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in regions %}
+    <tr>
+      <td><strong>{{ r.name }}</strong></td>
+      <td>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: {{ r.pct }}%"></div>
+          <span class="progress-label">{{ r.pct }}%</span>
+        </div>
+      </td>
+      <td>{{ r.done }} / {{ r.total }}</td>
+      <td>{{ r.complete }}</td>
+      <td>{{ r.partial }}</td>
+      <td>{{ r.in_progress }}</td>
+      <td>{{ r.pending }}</td>
+      <td>{{ r.qualified_total }}</td>
+      <td>{{ r.capped_count }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
