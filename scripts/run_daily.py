@@ -5,6 +5,7 @@ Daily orchestrator.
 Runs in order:
 1. Phase 6 sync  — reconcile sent mail + detect replies
 2. Phase 6 follow-up — draft follow-ups for leads due today
+3. Phase 4 owners - run owner-lookup on ready_for_owner_lookup rows
 3. Phase 5 drafts — draft initial outreach up to daily cap
 
 All of Ketan's approval actions happen in Zoho Drafts after this runs.
@@ -59,6 +60,8 @@ def main():
                         help="Skip the Zoho sync step")
     parser.add_argument("--skip-followup", action="store_true",
                         help="Skip the follow-up drafting step")
+    parser.add_argument("--skip-owners", action="store_true",
+                        help="Skip the owner-lookup step")
     parser.add_argument("--skip-drafts", action="store_true",
                         help="Skip the new initial drafts step")
     args = parser.parse_args()
@@ -83,7 +86,15 @@ def main():
     else:
         logger.info(">>> Skipping follow-up (--skip-followup)")
 
-    # 3. Initial drafts — up to daily cap
+    # 3. Owner lookup — find owners for ready_for_owner_lookup rows
+    if not args.skip_owners:
+        ok = run_phase("run_phase_4_owners.py", extra)
+        if not ok:
+            logger.warning("Owner lookup step failed — continuing anyway.")
+    else:
+        logger.info(">>> Skipping owners (--skip-owners)")
+        
+    # 4. Initial drafts — up to daily cap
     if not args.skip_drafts:
         ok = run_phase("run_phase_5_drafts.py", extra)
         if not ok:

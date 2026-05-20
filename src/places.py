@@ -54,6 +54,26 @@ DETAILS_FIELDS = ",".join([
 MAX_RESULTS_PER_QUERY = 60
 
 
+# API call counter — bumped on every Places API request (text search or details).
+# Reset via reset_api_call_count(). Read via get_api_call_count().
+api_call_count = 0
+ 
+ 
+def get_api_call_count() -> int:
+    """Total Places API requests made since process start or last reset."""
+    return _api_call_count
+ 
+ 
+def reset_api_call_count() -> None:
+    global _api_call_count
+    _api_call_count = 0
+ 
+ 
+def _bump_api_count() -> None:
+    global _api_call_count
+    _api_call_count += 1
+
+
 class PlacesAuthError(Exception):
     """Raised on 401/403 — do not retry, do not iterate further."""
 
@@ -122,6 +142,7 @@ def _text_search(query: str, page_token: str | None = None) -> dict:
     if page_token:
         payload["pageToken"] = page_token
 
+    _bump_api_count()
     resp = requests.post(
         PLACES_TEXT_SEARCH_URL,
         headers=_headers(),
@@ -139,6 +160,7 @@ def _place_details(place_id: str) -> dict:
         "X-Goog-FieldMask": DETAILS_FIELDS,
     }
     url = PLACES_DETAILS_URL.format(place_id=place_id)
+    _bump_api_count()
     resp = requests.get(url, headers=headers, timeout=30)
     if resp.status_code == 200:
         return resp.json()

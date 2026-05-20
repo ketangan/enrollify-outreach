@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from anthropic import Anthropic
 
-from src import config, fetcher
+from src import config, fetcher, owner_web_search
 
 logger = logging.getLogger(__name__)
 
@@ -176,10 +176,42 @@ Confidence levels:
 Return ONLY the JSON object. No markdown, no prose."""
 
 
-def find_owner(website: str, client: Anthropic) -> OwnerResult:
+def find_owner(website: str, client: Anthropic, *, name: str = "", category: str = "", city: str = "", state: str = "") -> OwnerResult:    
     """Full pipeline: fetch pages, extract emails, LLM-pick owner + email."""
+    
     home = fetcher.fetch(website)
     if home.error:
+        # Stage 1 fetch failed — try Stage 2 web search if we have a school name
+        if name:
+            logger.info(
+                "    Stage 1 fetch failed (%s) — trying Stage 2 web search",
+                home.error,
+            )
+            s2 = owner_web_search.find_owner_via_web(
+                name=name,
+                website=website,
+                category=category,
+                city=city,
+                state=state,
+                client=client,
+            )
+            if s2.owner_name:
+                logger.info(
+                    "    Stage 2 found: %s (conf=%s, email=%s)",
+                    s2.owner_name, s2.email_confidence, s2.best_email or "(none)",
+                )
+                return OwnerResult(
+                    owner_name=s2.owner_name,
+                    owner_title=s2.owner_title,
+                    owner_source_url=s2.owner_source_url,
+                    best_email=s2.best_email,
+                    email_confidence=s2.email_confidence,
+                    reason=f"stage2_fetch_failed:{s2.reason}",
+                    pages_fetched=0,
+                    used_llm=True,
+                    all_emails_found=s2.all_emails_found,
+                )
+
         return OwnerResult(
             email_confidence="unverified",
             reason=f"fetch_failed:{home.error}",
@@ -214,6 +246,36 @@ def find_owner(website: str, client: Anthropic) -> OwnerResult:
             unique_emails.append(e)
 
     if not unique_emails and all(not p.text for p in pages):
+        # No usable content scraped — try Stage 2 if we have a school name
+        if name:
+            logger.info(
+                "    Stage 1 found no content — trying Stage 2 web search"
+            )
+            s2 = owner_web_search.find_owner_via_web(
+                name=name,
+                website=website,
+                category=category,
+                city=city,
+                state=state,
+                client=client,
+            )
+            if s2.owner_name:
+                logger.info(
+                    "    Stage 2 found: %s (conf=%s, email=%s)",
+                    s2.owner_name, s2.email_confidence, s2.best_email or "(none)",
+                )
+                return OwnerResult(
+                    owner_name=s2.owner_name,
+                    owner_title=s2.owner_title,
+                    owner_source_url=s2.owner_source_url,
+                    best_email=s2.best_email,
+                    email_confidence=s2.email_confidence,
+                    reason=f"stage2_no_content:{s2.reason}",
+                    pages_fetched=len(pages),
+                    used_llm=True,
+                    all_emails_found=s2.all_emails_found,
+                )
+
         return OwnerResult(
             email_confidence="unverified",
             reason="no_content_or_emails",
@@ -243,6 +305,34 @@ def find_owner(website: str, client: Anthropic) -> OwnerResult:
         )
     except Exception as e:
         logger.warning("LLM call failed: %s", e)
+        # Stage 1 LLM died — try Stage 2 as fallback
+        if name:
+            logger.info("    Stage 1 LLM errored — trying Stage 2 web search")
+            s2 = owner_web_search.find_owner_via_web(
+                name=name,
+                website=website,
+                category=category,
+                city=city,
+                state=state,
+                client=client,
+            )
+            if s2.owner_name:
+                logger.info(
+                    "    Stage 2 found: %s (conf=%s, email=%s)",
+                    s2.owner_name, s2.email_confidence, s2.best_email or "(none)",
+                )
+                return OwnerResult(
+                    owner_name=s2.owner_name,
+                    owner_title=s2.owner_title,
+                    owner_source_url=s2.owner_source_url,
+                    best_email=s2.best_email,
+                    email_confidence=s2.email_confidence,
+                    reason=f"stage2_llm_error:{s2.reason}",
+                    pages_fetched=len(pages),
+                    used_llm=True,
+                    all_emails_found=s2.all_emails_found or unique_emails,
+                )
+
         return OwnerResult(
             email_confidence="unverified",
             reason=f"llm_error:{type(e).__name__}",
@@ -282,14 +372,49 @@ def find_owner(website: str, client: Anthropic) -> OwnerResult:
     # fall back to homepage.
     source_url = pages[1].url if len(pages) > 1 else pages[0].url
 
-    return OwnerResult(
-        owner_name=(parsed.get("owner_name") or "").strip(),
-        owner_title=(parsed.get("owner_title") or "").strip(),
-        owner_source_url=source_url,
-        best_email=best_email,
-        email_confidence=confidence,
-        reason=(parsed.get("reason") or "").strip(),
-        pages_fetched=len(pages),
-        used_llm=True,
-        all_emails_found=unique_emails,
-    )
+    stage1 = OwnerResult(
+    owner_name=(parsed.get("owner_name") or "").strip(),
+    owner_title=(parsed.get("owner_title") or "").strip(),
+    owner_source_url=source_url,
+    best_email=best_email,
+    email_confidence=confidence,
+    reason=(parsed.get("reason") or "").strip(),
+    pages_fetched=len(pages),
+    used_llm=True,
+    all_emails_found=unique_emails,
+)
+
+    # Stage 2 fallback: web search ONLY when Stage 1 found no owner name.
+    # If Stage 1 found a name but no email, we leave it for manual review —
+    # web search rarely surfaces emails that the school's own site doesn't expose.
+    if not stage1.owner_name and name:
+        logger.info("    Stage 1 found no owner name — trying Stage 2 web search")
+        s2 = owner_web_search.find_owner_via_web(
+            name=name,
+            website=website,
+            category=category,
+            city=city,
+            state=state,
+            client=client,
+        )
+        if s2.owner_name:
+            logger.info(
+                "    Stage 2 found: %s (conf=%s, email=%s)",
+                s2.owner_name, s2.email_confidence, s2.best_email or "(none)",
+            )
+            return OwnerResult(
+                owner_name=s2.owner_name,
+                owner_title=s2.owner_title,
+                owner_source_url=s2.owner_source_url or stage1.owner_source_url,
+                best_email=s2.best_email,
+                email_confidence=s2.email_confidence,
+                reason=f"stage2:{s2.reason}",
+                pages_fetched=stage1.pages_fetched,
+                used_llm=True,
+                all_emails_found=s2.all_emails_found or stage1.all_emails_found,
+            )
+        else:
+            logger.info("    Stage 2 also failed: %s", s2.reason)
+            stage1.reason = f"{stage1.reason}|stage2_tried:{s2.reason}"
+
+    return stage1

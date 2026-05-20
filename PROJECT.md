@@ -505,3 +505,86 @@ Before running Phase 3 classification, we filter Leads against Already_Contacted
 - Owner finder still misses JavaScript-rendered team pages, pages behind cookie walls,
   and sites where owner info lives in non-standard URL patterns.
 - For these, manual Google search remains the fallback.
+
+### 2026-05-14 — Phase 4 owner-recovery deferred
+- Stage 2 owner finder (web search + SMTP verify when scraping fails to find email)
+  was scoped but deferred. Roughly 30-40% of qualified leads die at "owner name found,
+  no email" — fixing this is the next highest-leverage Phase 4 improvement.
+- Estimated effort: 2-3 hours of code.
+
+### 2026-05-18 — GitHub Actions cron delivered (Phase 9)
+- .github/workflows/daily.yml created. Runs `run_daily.py` at 14:30 UTC Mon-Fri.
+- All secrets stored as GitHub repo secrets (ANTHROPIC_API_KEY, GOOGLE_PLACES_API_KEY,
+  GOOGLE_SHEETS_CREDENTIALS_JSON, GOOGLE_SHEET_ID, ZOHO_APP_PASSWORD).
+- Approval emails still go to ketan@enrollifyapp.com → manual review via Zoho Drafts.
+- Status: workflow committed. Verify Ketan has enabled it in Actions tab if running.
+
+### 2026-05-19 — Phase 4 missing from daily run (bug fix)
+- Discovered Phase 4 was NOT being called in scripts/run_daily.py — only sync, followup,
+  drafts. Rows reset to ready_for_owner_lookup sat untouched.
+- Fixed: added run_phase("run_phase_4_owners.py", extra) between followup and drafts in
+  run_daily.py. Added --skip-owners CLI flag.
+
+### 2026-05-19 — Expansion to 90066 (Mar Vista)
+- Phase 1 results: 541 places, 471 with website, 44 without, 26 skipped, 8 duplicates
+  from 90045 (martial arts schools mainly).
+- Phase 3 classify: 463 leads → 190 online_system_exclude (41%), 150 ready_for_owner_lookup
+  (33%), 123 needs_manual_review (27%), 26 fetch_failed.
+- Qualify rate (33%) matches 90045 — demographically similar.
+- Phase 4 owner lookup running at session end.
+
+### 2026-05-19 — Outreach reality check
+- Total sent: ~43 unique emails (was double-counted as 96 earlier due to follow-ups +
+  daily Zoho summary emails). Zero replies.
+- Below industry floor (1-2% expected). Hypothesis: pitch/deliverability problem,
+  not lead volume problem. Diagnosis deferred; Ketan chose to expand zip + build
+  Stage 2 owner finder first.
+
+### Next priorities
+1. Web-search owner finder (Stage 2 of Phase 4) — recovers ~30-40% lost-at-email-step leads
+2. Decide: webapp dashboard OR Phase 7 (zip expansion automation) based on observed pain
+3. Phase 7 if not webapp: --next flag, capped-category re-query, coverage dashboard
+4. Phase 8 mobile approval UI — deferred until lead volume justifies
+5. Webapp migration — deferred until 1+ paying customer (Ketan's prior decision)
+
+### Operational notes
+- Phase 4 NOW part of daily run (after followup, before drafts)
+- Manual Phase 4 invocation for reset leads: `python scripts/run_phase_4_owners.py`
+- Pipeline order in daily run: sync → followup → owners → drafts
+
+### 2026-05-20 — Phase 7: zip expansion automation (DONE)
+
+- New `src/coverage.py` module: single source of truth for Coverage tab.
+  All reads/writes centralized here so the future webapp can import the same
+  functions instead of duplicating logic.
+- New CLI flags on `scripts/run_phase_1_discovery.py`:
+  - `--next --region X` — auto-pick closest uncompleted zip, process it
+  - `--auto --region X --max-zips N` — loop N zips, ordered by distance from HOME_ZIP
+  - `--coverage [--region X]` — show progress dashboard
+  - `--max-api-calls N` — hard cost cap (default 500, ~5 zips, ~$2.50)
+  - `--admin NAME` — tag rows with admin name (or set $ENROLLIFY_ADMIN env var)
+- Added `admin` column to Coverage tab for future multi-admin scenarios
+  (e.g., a collaborator running outreach for Oregon while Ketan runs LA).
+- Concurrency safety: `--next`/`--auto` skip zips marked `in_progress` by
+  anyone else. Coverage tab is the lock.
+- Cost guardrail: `--auto` checks API call count between zips and stops
+  before exceeding `--max-api-calls`.
+- API call counter added to `src/places.py` (`get_api_call_count`,
+  `reset_api_call_count`, `_bump_api_count`).
+- Removed: bare `--region` without `--auto`/`--next`. Was a footgun — could
+  process 80+ zips and burn $40+ in Places API costs by accident.
+- Deferred (intentional): narrower-term re-query for capped categories.
+  Risk of missing schools that handle multiple categories outweighs the
+  recovery value. Capped zips (~70-80% of LA-area zips) accept partial data.
+
+### Next priorities
+1. Webapp dashboard — multi-admin operations, manual lead actions, run
+   phases via buttons. Hosting: Render (already paying) or Cloudflare.
+2. Phase 8 mobile approval UI — deferred until webapp exists
+3. Webapp migration of full sheet — deferred until 1+ paying customer
+
+### Known limitations carried forward
+- 60-result Places API cap still loses data in dense zips. ~70% of LA zips
+  process as `partial_complete`.
+- 0 replies from 43 sends remains unexplained. Within statistical noise but
+  unvalidated. Pitch diagnosis still deferred.
