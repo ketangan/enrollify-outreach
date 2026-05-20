@@ -28,7 +28,7 @@ from fastapi.templating import Jinja2Templates
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from webapp.webapp import routes_coverage
+from webapp.webapp import routes_coverage, routes_leads
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +50,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # Mount routers
 app.include_router(routes_coverage.router)
+app.include_router(routes_leads.router)
 
 
 @app.get("/health")

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Leads</h2>
+<p class="muted">Showing {{ rows|length }} of {{ total }} matching leads ({{ all_total }} total in sheet)</p>
+
+<form method="GET" action="/leads" class="filters">
+  <label>
+    Status:
+    <select name="status">
+      <option value="">— any —</option>
+      {% for s in distinct_statuses %}
+        <option value="{{ s }}" {% if s == filters.status %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>
+    Zip:
+    <select name="zip">
+      <option value="">— any —</option>
+      {% for z in distinct_zips %}
+        <option value="{{ z }}" {% if z == filters.zip %}selected{% endif %}>{{ z }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>
+    Category:
+    <select name="category">
+      <option value="">— any —</option>
+      {% for c in distinct_categories %}
+        <option value="{{ c }}" {% if c == filters.category %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <button type="submit">Apply</button>
+  <a href="/leads" class="muted-link">Clear</a>
+</form>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Category</th>
+      <th>Zip</th>
+      <th>Owner</th>
+      <th>Email</th>
+      <th>Confidence</th>
+      <th>Last Action</th>
+      <th>Website</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.get("name", "") }}</td>
+      <td><span class="status-tag status-{{ r.get('status', '')|replace('_', '-') }}">{{ r.get("status", "") }}</span></td>
+      <td>{{ r.get("category", "") }}</td>
+      <td>{{ r.get("zip", "") }}</td>
+      <td>{{ r.get("owner_name", "") }}</td>
+      <td>{{ r.get("best_email", "") }}</td>
+      <td>{{ r.get("email_confidence", "") }}</td>
+      <td>{{ r.get("last_action", "") }}</td>
+      <td>{% if r.get("website") %}<a href="{{ r.get('website') }}" target="_blank" rel="noopener">↗</a>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="9" class="muted">No leads match the current filters.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+  {% set qs %}status={{ filters.status }}&zip={{ filters.zip }}&category={{ filters.category }}&admin={{ filters.admin }}{% endset %}
+  {% if page > 1 %}
+    <a href="/leads?{{ qs }}&page={{ page - 1 }}">← Prev</a>
+  {% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}
+    <a href="/leads?{{ qs }}&page={{ page + 1 }}">Next →</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

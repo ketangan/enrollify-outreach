@@ -81,3 +81,71 @@ table.data-table tr:hover { background: #f8f4ec; }
   white-space: pre-wrap;
   color: #5a2222;
 }
+
+form.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  background: #f3ede1;
+  padding: 12px 14px;
+  border-radius: 6px;
+  margin-bottom: 18px;
+  font-size: 13px;
+}
+form.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+form.filters select {
+  padding: 4px 6px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  min-width: 140px;
+}
+form.filters button {
+  background: #3d5a3a;
+  color: #fbf8f3;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+form.filters button:hover { background: #2d4229; }
+.muted-link { color: #777; font-size: 12px; text-decoration: none; }
+.muted-link:hover { text-decoration: underline; }
+
+.status-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 10px;
+  background: #ddd;
+  white-space: nowrap;
+}
+.status-ready-to-send { background: #c8e6c9; color: #1b5e20; }
+.status-sent { background: #bbdefb; color: #0d47a1; }
+.status-replied { background: #f4d47c; color: #5e4500; }
+.status-needs-manual-review { background: #ffe0b2; color: #6b3a00; }
+.status-online-system-exclude { background: #eee; color: #555; }
+.status-do-not-contact { background: #ffcdd2; color: #6b0000; }
+.status-pending-classify { background: #e1bee7; color: #4a148c; }
+.status-ready-for-owner-lookup { background: #b3e5fc; color: #014361; }
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  font-size: 13px;
+}
+.pagination a {
+  color: #3d5a3a;
+  text-decoration: none;
+}
+.pagination a:hover { text-decoration: underline; }
