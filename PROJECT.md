@@ -657,3 +657,23 @@ v1 still TODO:
   `python scripts/run_phase_3_classify.py` — it will pick up
   `pending_classify` leads from where it left off.
 - Phase 4 owners run after that.
+
+### 2026-05-20 — Phase 8 webapp deployed to Render
+
+- Live: https://enrollify-admin.onrender.com
+- Render service: enrollify-admin (free tier, oregon region)
+- Auto-deploys from main branch
+- Python 3.12.7 (Render); locally Ketan uses 3.14
+- Google credentials mounted as Render Secret File at
+  /etc/secrets/google-service-account.json
+- Free tier sleeps after 15 min idle; first request takes ~30-60s
+- Job history in webapp/jobs/*.json is ephemeral (no persistent disk)
+
+### Phase 8 status: v1 SHIPPED. Auth pending.
+
+### Critical TODO before sharing URL
+- Add basic auth — currently anyone with the URL can:
+  - View all lead data
+  - Trigger Run daily (sends emails via your Zoho)
+  - Spin up Phase 1 zips (costs money via Places API)
+  - Mark leads do-not-contact

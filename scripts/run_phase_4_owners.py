@@ -89,7 +89,14 @@ def main():
         logger.info("[%d/%d] %s", idx, len(todo), lead["name"][:60])
 
         try:
-            result = owner_finder.find_owner(lead["website"], anthropic_client)
+            result = owner_finder.find_owner(
+                lead["website"],
+                anthropic_client,
+                name=lead.get("name", ""),
+                category=lead.get("category", ""),
+                city=lead.get("city", ""),
+                state=lead.get("state", ""),
+            )
         except Exception as e:
             logger.exception("Unexpected error on %s: %s", lead["name"], e)
             result = owner_finder.OwnerResult(
