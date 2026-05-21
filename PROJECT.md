@@ -623,3 +623,37 @@ Routes remaining for v1:
 - Sheet reads not cached — slow first load on every page
 - Skip is forgetful across reloads
 - Lead writes are one-cell-at-a-time (multiple API calls per save)
+
+### 2026-05-20 — Phase 8 webapp v1 mostly complete
+
+Pages:
+- `/` — Pipeline diagram with embedded action buttons, live pending counts,
+  per-phase recommendations (ok/caution/avoid), status bar for running jobs
+- `/coverage` — Region progress table
+- `/leads` — Filterable lead list (status/zip/category)
+- `/review` — Mobile-friendly manual review queue with Save/Skip/DNC/Back
+- `/jobs` and `/jobs/{id}` — Job status with scroll-preserving auto-refresh
+
+Subsystems:
+- `webapp/webapp/dashboard.py` — counts pending leads per stage,
+  generates recommendations from thresholds
+- `webapp/webapp/jobs_runner.py` — subprocess-based job spawner with
+  status JSON files; cleans up stale 'running' jobs on app startup
+  (handles the case where uvicorn restart killed a subprocess)
+- `webapp/webapp/routes_actions.py` — POST endpoints for the action buttons
+
+Compatibility notes:
+- Starlette 1.0.0 requires `TemplateResponse(request, "name.html", context)`
+  not the old `TemplateResponse("name.html", {"request": request, ...})`
+- Python 3.14 + Jinja2 3.1.6 has an LRU cache bug with the old API; the
+  new signature avoids it.
+
+v1 still TODO:
+- Deploy to Render
+- Add auth (deferred — webapp is local-only until then)
+
+### Reminder for next session
+- Phase 3 was interrupted at lead 139 of 1393. Resume by running
+  `python scripts/run_phase_3_classify.py` — it will pick up
+  `pending_classify` leads from where it left off.
+- Phase 4 owners run after that.

@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates.env.cache = None
 
 PAGE_SIZE = 100
 
@@ -43,8 +44,9 @@ def leads_view(
     except Exception as e:
         logger.exception("Leads load failed: %s", e)
         return templates.TemplateResponse(
+            request,
             "error.html",
-            {"request": request, "error": str(e), "page_title": "Leads error"},
+            {"error": str(e), "page_title": "Leads error"},
         )
 
     # Apply filters
@@ -73,9 +75,9 @@ def leads_view(
     page_rows = filtered[start:end]
 
     return templates.TemplateResponse(
+        request,
         "leads.html",
         {
-            "request": request,
             "page_title": "Leads",
             "rows": page_rows,
             "total": total,

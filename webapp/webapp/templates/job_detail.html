@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Job {{ job.id }}</h2>
+
+{% if job.status in ("queued", "running") %}
+  <p class="muted">
+    <span id="autoref">Auto-refresh in 5s…</span> ·
+    <a href="/jobs/{{ job.id }}">Refresh manually</a>
+  </p>
+  <script>
+    // Preserve scroll position across auto-refresh
+    (function() {
+      var key = 'jobScroll_{{ job.id }}';
+      window.addEventListener('load', function() {
+        var y = sessionStorage.getItem(key);
+        if (y !== null) window.scrollTo(0, parseInt(y, 10));
+      });
+      setTimeout(function() {
+        sessionStorage.setItem(key, String(window.scrollY));
+        location.reload();
+      }, 5000);
+    })();
+  </script>
+{% endif %}
+
+<dl class="job-meta">
+  <dt>Kind</dt><dd>{{ job.kind }}</dd>
+  <dt>Status</dt><dd><span class="job-status job-{{ job.status }}">{{ job.status }}</span></dd>
+  {% if job.params %}<dt>Params</dt><dd><code>{{ job.params }}</code></dd>{% endif %}
+  {% if job.current_step %}<dt>Step</dt><dd>{{ job.current_step }}</dd>{% endif %}
+  {% if job.queued_at %}<dt>Queued</dt><dd>{{ job.queued_at[:19] }}</dd>{% endif %}
+  {% if job.started_at %}<dt>Started</dt><dd>{{ job.started_at[:19] }}</dd>{% endif %}
+  {% if job.finished_at %}<dt>Finished</dt><dd>{{ job.finished_at[:19] }}</dd>{% endif %}
+  {% if job.error %}<dt>Error</dt><dd class="job-error">{{ job.error }}</dd>{% endif %}
+</dl>
+
+<h3>Log (last 200 lines)</h3>
+<pre class="log-box">{{ log or "(no log yet)" }}</pre>
+
+<p><a href="/jobs">← back to jobs list</a></p>
+{% endblock %}

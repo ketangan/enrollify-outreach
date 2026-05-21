@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates.env.cache = None
 
 HISTORY_COOKIE = "review_history"
 HISTORY_MAX = 5
@@ -157,9 +158,9 @@ def review_view(
             prev_id = history[-1]
 
     return templates.TemplateResponse(
+        request,
         "review.html",
         {
-            "request": request,
             "page_title": "Review",
             "lead": lead,
             "queue_count": queue_count,

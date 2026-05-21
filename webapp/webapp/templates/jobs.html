@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Jobs</h2>
+<p class="muted">Last {{ jobs|length }} jobs. <a href="/jobs">Refresh</a></p>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Job ID</th>
+      <th>Kind</th>
+      <th>Status</th>
+      <th>Started</th>
+      <th>Finished</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for j in jobs %}
+    <tr>
+      <td><code>{{ j.get("id", "") }}</code></td>
+      <td>{{ j.get("kind", "") }}</td>
+      <td><span class="job-status job-{{ j.get('status', '') }}">{{ j.get("status", "") }}</span></td>
+      <td>{{ (j.get("started_at") or j.get("queued_at") or "")[:19] }}</td>
+      <td>{{ (j.get("finished_at") or "")[:19] }}</td>
+      <td><a href="/jobs/{{ j.get('id') }}">view →</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No jobs yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

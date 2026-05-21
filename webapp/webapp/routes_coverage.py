@@ -26,6 +26,7 @@ router = APIRouter()
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates.env.cache = None
 
 
 @router.get("/coverage", response_class=HTMLResponse)
@@ -53,14 +54,15 @@ def coverage_view(request: Request):
     except Exception as e:
         logger.exception("Coverage load failed: %s", e)
         return templates.TemplateResponse(
+            request,
             "error.html",
-            {"request": request, "error": str(e), "page_title": "Coverage error"},
+            {"error": str(e), "page_title": "Coverage error"},
         )
 
     return templates.TemplateResponse(
+        request,
         "coverage.html",
         {
-            "request": request,
             "page_title": "Coverage",
             "regions": region_summaries,
         },

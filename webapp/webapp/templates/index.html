@@ -1,9 +1,124 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Welcome</h2>
-<p>Pages so far:</p>
-<ul>
-  <li><a href="/coverage">Coverage</a> — region progress dashboard</li>
-</ul>
-<p class="muted">More routes coming: leads list, mobile review, jobs, pipeline diagram.</p>
+
+{# ─── Status bar: currently-running jobs ──────────────── #}
+{% if running_jobs %}
+<div class="status-bar status-bar-running">
+  <strong>⏳ {{ running_jobs|length }} job{% if running_jobs|length > 1 %}s{% endif %} running:</strong>
+  {% for j in running_jobs %}
+    <a href="/jobs/{{ j.id }}">{{ j.kind }}{% if j.current_step %} ({{ j.current_step }}){% endif %}</a>{% if not loop.last %},{% endif %}
+  {% endfor %}
+</div>
+{% elif last_job %}
+<div class="status-bar status-bar-idle">
+  No jobs running. Last: <a href="/jobs/{{ last_job.id }}">{{ last_job.kind }}</a>
+  <span class="job-status job-{{ last_job.status }}">{{ last_job.status }}</span>
+  at {{ (last_job.finished_at or '')[:19] }}
+</div>
+{% endif %}
+
+<h2>Pipeline</h2>
+<p class="muted">Each box below is a stage. The counts show pending work — green means nothing to do, amber means action needed.</p>
+
+<div class="pipeline-flow">
+
+  {# ─── Phase 1: Discovery ─────────────────────────── #}
+  <div class="phase-card phase-actionable">
+    <div class="phase-header">
+      <span class="phase-num">1</span>
+      <span class="phase-title">Discovery</span>
+    </div>
+    <p class="phase-desc">Find new schools in a region (Google Places).</p>
+    <p class="phase-count phase-count-info">
+      <span>{{ stage_counts._total_leads or 0 }}</span> total leads in sheet
+    </p>
+    {% set rec = recommendations.discovery %}
+    <p class="phase-rec rec-{{ rec.level }}">{{ rec.text }}</p>
+    <div class="phase-actions">
+      <form method="POST" action="/actions/phase1-next" class="inline-form">
+        <select name="region" required>
+          {% for r in regions_list %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+        </select>
+        <button type="submit">Next zip (1)</button>
+      </form>
+      <form method="POST" action="/actions/phase1-auto" class="inline-form">
+        <select name="region" required>
+          {% for r in regions_list %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+        </select>
+        <input type="number" name="max_zips" value="2" min="1" max="10" title="Number of zips">
+        <button type="submit">Auto N zips</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="phase-arrow">→</div>
+
+  {# ─── Phase 2-4: Downstream ─────────────────────── #}
+  {% set ds = stage_counts.downstream or {"pending": 0, "breakdown": {}} %}
+  <div class="phase-card phase-actionable {% if ds.pending > 0 %}phase-needs-action{% else %}phase-clear{% endif %}">
+    <div class="phase-header">
+      <span class="phase-num">2-4</span>
+      <span class="phase-title">Downstream</span>
+    </div>
+    <p class="phase-desc">Dedupe → classify → find owners.</p>
+    <p class="phase-count {% if ds.pending > 0 %}phase-count-pending{% else %}phase-count-clear{% endif %}">
+      <span>{{ ds.pending }}</span> pending
+      {% if ds.breakdown %}
+        <small>({% for s, n in ds.breakdown.items() %}{% if n > 0 %}{{ n }} {{ s }}{% if not loop.last %}, {% endif %}{% endif %}{% endfor %})</small>
+      {% endif %}
+    </p>
+    {% set rec = recommendations.downstream %}
+    <p class="phase-rec rec-{{ rec.level }}">{{ rec.text }}</p>
+    <div class="phase-actions">
+      <form method="POST" action="/actions/downstream" class="inline-form">
+        <button type="submit" {% if ds.pending == 0 %}disabled title="No pending leads"{% endif %}>Run downstream</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="phase-arrow">→</div>
+
+  {# ─── Manual review ─────────────────────────── #}
+  {% set rv = stage_counts.review or {"pending": 0} %}
+  <div class="phase-card phase-passive {% if rv.pending > 0 %}phase-needs-action{% else %}phase-clear{% endif %}">
+    <div class="phase-header">
+      <span class="phase-num phase-num-passive">★</span>
+      <span class="phase-title">Review</span>
+    </div>
+    <p class="phase-desc">Manual: fix missing owners / emails.</p>
+    <p class="phase-count {% if rv.pending > 0 %}phase-count-pending{% else %}phase-count-clear{% endif %}">
+      <span>{{ rv.pending }}</span> need review
+    </p>
+    {% set rec = recommendations.review %}
+    <p class="phase-rec rec-{{ rec.level }}">{{ rec.text }}</p>
+    <div class="phase-actions">
+      <a href="/review" class="btn-link" {% if rv.pending == 0 %}style="opacity:0.5;pointer-events:none"{% endif %}>Open queue →</a>
+    </div>
+  </div>
+
+  <div class="phase-arrow">→</div>
+
+  {# ─── Phase 5-6: Daily ─────────────────────────── #}
+  {% set dl = stage_counts.daily or {"pending": 0} %}
+  <div class="phase-card phase-actionable {% if dl.pending > 0 %}phase-needs-action{% else %}phase-clear{% endif %}">
+    <div class="phase-header">
+      <span class="phase-num">5-6</span>
+      <span class="phase-title">Daily Run</span>
+    </div>
+    <p class="phase-desc">Draft &amp; send emails, sync replies, follow-ups.</p>
+    <p class="phase-count {% if dl.pending > 0 %}phase-count-pending{% else %}phase-count-clear{% endif %}">
+      <span>{{ dl.pending }}</span> ready to send
+    </p>
+    {% set rec = recommendations.daily %}
+    <p class="phase-rec rec-{{ rec.level }}">{{ rec.text }}</p>
+    <div class="phase-actions">
+      <form method="POST" action="/actions/daily" class="inline-form">
+        <button type="submit">Run daily now</button>
+      </form>
+      <small class="muted">Auto: 14:30 UTC weekdays</small>
+    </div>
+  </div>
+
+</div>
+
 {% endblock %}

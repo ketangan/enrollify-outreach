@@ -28,7 +28,7 @@ from fastapi.templating import Jinja2Templates
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from webapp.webapp import routes_coverage, routes_leads, routes_review
+from webapp.webapp import routes_coverage, routes_leads, routes_review, routes_actions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,10 +48,16 @@ app = FastAPI(title="Enrollify Outreach Admin")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+# Clean up stale jobs on startup (any job marked running/queued whose
+# subprocess died with a previous uvicorn process)
+from webapp.webapp import jobs_runner
+jobs_runner.cleanup_stale_jobs()
+
 # Mount routers
 app.include_router(routes_coverage.router)
 app.include_router(routes_leads.router)
 app.include_router(routes_review.router)
+app.include_router(routes_actions.router)
 
 
 @app.get("/health")
@@ -61,7 +67,18 @@ def health():
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    from src import regions
+    from webapp.webapp import dashboard
+    stage_counts = dashboard.compute_stage_counts()
     return templates.TemplateResponse(
+        request,
         "index.html",
-        {"request": request, "page_title": "Home"},
+        {
+            "page_title": "Home",
+            "regions_list": regions.list_region_names(),
+            "stage_counts": stage_counts,
+            "recommendations": dashboard.compute_recommendations(stage_counts),
+            "running_jobs": dashboard.get_running_jobs(),
+            "last_job": dashboard.get_last_finished_job(),
+        },
     )
