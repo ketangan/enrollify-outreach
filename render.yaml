@@ -1,0 +1,29 @@
+# Render deployment config.
+# Commit this to repo root, then create the service on render.com pointing at this file.
+
+services:
+  - type: web
+    name: enrollify-admin
+    runtime: python
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn webapp.webapp.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: ZOHO_APP_PASSWORD
+        sync: false
+      - key: HOME_ZIP
+        sync: false
+      - key: GOOGLE_SHEETS_CREDENTIALS_PATH
+        value: /etc/secrets/google-service-account.json
