@@ -151,6 +151,46 @@ form.filters button:hover { background: #2d4229; }
 .pagination a:hover { text-decoration: underline; }
 
 /* Review queue — mobile-friendly card */
+.review-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  background: #f3ede1;
+  padding: 4px;
+  border-radius: 8px;
+}
+.review-tab {
+  flex: 1;
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: #54504a;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.review-tab:hover { background: #ede6d6; }
+.review-tab.active {
+  background: #3d5a3a;
+  color: #fbf8f3;
+}
+.tab-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.review-tab.active .tab-count {
+  background: rgba(255, 255, 255, 0.2);
+}
+.review-mode-hint {
+  margin-bottom: 16px;
+}
+
 .empty-queue {
   background: #fff;
   border: 1px solid #c8e6c9;

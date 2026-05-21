@@ -1,17 +1,17 @@
 """
 Review queue routes — mobile-friendly one-at-a-time manual review.
 
-Workflow:
-  GET  /review            → show next needs_manual_review lead
-  GET  /review?id=X       → show specific lead (used by 'Back')
-  POST /review/save       → save owner_name + best_email, promote to ready_to_send
-                            (if email non-empty) or stay in manual review
-  POST /review/skip       → leave lead alone, jump to next
-  POST /review/dnc        → mark do_not_contact
+Two modes:
+  - mode=pre_send (default)  — ready_to_send leads with blank owner_name
+  - mode=manual              — needs_manual_review leads
 
-Back button: a cookie 'review_history' holds the last 5 lead IDs we touched.
-Clicking 'Back' loads the most recent one (the lead is fetched fresh from the
-sheet so you see the current saved state, not stale data).
+Workflow:
+  GET  /review                → next lead in current mode
+  GET  /review?id=X           → show specific lead (from Back)
+  GET  /review?mode=manual    → switch modes
+  POST /review/save           → save owner_name + best_email
+  POST /review/skip           → leave alone, next
+  POST /review/dnc            → mark do_not_contact, next
 """
 
 from __future__ import annotations
@@ -35,10 +35,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
-templates.env.cache = None
 
 HISTORY_COOKIE = "review_history"
 HISTORY_MAX = 5
+
+MODE_PRE_SEND = "pre_send"
+MODE_MANUAL = "manual"
+VALID_MODES = (MODE_PRE_SEND, MODE_MANUAL)
 
 
 def _load_history(cookie_value: str | None) -> list[str]:
@@ -54,23 +57,31 @@ def _load_history(cookie_value: str | None) -> list[str]:
 
 
 def _push_history(history: list[str], lead_id: str) -> list[str]:
-    """Add lead_id to history if it's not the most recent entry; cap length."""
     if not lead_id:
         return history
     if history and history[-1] == lead_id:
         return history
-    new_history = history + [lead_id]
-    return new_history[-HISTORY_MAX:]
+    return (history + [lead_id])[-HISTORY_MAX:]
 
 
 def _set_history_cookie(response: Response, history: list[str]) -> None:
     response.set_cookie(
         HISTORY_COOKIE,
         json.dumps(history),
-        max_age=60 * 60 * 24,  # 1 day
+        max_age=60 * 60 * 24,
         httponly=True,
         samesite="lax",
     )
+
+
+def _matches_mode(lead: dict, mode: str) -> bool:
+    status = str(lead.get("status", "")).strip()
+    name = str(lead.get("owner_name", "")).strip()
+    if mode == MODE_PRE_SEND:
+        return status == "ready_to_send" and not name
+    if mode == MODE_MANUAL:
+        return status == "needs_manual_review"
+    return False
 
 
 def _find_lead_by_id(lead_id: str) -> dict | None:
@@ -81,16 +92,18 @@ def _find_lead_by_id(lead_id: str) -> dict | None:
     return None
 
 
-def _find_next_review_lead(skip_id: str = "") -> tuple[dict | None, int]:
-    rows = sheets.read_all_rows(config.TAB_LEADS)
-    candidates = [
-        r for r in rows
-        if str(r.get("status", "")).strip() == "needs_manual_review"
-        and str(r.get("id", "")).strip() != skip_id
-    ]
-    if not candidates:
-        return None, 0
-    return candidates[0], len(candidates)
+def _queue_counts(rows: list[dict]) -> dict[str, int]:
+    return {
+        MODE_PRE_SEND: sum(1 for r in rows if _matches_mode(r, MODE_PRE_SEND)),
+        MODE_MANUAL: sum(1 for r in rows if _matches_mode(r, MODE_MANUAL)),
+    }
+
+
+def _next_lead_in_mode(rows: list[dict], mode: str, skip_id: str = "") -> dict | None:
+    for r in rows:
+        if _matches_mode(r, mode) and str(r.get("id", "")).strip() != skip_id:
+            return r
+    return None
 
 
 def _find_row_index_by_id(lead_id: str) -> int | None:
@@ -122,39 +135,41 @@ def _update_lead_fields(lead_id: str, updates: dict) -> bool:
     return True
 
 
+def _redirect_with_mode(path: str, mode: str) -> RedirectResponse:
+    sep = "&" if "?" in path else "?"
+    return RedirectResponse(f"{path}{sep}mode={mode}", status_code=303)
+
+
 @router.get("/review", response_class=HTMLResponse)
 def review_view(
     request: Request,
+    mode: str = MODE_PRE_SEND,
     skip: str = "",
     id: str = "",
     review_history: str = Cookie(default=None),
 ):
+    if mode not in VALID_MODES:
+        mode = MODE_PRE_SEND
+
     history = _load_history(review_history)
+    rows = sheets.read_all_rows(config.TAB_LEADS)
+    counts = _queue_counts(rows)
 
-    # Explicit id (from Back button) — fetch that specific lead even if it's
-    # no longer in needs_manual_review.
     if id:
+        # Explicit ID load (from Back button)
         lead = _find_lead_by_id(id)
-        queue_count = 0
-        rows = sheets.read_all_rows(config.TAB_LEADS)
-        queue_count = sum(
-            1 for r in rows
-            if str(r.get("status", "")).strip() == "needs_manual_review"
-        )
     else:
-        lead, queue_count = _find_next_review_lead(skip_id=skip)
+        lead = _next_lead_in_mode(rows, mode, skip_id=skip)
 
-    # Determine previous lead in history (the one BEFORE the one currently shown)
+    # Determine previous lead in history
     prev_id = ""
     if lead:
         cur_id = str(lead.get("id", ""))
-        # If current lead is in history, "back" goes to the entry before it
         if cur_id in history:
             idx = history.index(cur_id)
             if idx > 0:
                 prev_id = history[idx - 1]
         elif history:
-            # Current lead not yet in history → back goes to last entry
             prev_id = history[-1]
 
     return templates.TemplateResponse(
@@ -163,7 +178,8 @@ def review_view(
         {
             "page_title": "Review",
             "lead": lead,
-            "queue_count": queue_count,
+            "mode": mode,
+            "counts": counts,
             "prev_id": prev_id,
         },
     )
@@ -174,6 +190,7 @@ def review_save(
     lead_id: str = Form(...),
     owner_name: str = Form(""),
     best_email: str = Form(""),
+    mode: str = Form(MODE_PRE_SEND),
     review_history: str = Cookie(default=None),
 ):
     owner_name = owner_name.strip()
@@ -185,20 +202,19 @@ def review_save(
             "best_email": best_email,
             "email_confidence": "manual",
             "status": "ready_to_send",
-            "last_action": "manual_review_saved",
+            "last_action": "review_saved",
         }
     else:
         updates = {
             "owner_name": owner_name,
-            "last_action": "manual_review_partial",
+            "last_action": "review_partial",
         }
 
-    ok = _update_lead_fields(lead_id, updates)
-    if not ok:
-        logger.warning("Could not find lead %s to update", lead_id)
+    if not _update_lead_fields(lead_id, updates):
+        logger.warning("review_save: lead %s not found", lead_id)
 
     history = _push_history(_load_history(review_history), lead_id)
-    response = RedirectResponse("/review", status_code=303)
+    response = _redirect_with_mode("/review", mode)
     _set_history_cookie(response, history)
     return response
 
@@ -206,10 +222,11 @@ def review_save(
 @router.post("/review/skip")
 def review_skip(
     lead_id: str = Form(...),
+    mode: str = Form(MODE_PRE_SEND),
     review_history: str = Cookie(default=None),
 ):
     history = _push_history(_load_history(review_history), lead_id)
-    response = RedirectResponse(f"/review?skip={lead_id}", status_code=303)
+    response = RedirectResponse(f"/review?mode={mode}&skip={lead_id}", status_code=303)
     _set_history_cookie(response, history)
     return response
 
@@ -218,18 +235,18 @@ def review_skip(
 def review_dnc(
     lead_id: str = Form(...),
     reason: str = Form("manual_review_rejection"),
+    mode: str = Form(MODE_PRE_SEND),
     review_history: str = Cookie(default=None),
 ):
     updates = {
         "status": "do_not_contact",
         "do_not_contact_reason": reason,
-        "last_action": "manual_review_dnc",
+        "last_action": "review_dnc",
     }
-    ok = _update_lead_fields(lead_id, updates)
-    if not ok:
-        logger.warning("Could not find lead %s to mark do-not-contact", lead_id)
+    if not _update_lead_fields(lead_id, updates):
+        logger.warning("review_dnc: lead %s not found", lead_id)
 
     history = _push_history(_load_history(review_history), lead_id)
-    response = RedirectResponse("/review", status_code=303)
+    response = _redirect_with_mode("/review", mode)
     _set_history_cookie(response, history)
     return response

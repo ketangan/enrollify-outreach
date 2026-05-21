@@ -1,15 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Review Queue</h2>
+<h2>Review</h2>
+
+{# Mode tabs #}
+<div class="review-tabs">
+  <a href="/review?mode=pre_send" class="review-tab {% if mode == 'pre_send' %}active{% endif %}">
+    Pre-send polish
+    <span class="tab-count">{{ counts.pre_send }}</span>
+  </a>
+  <a href="/review?mode=manual" class="review-tab {% if mode == 'manual' %}active{% endif %}">
+    Manual review
+    <span class="tab-count">{{ counts.manual }}</span>
+  </a>
+</div>
+
+<p class="muted review-mode-hint">
+  {% if mode == 'pre_send' %}
+    Ready-to-send leads with no owner name. Fix the name so the draft uses it instead of "Hi there".
+  {% else %}
+    Leads that need eyes — Phase 4 couldn't find an email or owner. Add what you can find manually.
+  {% endif %}
+</p>
 
 {% if not lead %}
   <div class="empty-queue">
-    <p>✅ Nothing left to review.</p>
-    <p class="muted">All leads with status <code>needs_manual_review</code> have been actioned.</p>
+    <p>✅ Nothing left in this queue.</p>
+    {% if mode == 'pre_send' and counts.manual > 0 %}
+      <p class="muted">{{ counts.manual }} lead{% if counts.manual != 1 %}s{% endif %} waiting in Manual review. <a href="/review?mode=manual">Switch over →</a></p>
+    {% elif mode == 'manual' and counts.pre_send > 0 %}
+      <p class="muted">{{ counts.pre_send }} lead{% if counts.pre_send != 1 %}s{% endif %} waiting in Pre-send polish. <a href="/review?mode=pre_send">Switch over →</a></p>
+    {% endif %}
   </div>
 {% else %}
-  <p class="muted">{{ queue_count }} leads in queue</p>
-
   <div class="review-card">
     <h3 class="lead-name">{{ lead.get("name", "") }}</h3>
     <p class="lead-meta">
@@ -34,6 +56,7 @@
 
     <form method="POST" action="/review/save" class="review-form">
       <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
+      <input type="hidden" name="mode" value="{{ mode }}">
 
       <label>
         Owner name
@@ -52,16 +75,18 @@
 
     <div class="review-secondary">
       {% if prev_id %}
-        <a href="/review?id={{ prev_id }}" class="btn-back">← Back</a>
+        <a href="/review?id={{ prev_id }}&mode={{ mode }}" class="btn-back">← Back</a>
       {% endif %}
 
       <form method="POST" action="/review/skip" style="display:inline">
         <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
+        <input type="hidden" name="mode" value="{{ mode }}">
         <button type="submit" class="btn-skip">Skip</button>
       </form>
 
       <form method="POST" action="/review/dnc" style="display:inline">
         <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
+        <input type="hidden" name="mode" value="{{ mode }}">
         <button type="submit" class="btn-dnc" onclick="return confirm('Mark this lead as do-not-contact?')">Mark do-not-contact</button>
       </form>
     </div>
