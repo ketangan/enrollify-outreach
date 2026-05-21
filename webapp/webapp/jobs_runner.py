@@ -99,14 +99,51 @@ def _run_subprocess(cmd: list[str], job_id: str, label: str) -> int:
         log.write(f"\n=== {label} ===\n")
         log.write(f"$ {' '.join(cmd)}\n\n")
         log.flush()
-        proc = subprocess.run(
+        # Use Popen so we can capture the PID and let the caller kill if needed
+        proc = subprocess.Popen(
             cmd,
             cwd=str(PROJECT_ROOT),
             stdout=log,
             stderr=subprocess.STDOUT,
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
+        # Write the PID so the cancel endpoint can find it
+        _write_status(job_id, pid=proc.pid)
+        proc.wait()
     return proc.returncode
+
+
+def cancel_job(job_id: str) -> tuple[bool, str]:
+    """Send SIGTERM to a running job's subprocess. Returns (success, message)."""
+    import signal
+    job = get_job(job_id)
+    if not job:
+        return False, "job not found"
+    if job.get("status") not in ("queued", "running"):
+        return False, f"job is not running (status={job.get('status')})"
+    pid = job.get("pid")
+    if not pid:
+        return False, "no PID recorded for this job"
+    try:
+        os.kill(int(pid), signal.SIGTERM)
+        _write_status(
+            job_id,
+            status="failed",
+            finished_at=datetime.now().isoformat(),
+            error="cancelled_by_user",
+        )
+        return True, f"sent SIGTERM to pid {pid}"
+    except ProcessLookupError:
+        # Process already exited
+        _write_status(
+            job_id,
+            status="failed",
+            finished_at=datetime.now().isoformat(),
+            error="process_already_exited",
+        )
+        return False, "process already exited"
+    except Exception as e:
+        return False, str(e)
 
 
 def _run_job_thread(job_id: str, kind: str, params: dict) -> None:

@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
-templates.env.cache = None
 
 
 @router.post("/actions/phase1-next")
@@ -50,6 +49,13 @@ def action_daily():
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
+@router.post("/jobs/{job_id}/cancel")
+def job_cancel(job_id: str):
+    ok, msg = jobs_runner.cancel_job(job_id)
+    logger.info("Cancel job %s -> %s: %s", job_id, ok, msg)
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
 @router.get("/jobs", response_class=HTMLResponse)
 def jobs_list(request: Request):
     jobs = jobs_runner.list_jobs()
@@ -63,7 +69,6 @@ def jobs_list(request: Request):
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
 def job_detail(request: Request, job_id: str):
     job = jobs_runner.get_job(job_id)
-    print(f"DEBUG job_detail: job_id={job_id}, job={job}")  # ADD THIS
     if not job:
         return templates.TemplateResponse(
             request,
@@ -71,8 +76,6 @@ def job_detail(request: Request, job_id: str):
             {"error": f"Job not found: {job_id}", "page_title": "Job"},
         )
     log = jobs_runner.get_log(job_id)
-    print(f"DEBUG log length: {len(log)}")  # ADD THIS
-
     return templates.TemplateResponse(
         request,
         "job_detail.html",

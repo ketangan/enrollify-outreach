@@ -5,7 +5,10 @@
 {% if job.status in ("queued", "running") %}
   <p class="muted">
     <span id="autoref">Auto-refresh in 5s…</span> ·
-    <a href="/jobs/{{ job.id }}">Refresh manually</a>
+    <a href="/jobs/{{ job.id }}">Refresh manually</a> ·
+    <form method="POST" action="/jobs/{{ job.id }}/cancel" style="display:inline">
+      <button type="submit" class="btn-cancel" onclick="return confirm('Cancel this job? The subprocess will be terminated.')">Cancel job</button>
+    </form>
   </p>
   <script>
     // Preserve scroll position across auto-refresh
