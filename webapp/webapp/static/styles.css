@@ -149,3 +149,114 @@ form.filters button:hover { background: #2d4229; }
   text-decoration: none;
 }
 .pagination a:hover { text-decoration: underline; }
+
+/* Review queue — mobile-friendly card */
+.empty-queue {
+  background: #fff;
+  border: 1px solid #c8e6c9;
+  padding: 24px;
+  border-radius: 8px;
+  text-align: center;
+}
+.empty-queue p { margin: 6px 0; }
+.empty-queue p:first-child { font-size: 18px; }
+
+.review-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 18px;
+  max-width: 560px;
+}
+.lead-name {
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+.lead-meta {
+  font-size: 13px;
+  color: #54504a;
+  margin: 0 0 10px;
+}
+.lead-meta a { color: #3d5a3a; }
+.lead-notes {
+  background: #f3ede1;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  margin: 10px 0 16px;
+}
+
+.review-form label {
+  display: block;
+  margin: 14px 0;
+  font-size: 13px;
+  color: #54504a;
+}
+.review-form input[type="text"],
+.review-form input[type="email"] {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  margin-top: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.review-actions {
+  margin-top: 18px;
+}
+.btn-primary {
+  width: 100%;
+  background: #3d5a3a;
+  color: #fbf8f3;
+  border: none;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-primary:hover { background: #2d4229; }
+
+.review-secondary {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+}
+.review-secondary form { flex: 1; }
+.btn-skip, .btn-dnc {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 10px;
+  font-size: 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #54504a;
+}
+.btn-skip:hover { background: #f3ede1; }
+.btn-dnc { color: #6b0000; border-color: #d88b7a; }
+.btn-dnc:hover { background: #fff0f0; }
+.btn-back {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 10px;
+  font-size: 14px;
+  border-radius: 6px;
+  color: #54504a;
+  text-decoration: none;
+}
+.btn-back:hover { background: #f3ede1; }
+
+@media (max-width: 600px) {
+  body { padding: 12px; }
+  .review-card { padding: 14px; }
+  .lead-name { font-size: 18px; }
+}

@@ -588,3 +588,38 @@ Before running Phase 3 classification, we filter Leads against Already_Contacted
   process as `partial_complete`.
 - 0 replies from 43 sends remains unexplained. Within statistical noise but
   unvalidated. Pitch diagnosis still deferred.
+
+### 2026-05-20 — Phase 8 webapp scaffold started
+- FastAPI + Jinja2 + HTMX stack
+- New `webapp/` directory; reuses `src/*` modules
+- Hosting target: Render (Ketan to set up new service)
+- Scaffold-only; routes/features pending
+
+### 2026-05-20 — Phase 8 webapp progress
+
+Routes shipped:
+- `/coverage` — region progress dashboard
+- `/leads` — filterable list (status, zip, category, admin) with pagination
+- `/review` — mobile-friendly one-at-a-time manual review queue
+  - Save & next (promotes to ready_to_send if email non-empty)
+  - Skip (session-only, doesn't track across reloads)
+  - Mark do-not-contact (with confirm)
+  - Back button (cookie-based, last 5 actioned leads)
+
+Architecture decisions:
+- FastAPI + Jinja2 + HTMX (no React)
+- Reuses `src/coverage.py`, `src/sheets.py`, `src/regions.py` directly
+- Sheet writes are one-cell-at-a-time (acceptable for v1; addressed by DB migration)
+- No auth (v1 ships unprotected; deploy carefully)
+- No caching (every page load = full sheet read)
+
+Routes remaining for v1:
+- Pipeline diagram + action buttons (--next, --auto, run downstream, run daily)
+- Job system (subprocess + status JSON files in webapp/jobs/)
+- Render deployment
+
+### Known v1 limitations
+- No auth — webapp must not be deployed publicly until added
+- Sheet reads not cached — slow first load on every page
+- Skip is forgetful across reloads
+- Lead writes are one-cell-at-a-time (multiple API calls per save)

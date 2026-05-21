@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Review Queue</h2>
+
+{% if not lead %}
+  <div class="empty-queue">
+    <p>✅ Nothing left to review.</p>
+    <p class="muted">All leads with status <code>needs_manual_review</code> have been actioned.</p>
+  </div>
+{% else %}
+  <p class="muted">{{ queue_count }} leads in queue</p>
+
+  <div class="review-card">
+    <h3 class="lead-name">{{ lead.get("name", "") }}</h3>
+    <p class="lead-meta">
+      <span>{{ lead.get("category", "") }}</span>
+      <span>·</span>
+      <span>{{ lead.get("zip", "") }}</span>
+      {% if lead.get("website") %}
+        <span>·</span>
+        <a href="{{ lead.get('website') }}" target="_blank" rel="noopener" class="website-link">Open website ↗</a>
+      {% endif %}
+    </p>
+
+    {% if lead.get("owner_source_url") %}
+      <p class="lead-meta muted">
+        Owner source: <a href="{{ lead.get('owner_source_url') }}" target="_blank" rel="noopener">{{ lead.get('owner_source_url') }}</a>
+      </p>
+    {% endif %}
+
+    {% if lead.get("notes") %}
+      <p class="lead-notes"><strong>Notes:</strong> {{ lead.get("notes", "")[:300] }}</p>
+    {% endif %}
+
+    <form method="POST" action="/review/save" class="review-form">
+      <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
+
+      <label>
+        Owner name
+        <input type="text" name="owner_name" value="{{ lead.get('owner_name', '') }}">
+      </label>
+
+      <label>
+        Best email
+        <input type="email" name="best_email" value="{{ lead.get('best_email', '') }}">
+      </label>
+
+      <div class="review-actions">
+        <button type="submit" class="btn-primary">Save &amp; next</button>
+      </div>
+    </form>
+
+    <div class="review-secondary">
+      {% if prev_id %}
+        <a href="/review?id={{ prev_id }}" class="btn-back">← Back</a>
+      {% endif %}
+
+      <form method="POST" action="/review/skip" style="display:inline">
+        <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
+        <button type="submit" class="btn-skip">Skip</button>
+      </form>
+
+      <form method="POST" action="/review/dnc" style="display:inline">
+        <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
+        <button type="submit" class="btn-dnc" onclick="return confirm('Mark this lead as do-not-contact?')">Mark do-not-contact</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}
