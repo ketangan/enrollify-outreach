@@ -39,6 +39,9 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 HISTORY_COOKIE = "review_history"
 HISTORY_MAX = 5
 
+SKIPPED_COOKIE = "review_skipped"
+SKIPPED_MAX = 100
+
 MODE_PRE_SEND = "pre_send"
 MODE_MANUAL = "manual"
 VALID_MODES = (MODE_PRE_SEND, MODE_MANUAL)
@@ -74,6 +77,38 @@ def _set_history_cookie(response: Response, history: list[str]) -> None:
     )
 
 
+def _load_skipped(cookie_value: str | None) -> list[str]:
+    if not cookie_value:
+        return []
+    try:
+        s = json.loads(cookie_value)
+        if isinstance(s, list):
+            return [str(x) for x in s][-SKIPPED_MAX:]
+    except json.JSONDecodeError:
+        pass
+    return []
+
+
+def _push_skipped(skipped: list[str], lead_id: str) -> list[str]:
+    if not lead_id or lead_id in skipped:
+        return skipped
+    return (skipped + [lead_id])[-SKIPPED_MAX:]
+
+
+def _set_skipped_cookie(response: Response, skipped: list[str]) -> None:
+    response.set_cookie(
+        SKIPPED_COOKIE,
+        json.dumps(skipped),
+        max_age=60 * 60 * 24,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def _clear_skipped_cookie(response: Response) -> None:
+    response.delete_cookie(SKIPPED_COOKIE)
+
+
 def _matches_mode(lead: dict, mode: str) -> bool:
     status = str(lead.get("status", "")).strip()
     name = str(lead.get("owner_name", "")).strip()
@@ -99,9 +134,36 @@ def _queue_counts(rows: list[dict]) -> dict[str, int]:
     }
 
 
-def _next_lead_in_mode(rows: list[dict], mode: str, skip_id: str = "") -> dict | None:
+def _next_lead_in_mode(
+    rows: list[dict],
+    mode: str,
+    skipped_ids: set[str] | None = None,
+) -> dict | None:
+    skipped_ids = skipped_ids or set()
     for r in rows:
-        if _matches_mode(r, mode) and str(r.get("id", "")).strip() != skip_id:
+        if _matches_mode(r, mode) and str(r.get("id", "")).strip() not in skipped_ids:
+            return r
+    return None
+
+
+def _find_lead_by_search(rows: list[dict], query: str) -> dict | None:
+    """
+    Find the first lead matching a search query.
+    Matches against: name (substring), website (substring), id (exact).
+    Case-insensitive. Used by Search to jump to a specific lead.
+    """
+    if not query:
+        return None
+    q = query.strip().lower()
+    if not q:
+        return None
+    for r in rows:
+        if str(r.get("id", "")).strip().lower() == q:
+            return r
+    for r in rows:
+        name = str(r.get("name", "")).lower()
+        website = str(r.get("website", "")).lower()
+        if q in name or q in website:
             return r
     return None
 
@@ -144,22 +206,31 @@ def _redirect_with_mode(path: str, mode: str) -> RedirectResponse:
 def review_view(
     request: Request,
     mode: str = MODE_PRE_SEND,
-    skip: str = "",
     id: str = "",
+    q: str = "",
     review_history: str = Cookie(default=None),
+    review_skipped: str = Cookie(default=None),
 ):
     if mode not in VALID_MODES:
         mode = MODE_PRE_SEND
 
     history = _load_history(review_history)
+    skipped = _load_skipped(review_skipped)
     rows = sheets.read_all_rows(config.TAB_LEADS)
     counts = _queue_counts(rows)
 
+    search_msg = ""
     if id:
-        # Explicit ID load (from Back button)
+        # Explicit ID load (from Back button or direct link)
         lead = _find_lead_by_id(id)
+    elif q:
+        # Search-and-jump
+        lead = _find_lead_by_search(rows, q)
+        if not lead:
+            search_msg = f"No lead matches '{q}'."
     else:
-        lead = _next_lead_in_mode(rows, mode, skip_id=skip)
+        # Normal next-in-queue (respecting all skipped IDs)
+        lead = _next_lead_in_mode(rows, mode, skipped_ids=set(skipped))
 
     # Determine previous lead in history
     prev_id = ""
@@ -181,6 +252,9 @@ def review_view(
             "mode": mode,
             "counts": counts,
             "prev_id": prev_id,
+            "search_query": q,
+            "search_msg": search_msg,
+            "skipped_count": len(skipped),
         },
     )
 
@@ -192,6 +266,7 @@ def review_save(
     best_email: str = Form(""),
     mode: str = Form(MODE_PRE_SEND),
     review_history: str = Cookie(default=None),
+    review_skipped: str = Cookie(default=None),
 ):
     owner_name = owner_name.strip()
     best_email = best_email.strip().lower()
@@ -214,8 +289,11 @@ def review_save(
         logger.warning("review_save: lead %s not found", lead_id)
 
     history = _push_history(_load_history(review_history), lead_id)
+    # If this lead was in the skipped list, remove it (we acted on it)
+    skipped = [s for s in _load_skipped(review_skipped) if s != lead_id]
     response = _redirect_with_mode("/review", mode)
     _set_history_cookie(response, history)
+    _set_skipped_cookie(response, skipped)
     return response
 
 
@@ -224,10 +302,13 @@ def review_skip(
     lead_id: str = Form(...),
     mode: str = Form(MODE_PRE_SEND),
     review_history: str = Cookie(default=None),
+    review_skipped: str = Cookie(default=None),
 ):
     history = _push_history(_load_history(review_history), lead_id)
-    response = RedirectResponse(f"/review?mode={mode}&skip={lead_id}", status_code=303)
+    skipped = _push_skipped(_load_skipped(review_skipped), lead_id)
+    response = _redirect_with_mode("/review", mode)
     _set_history_cookie(response, history)
+    _set_skipped_cookie(response, skipped)
     return response
 
 
@@ -237,6 +318,7 @@ def review_dnc(
     reason: str = Form("manual_review_rejection"),
     mode: str = Form(MODE_PRE_SEND),
     review_history: str = Cookie(default=None),
+    review_skipped: str = Cookie(default=None),
 ):
     updates = {
         "status": "do_not_contact",
@@ -247,6 +329,16 @@ def review_dnc(
         logger.warning("review_dnc: lead %s not found", lead_id)
 
     history = _push_history(_load_history(review_history), lead_id)
+    skipped = [s for s in _load_skipped(review_skipped) if s != lead_id]
     response = _redirect_with_mode("/review", mode)
     _set_history_cookie(response, history)
+    _set_skipped_cookie(response, skipped)
+    return response
+
+
+@router.post("/review/clear-skipped")
+def review_clear_skipped(mode: str = Form(MODE_PRE_SEND)):
+    """Reset the skip list so previously-skipped leads show up again."""
+    response = _redirect_with_mode("/review", mode)
+    _clear_skipped_cookie(response)
     return response

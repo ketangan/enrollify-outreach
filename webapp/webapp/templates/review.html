@@ -22,6 +22,34 @@
   {% endif %}
 </p>
 
+<form method="GET" action="/review" class="review-search">
+  <input type="hidden" name="mode" value="{{ mode }}">
+  <input type="search" name="q" value="{{ search_query }}" placeholder="Jump to a school by name or website…">
+  <button type="submit">Search</button>
+  {% if search_query %}<a href="/review?mode={{ mode }}" class="muted-link">Clear</a>{% endif %}
+</form>
+
+{% if search_msg %}
+  <p class="search-msg">{{ search_msg }}</p>
+{% endif %}
+
+{% if skipped_count > 0 and not search_query and not lead %}
+  <form method="POST" action="/review/clear-skipped" class="clear-skipped-form">
+    <input type="hidden" name="mode" value="{{ mode }}">
+    <p class="muted">You've skipped {{ skipped_count }} lead{% if skipped_count != 1 %}s{% endif %} this session.
+      <button type="submit" class="btn-link-inline">Reset skip list</button>
+    </p>
+  </form>
+{% elif skipped_count > 0 and not search_query %}
+  <p class="muted skip-indicator">
+    Skipped this session: {{ skipped_count }} ·
+    <form method="POST" action="/review/clear-skipped" style="display:inline">
+      <input type="hidden" name="mode" value="{{ mode }}">
+      <button type="submit" class="btn-link-inline">Reset</button>
+    </form>
+  </p>
+{% endif %}
+
 {% if not lead %}
   <div class="empty-queue">
     <p>✅ Nothing left in this queue.</p>
