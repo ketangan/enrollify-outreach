@@ -114,8 +114,17 @@ def main():
     config.validate()
 
     contacted = sheets.read_all_rows(config.TAB_ALREADY_CONTACTED)
-    logger.info("Already_Contacted: %d rows", len(contacted))
-    contacted_websites, contacted_names = build_contacted_index(contacted)
+    archived = sheets.read_all_rows(config.TAB_ARCHIVE)
+    logger.info("Already_Contacted: %d rows, Archive: %d rows",
+                len(contacted), len(archived))
+
+    # Archive uses 'name' (Leads schema), Already_Contacted uses 'school_name'.
+    # Normalize: copy 'name' -> 'school_name' for archived rows before indexing.
+    for r in archived:
+        if not r.get("school_name") and r.get("name"):
+            r["school_name"] = r["name"]
+
+    contacted_websites, contacted_names = build_contacted_index(contacted + archived)
     logger.info("  %d normalized websites, %d normalized names",
                 len(contacted_websites), len(contacted_names))
 

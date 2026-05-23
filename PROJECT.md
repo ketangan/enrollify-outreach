@@ -677,3 +677,15 @@ v1 still TODO:
   - Trigger Run daily (sends emails via your Zoho)
   - Spin up Phase 1 zips (costs money via Places API)
   - Mark leads do-not-contact
+
+### 2026-05-20 — Lead lifecycle close-out
+
+- Added scripts/run_close_stale.py: marks leads as closed_no_reply when their
+  follow_up_sent_at is older than --days (default 7) and no reply came in.
+- Patched scripts/run_phase_2_dedupe.py: dedupe index now includes the
+  Archive tab, not just Already_Contacted. Prevents previously-archived
+  schools from re-entering the pipeline if Phase 1 re-surfaces them.
+- Cadence: run close_stale + cleanup weekly, manually.
+
+Closed bug: closed_no_reply status was defined but never set anywhere.
+sent leads with no reply sat indefinitely. Now they age out and archive.
