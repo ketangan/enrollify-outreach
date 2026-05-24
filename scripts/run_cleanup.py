@@ -74,25 +74,82 @@ def main():
         logger.info("DRY RUN. Pass --commit to actually move rows.")
         return
 
-    # Append to Archive
-    archive_headers = sheets.get_headers(config.TAB_ARCHIVE)
-    sheets.append_rows(config.TAB_ARCHIVE, to_archive, archive_headers)
-    logger.info("Appended %d rows to Archive tab.", len(to_archive))
+    # Dedupe: don't re-archive rows that are already there (by id)
+    existing_archive = sheets.read_all_rows(config.TAB_ARCHIVE)
+    existing_ids = {
+        str(r.get("id", "")).strip()
+        for r in existing_archive
+        if r.get("id")
+    }
+    new_to_archive = [
+        r for r in to_archive
+        if str(r.get("id", "")).strip() and str(r.get("id", "")).strip() not in existing_ids
+    ]
+    skipped = len(to_archive) - len(new_to_archive)
+    if skipped:
+        logger.info("Skipping %d rows already in Archive (dedupe by id)", skipped)
 
-    # Delete from Leads (in reverse order to keep row indexes stable)
+    if new_to_archive:
+        archive_headers = sheets.get_headers(config.TAB_ARCHIVE)
+        sheets.append_rows(config.TAB_ARCHIVE, new_to_archive, archive_headers)
+        logger.info("Appended %d rows to Archive tab.", len(new_to_archive))
+    else:
+        logger.info("All archivable rows already in Archive. Skipping append.")
+
+    # Delete from Leads — group consecutive archivable rows into ranges
+    # to minimize API calls (Sheets rate-limits at 60 writes/min/user).
+    import time
+
     leads_ws = sheets.get_tab(config.TAB_LEADS)
     all_rows = leads_ws.get_all_values()
     header = all_rows[0]
     status_col = header.index("status")
 
+    # Collect 1-indexed row numbers to delete (skip header)
     rows_to_delete = []
-    for idx in range(len(all_rows) - 1, 0, -1):  # skip header, reverse order
+    for idx in range(1, len(all_rows)):
         if all_rows[idx][status_col] in ARCHIVABLE_STATUSES:
-            rows_to_delete.append(idx + 1)  # gspread uses 1-indexed rows
+            rows_to_delete.append(idx + 1)  # 1-indexed for gspread
 
-    logger.info("Deleting %d rows from Leads tab...", len(rows_to_delete))
-    for row_idx in rows_to_delete:
-        leads_ws.delete_rows(row_idx)
+    if not rows_to_delete:
+        logger.info("Nothing in Leads to delete (already cleaned).")
+        return
+
+    # Group consecutive row numbers into (start, end) ranges
+    # e.g. [3, 4, 5, 9, 10] -> [(3,5), (9,10)]
+    ranges = []
+    range_start = rows_to_delete[0]
+    range_end = rows_to_delete[0]
+    for r in rows_to_delete[1:]:
+        if r == range_end + 1:
+            range_end = r
+        else:
+            ranges.append((range_start, range_end))
+            range_start = r
+            range_end = r
+    ranges.append((range_start, range_end))
+
+    # Delete from bottom-up so earlier ranges' row numbers stay valid
+    ranges.sort(key=lambda r: r[0], reverse=True)
+
+    logger.info("Deleting %d rows in %d ranges from Leads tab...",
+                len(rows_to_delete), len(ranges))
+
+    # Throttle: 30 writes/min to stay under the 60 limit safely
+    REQS_PER_MINUTE = 30
+    SLEEP_BETWEEN = 60.0 / REQS_PER_MINUTE  # 1.2s
+
+    for i, (start, end) in enumerate(ranges, 1):
+        try:
+            leads_ws.delete_rows(start, end)
+        except Exception as e:
+            logger.error("Delete failed for range %d-%d: %s", start, end, e)
+            logger.info("Stopping. Rerun the script to continue from here.")
+            return
+        if i % 10 == 0:
+            logger.info("  deleted %d/%d ranges", i, len(ranges))
+        if i < len(ranges):
+            time.sleep(SLEEP_BETWEEN)
 
     logger.info("Done. Archive has been updated. Leads tab cleaned.")
 

@@ -51,7 +51,7 @@ from pathlib import Path
 # Allow running as a script from project root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import config, regions, sheets, places, coverage
+from src import config, regions, sheets, places, coverage, dedupe_within_leads
 
 logging.basicConfig(
     level=logging.INFO,
@@ -174,6 +174,19 @@ def process_zip(zip_code: str, admin: str = "") -> dict:
         len(result["places_skipped"]),
         capped_note,
     )
+
+    # Auto-dedupe within Leads — catches schools that overlap multiple zips.
+    # Safe to run every time; cheap if there are no dupes.
+    try:
+        summary = dedupe_within_leads.dedupe_within_leads()
+        if summary.get("rows_demoted"):
+            logger.info(
+                "  Deduped: %d row(s) demoted to do_not_contact (internal_duplicate)",
+                summary["rows_demoted"],
+            )
+    except Exception as e:
+        logger.warning("  In-leads dedupe step failed (non-fatal): %s", e)
+        
     return result
 
 

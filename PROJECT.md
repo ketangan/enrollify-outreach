@@ -689,3 +689,32 @@ v1 still TODO:
 
 Closed bug: closed_no_reply status was defined but never set anywhere.
 sent leads with no reply sat indefinitely. Now they age out and archive.
+
+### 2026-05-20 — Internal-Leads dedupe (Phase 1.5)
+
+- New `src/dedupe_within_leads.py`: demotes duplicate Leads rows (same website
+  or phone discovered in multiple zip codes) to `do_not_contact` with
+  reason `internal_duplicate:<kept_id>`.
+- Wired into `scripts/run_phase_1_discovery.py` to run automatically after
+  each `process_zip()`. Webapp's Phase 1 buttons trigger it implicitly.
+- Status priority ladder determines which row survives:
+  replied > sent > awaiting_approval > ready_to_send >
+  ready_for_owner_lookup > needs_manual_review > pending_classify >
+  online_system_exclude > do_not_contact > closed_no_reply
+
+### One-time backfill
+- Initial run found 877 duplicates in 1788 leads (49% of sheet was duplicate).
+- Caught one near-miss: A to Z Soccer Academy (90066) was `sent` while three
+  other zip copies were progressing in parallel; one was about to send Manuel
+  a second email.
+
+### Cleanup script — known issue
+- `run_cleanup.py` is rate-limited by Sheets API at 60 writes/min/user.
+- Current throttle: 30 req/min (2s sleep between delete operations).
+- Large cleanups (500+ rows) take 10-20 minutes. Cron-friendly; don't run
+  back-to-back manual cleanups.
+
+### Future improvement
+- Phase 2 dedupe was patched to check Archive in addition to Already_Contacted.
+  Combined with internal Leads dedupe, dupes should not accumulate going forward.
+  If they do, this script is the safety net.
