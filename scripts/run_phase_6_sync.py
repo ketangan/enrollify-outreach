@@ -4,7 +4,10 @@ Phase 6 sync: reconcile Zoho Sent + Inbox with the Leads sheet.
 
 - Sent items → mark leads as `sent`, record sent_at and sent_message_id,
   schedule follow_up_at = sent_at + 7 days.
-- Inbox replies → mark leads as `replied`, email Ketan an alert.
+- Inbox replies:
+    * Real human reply → mark `replied`, send 🚨 alert
+    * Mailer-daemon bounce → mark `bounced`, capture error, send 📭 alert
+- Follow-up sends detected by In-Reply-To threading.
 
 Usage:
   python scripts/run_phase_6_sync.py              # run once, real updates
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -35,9 +39,45 @@ logger = logging.getLogger("phase6sync")
 
 FOLLOW_UP_DAYS = 7
 
+# ─── Bounce detection ──────────────────────────────────────────────────
+# Sender patterns that indicate this is a bounce, not a human reply.
+BOUNCE_SENDER_PATTERNS = re.compile(
+    r"(mailer-daemon|postmaster|mail-daemon|noreply|no-reply)@",
+    re.IGNORECASE,
+)
+
+# Subject patterns that further confirm a bounce.
+BOUNCE_SUBJECT_PATTERNS = re.compile(
+    r"(undelivered|undeliverable|mail delivery|delivery (failure|status|failed)|"
+    r"returned to sender|failure notice|delivery problem)",
+    re.IGNORECASE,
+)
+
+
+def _is_bounce(from_email: str, subject: str) -> bool:
+    """True if this looks like a mail-server bounce, not a human reply."""
+    if BOUNCE_SENDER_PATTERNS.search(from_email or ""):
+        return True
+    if BOUNCE_SUBJECT_PATTERNS.search(subject or ""):
+        return True
+    return False
+
+
+def _extract_bounce_reason(snippet: str) -> str:
+    """Pull a short reason string out of a bounce body snippet."""
+    if not snippet:
+        return "bounced"
+    # Look for an SMTP 5xx error code line
+    match = re.search(r"(5\d\d)[^\n]{0,200}", snippet)
+    if match:
+        return f"bounce_{match.group(1)}:{match.group(0)[:200]}"
+    return f"bounce:{snippet[:200]}"
+
+
+# ─── Sheet helpers ─────────────────────────────────────────────────────
 
 def _index_leads_by_email(leads_rows: list[dict]) -> dict[str, list[dict]]:
-    """Leads keyed by lowercase email for quick lookup (multiple leads may share same email)."""
+    """Leads keyed by lowercase email (multiple leads may share same email)."""
     by_email = {}
     for lead in leads_rows:
         email = (lead.get("best_email") or "").strip().lower()
@@ -47,8 +87,10 @@ def _index_leads_by_email(leads_rows: list[dict]) -> dict[str, list[dict]]:
     return by_email
 
 
+# ─── Alert emails ──────────────────────────────────────────────────────
+
 def _send_reply_alert(school_name: str, from_email: str, subject: str, snippet: str) -> None:
-    """Email Ketan that a reply came in."""
+    """Email Ketan that a human reply came in."""
     html = f"""
     <html><body style="font-family: -apple-system, sans-serif; max-width: 600px;">
       <h2 style="color: #9a2a1d;">🚨 Reply received</h2>
@@ -70,6 +112,33 @@ def _send_reply_alert(school_name: str, from_email: str, subject: str, snippet: 
     if not ok:
         logger.error("Failed to send reply alert: %s", err)
 
+
+def _send_bounce_alert(school_name: str, to_email: str, reason: str) -> None:
+    """Email Ketan a quieter alert that a previously-sent email bounced."""
+    html = f"""
+    <html><body style="font-family: -apple-system, sans-serif; max-width: 600px;">
+      <h3 style="color: #6b3a00;">📭 Bounce detected</h3>
+      <p><strong>School:</strong> {school_name}<br>
+         <strong>Address:</strong> {to_email}</p>
+      <p style="background: #fff3cd; padding: 10px; border-left: 3px solid #ffa726; font-family: monospace; font-size: 12px;">
+        {reason[:400]}
+      </p>
+      <p>Lead has been flagged as bounced and will be archived on the next
+         cleanup run. No action needed.</p>
+    </body></html>
+    """
+    msg = zoho.build_message(
+        to_email=config.ZOHO_EMAIL,
+        subject=f"📭 Bounce: {school_name} ({to_email})",
+        html_body=html,
+    )
+    ok, err = zoho.send_message(msg)
+    if not ok:
+        logger.error("Failed to send bounce alert: %s", err)
+
+
+# ─── Follow-up detection ───────────────────────────────────────────────
+
 def _fetch_followup_message_map(original_message_ids: set, since_days: int) -> dict[str, str]:
     """
     Fetch sent messages with their In-Reply-To headers.
@@ -79,7 +148,6 @@ def _fetch_followup_message_map(original_message_ids: set, since_days: int) -> d
     import imaplib
     import ssl
     from datetime import datetime, timedelta, timezone
-    from src import config
 
     if not original_message_ids:
         return {}
@@ -120,6 +188,8 @@ def _fetch_followup_message_map(original_message_ids: set, since_days: int) -> d
     return result_map
 
 
+# ─── Main ──────────────────────────────────────────────────────────────
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
@@ -152,7 +222,7 @@ def main():
         leads_list.append(lead)
     by_email = _index_leads_by_email(leads_list)
 
-    # ==================== SENT SYNC ====================
+    # ══════════════════ SENT SYNC ══════════════════
     logger.info("Fetching sent items from Zoho (last %d days)...", args.since_days)
     sent_msgs = zoho_sync.fetch_sent_messages(since_days=args.since_days)
     logger.info("  %d sent messages found", len(sent_msgs))
@@ -160,21 +230,14 @@ def main():
     sent_updates = 0
     follow_up_updates = 0
 
-    # Pre-build a lookup: which sent messages are follow-ups?
-    # A sent message is a follow-up if it has In-Reply-To or References pointing
-    # to a lead's original sent_message_id.
-    # We need to fetch headers, not just the parsed SentMessage records.
-    # Easier approach: fetch the raw msg objects again with reply headers.
-    
-    # Build a set of all known original message IDs (from leads marked 'sent')
+    # Set of all known original message IDs (from leads marked 'sent')
     original_message_ids = {
         lead.get("sent_message_id", "").strip()
         for lead in leads_list
         if lead.get("status") == "sent" and lead.get("sent_message_id", "").strip()
     }
 
-    # Re-fetch raw sent messages WITH their In-Reply-To headers (for follow-up detection)
-    # This is a small extension to fetch_sent_messages.
+    # Map sent_id -> in_reply_to for follow-up detection
     follow_up_message_map = _fetch_followup_message_map(original_message_ids, args.since_days)
 
     for sm in sent_msgs:
@@ -182,10 +245,9 @@ def main():
         if not candidates:
             continue
 
-        # Is this a follow-up? Check if it threads to a known original.
+        # Is this a follow-up?
         replied_to = follow_up_message_map.get(sm.message_id)
         if replied_to and replied_to in original_message_ids:
-            # This is a follow-up. Find the lead with matching original sent_message_id.
             target = None
             for lead in candidates:
                 if lead.get("sent_message_id", "").strip() == replied_to:
@@ -202,9 +264,9 @@ def main():
                          "values": [["phase6_followup_sent_detected"]]},
                     ], value_input_option="USER_ENTERED")
                 follow_up_updates += 1
-            continue  # Don't fall through to first-send matching
+            continue
 
-        # Otherwise, it's a first-time send. Find an awaiting_approval candidate.
+        # First-time send: find an awaiting_approval candidate
         target = None
         for lead in candidates:
             current_status = lead.get("status", "")
@@ -241,9 +303,8 @@ def main():
 
     logger.info("Sent-sync: %d new sends, %d follow-up sends.", sent_updates, follow_up_updates)
 
-    # ==================== REPLY SYNC ====================
-    # Rebuild the sent-message-id index from what's actually in the sheet now
-    # (includes leads that were already marked sent in prior runs)
+    # ══════════════════ REPLY / BOUNCE SYNC ══════════════════
+    # Rebuild the message-id index from current sheet contents
     message_id_to_lead = {}
     fresh_rows = sheets.read_all_rows(config.TAB_LEADS)
     for lead in fresh_rows:
@@ -256,6 +317,8 @@ def main():
     logger.info("  %d threaded messages found in inbox", len(replies))
 
     reply_updates = 0
+    bounce_updates = 0
+
     for reply in replies:
         # Match by In-Reply-To or any References entry
         matched_lead = message_id_to_lead.get(reply.in_reply_to)
@@ -266,14 +329,25 @@ def main():
                     break
         if not matched_lead:
             continue
-        if matched_lead.get("status") == "replied":
-            continue  # Already handled
 
-        logger.info("  🚨 REPLY: %s from %s",
-                    matched_lead.get("name", ""), reply.from_email)
+        # Skip if already terminal
+        cur_status = matched_lead.get("status", "")
+        if cur_status in ("replied", "bounced", "do_not_contact"):
+            continue
+
+        is_bounce = _is_bounce(reply.from_email, reply.subject)
+
+        if is_bounce:
+            bounce_reason = _extract_bounce_reason(reply.snippet)
+            logger.info("  📭 BOUNCE: %s (%s)",
+                        matched_lead.get("name", ""),
+                        matched_lead.get("best_email", ""))
+        else:
+            logger.info("  🚨 REPLY: %s from %s",
+                        matched_lead.get("name", ""), reply.from_email)
 
         if not args.dry_run:
-            # Re-find the row index (fresh_rows doesn't carry _row_idx)
+            # Find row index by sent_message_id
             row_idx = None
             for i, r in enumerate(all_rows[1:], start=2):
                 if len(r) > col["sent_message_id"] and \
@@ -281,34 +355,58 @@ def main():
                     row_idx = i
                     break
             if row_idx is None:
-                logger.warning("    couldn't find row for reply — skipping sheet update")
+                logger.warning("    couldn't find row — skipping sheet update")
                 continue
 
-            leads_ws.batch_update([
-                {"range": rowcol_to_a1(row_idx, col["status"] + 1),
-                 "values": [["replied"]]},
-                {"range": rowcol_to_a1(row_idx, col["replied_at"] + 1),
-                 "values": [[reply.received_at.isoformat()]]},
-                {"range": rowcol_to_a1(row_idx, col["last_action"] + 1),
-                 "values": [["phase6_reply_detected"]]},
-            ], value_input_option="USER_ENTERED")
+            if is_bounce:
+                updates = [
+                    {"range": rowcol_to_a1(row_idx, col["status"] + 1),
+                     "values": [["bounced"]]},
+                    {"range": rowcol_to_a1(row_idx, col["last_action"] + 1),
+                     "values": [["phase6_bounce_detected"]]},
+                ]
+                if "do_not_contact_reason" in col:
+                    updates.append({
+                        "range": rowcol_to_a1(row_idx, col["do_not_contact_reason"] + 1),
+                        "values": [[bounce_reason]],
+                    })
+                leads_ws.batch_update(updates, value_input_option="USER_ENTERED")
 
-            _send_reply_alert(
-                school_name=matched_lead.get("name", ""),
-                from_email=reply.from_email,
-                subject=reply.subject,
-                snippet=reply.snippet,
-            )
+                _send_bounce_alert(
+                    school_name=matched_lead.get("name", ""),
+                    to_email=matched_lead.get("best_email", ""),
+                    reason=bounce_reason,
+                )
+                bounce_updates += 1
+            else:
+                leads_ws.batch_update([
+                    {"range": rowcol_to_a1(row_idx, col["status"] + 1),
+                     "values": [["replied"]]},
+                    {"range": rowcol_to_a1(row_idx, col["replied_at"] + 1),
+                     "values": [[reply.received_at.isoformat()]]},
+                    {"range": rowcol_to_a1(row_idx, col["last_action"] + 1),
+                     "values": [["phase6_reply_detected"]]},
+                ], value_input_option="USER_ENTERED")
 
-        reply_updates += 1
+                _send_reply_alert(
+                    school_name=matched_lead.get("name", ""),
+                    from_email=reply.from_email,
+                    subject=reply.subject,
+                    snippet=reply.snippet,
+                )
+                reply_updates += 1
+        else:
+            if is_bounce:
+                bounce_updates += 1
+            else:
+                reply_updates += 1
 
-    logger.info("Reply-sync: %d replies detected.", reply_updates)
+    logger.info("Reply-sync: %d replies, %d bounces.", reply_updates, bounce_updates)
     logger.info("")
     logger.info("=" * 50)
-    logger.info("Phase 6 sync complete. Sent: %d. Replies: %d.",
-                sent_updates, reply_updates)
+    logger.info("Phase 6 sync complete. Sent: %d. Replies: %d. Bounces: %d.",
+                sent_updates, reply_updates, bounce_updates)
 
 
 if __name__ == "__main__":
     main()
-    

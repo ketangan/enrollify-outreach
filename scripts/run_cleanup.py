@@ -10,6 +10,7 @@ Statuses that get archived:
   - already_contacted
   - do_not_contact
   - closed_no_reply
+  - bounced
 
 Statuses that stay in Leads:
   - pending_classify, needs_manual_review, ready_*, awaiting_approval,
@@ -43,6 +44,7 @@ ARCHIVABLE_STATUSES = {
     "already_contacted",
     "do_not_contact",
     "closed_no_reply",
+    "bounced",
 }
 
 
@@ -137,7 +139,7 @@ def main():
 
     # Throttle: 30 writes/min to stay under the 60 limit safely
     REQS_PER_MINUTE = 30
-    SLEEP_BETWEEN = 60.0 / REQS_PER_MINUTE  # 1.2s
+    SLEEP_BETWEEN = 60.0 / REQS_PER_MINUTE  # 2s
 
     for i, (start, end) in enumerate(ranges, 1):
         try:
@@ -156,4 +158,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
