@@ -8,6 +8,9 @@ For each ready_to_send lead (up to daily cap):
 3. Mark lead awaiting_approval
 4. Email Ketan a summary with direct links to Zoho drafts
 
+The summary email also reports upstream pipeline state (pending_classify,
+needs_manual_review counts) so Ketan knows when to run downstream next.
+
 Usage:
   python scripts/run_phase_5_drafts.py --dry-run        # render only, don't touch Zoho
   python scripts/run_phase_5_drafts.py --limit 5        # cap at 5 for testing
@@ -37,6 +40,10 @@ logger = logging.getLogger("phase5")
 
 ZOHO_DRAFTS_WEB_URL = "https://mail.zoho.com/zm/#mail/folder/drafts"
 
+# Thresholds for the "what to run next" recommendation in the summary email
+LOW_QUEUE_THRESHOLD = 10        # ready_to_send count below this = low queue
+PENDING_REFILL_THRESHOLD = 50   # pending_classify above this = worth running downstream
+
 
 def _collect_ready_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
     """Return list of dicts for rows with status=ready_to_send, oldest discovered first."""
@@ -54,7 +61,75 @@ def _collect_ready_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
     return ready
 
 
-def _build_summary_html(drafts_summary: list[dict], failures: list[dict]) -> str:
+def _compute_pipeline_status(all_rows: list[list[str]], col: dict) -> dict:
+    """Count leads by status. Used for the pipeline-health section of the summary email."""
+    counts: dict[str, int] = {}
+    status_idx = col["status"]
+    for row in all_rows[1:]:
+        if len(row) <= status_idx:
+            continue
+        s = row[status_idx].strip()
+        if s:
+            counts[s] = counts.get(s, 0) + 1
+    return counts
+
+
+def _build_pipeline_section(status_counts: dict, ready_after_run: int) -> str:
+    """
+    Build the pipeline-health section of the summary email.
+    Recommends what to run next based on upstream pending counts.
+    """
+    pending_classify = status_counts.get("pending_classify", 0)
+    needs_manual = status_counts.get("needs_manual_review", 0)
+    awaiting = status_counts.get("awaiting_approval", 0)
+    ready = status_counts.get("ready_to_send", 0)
+
+    # Recommendation logic
+    recommendations = []
+    if ready_after_run < LOW_QUEUE_THRESHOLD and pending_classify >= PENDING_REFILL_THRESHOLD:
+        # Estimate runtime: ~5 sec/lead for Phase 3+4 combined, ~$0.003/lead
+        est_min = max(1, pending_classify * 5 // 60)
+        est_cost = pending_classify * 0.003
+        recommendations.append(
+            f"⚠ Draft queue is low and there are <strong>{pending_classify} leads waiting</strong> "
+            f"in <code>pending_classify</code>. Run downstream (~{est_min} min, ~${est_cost:.2f}) "
+            f"to refill the queue."
+        )
+    elif ready_after_run < LOW_QUEUE_THRESHOLD and pending_classify < PENDING_REFILL_THRESHOLD:
+        recommendations.append(
+            "⚠ Draft queue is low and there's nothing waiting upstream. "
+            "Consider running Phase 1 discovery on a new zip."
+        )
+
+    if needs_manual >= 20:
+        recommendations.append(
+            f"📋 <strong>{needs_manual} leads</strong> need manual review. "
+            f"<a href='https://enrollify-admin.onrender.com/review'>Open the review queue</a> "
+            f"when you have a few minutes."
+        )
+
+    recs_html = ""
+    if recommendations:
+        recs_html = "<ul style='margin: 8px 0; padding-left: 20px;'>" + \
+                    "".join(f"<li style='margin: 4px 0;'>{r}</li>" for r in recommendations) + \
+                    "</ul>"
+
+    return f"""
+    <div style="background: #f3ede1; padding: 14px 16px; border-radius: 6px; margin-top: 24px; font-size: 13px;">
+        <h3 style="margin: 0 0 8px; color: #3d5a3a; font-size: 14px;">Pipeline state</h3>
+        <table style="font-size: 13px; border-collapse: collapse;">
+            <tr><td style="padding: 2px 12px 2px 0;">pending_classify</td><td><strong>{pending_classify}</strong></td></tr>
+            <tr><td style="padding: 2px 12px 2px 0;">needs_manual_review</td><td><strong>{needs_manual}</strong></td></tr>
+            <tr><td style="padding: 2px 12px 2px 0;">ready_to_send</td><td><strong>{ready}</strong></td></tr>
+            <tr><td style="padding: 2px 12px 2px 0;">awaiting_approval</td><td><strong>{awaiting}</strong></td></tr>
+        </table>
+        {recs_html}
+    </div>
+    """
+
+
+def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
+                        status_counts: dict, ready_after_run: int) -> str:
     """Build the HTML body of the morning approval email."""
     rows = []
     for d in drafts_summary:
@@ -80,6 +155,8 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict]) -> str
         <ul>{fail_rows}</ul>
         """
 
+    pipeline_section = _build_pipeline_section(status_counts, ready_after_run)
+
     return f"""
     <html>
     <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a1915; max-width: 900px; margin: 20px auto;">
@@ -102,6 +179,7 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict]) -> str
             </tbody>
         </table>
         {failure_section}
+        {pipeline_section}
         <p style="margin-top: 24px; color: #54504a; font-size: 13px;">
             Drafts were created but NOT sent. Open Zoho and click send on the ones you approve.
         </p>
@@ -145,6 +223,17 @@ def main():
 
     if not batch:
         logger.info("Nothing to do.")
+        # Still send a pipeline status email so Ketan sees the state.
+        if not args.dry_run and not args.no_summary:
+            status_counts = _compute_pipeline_status(all_rows, col)
+            summary_html = _build_summary_html([], [], status_counts, ready_after_run=0)
+            summary_msg = zoho.build_message(
+                to_email=config.ZOHO_EMAIL,
+                subject="Enrollify: 0 drafts today — pipeline status inside",
+                html_body=summary_html,
+            )
+            zoho.send_message(summary_msg)
+            logger.info("Pipeline-status email sent.")
         return
 
     drafts_summary = []
@@ -153,7 +242,6 @@ def main():
     for idx, lead in enumerate(batch, start=1):
         logger.info("[%d/%d] %s", idx, len(batch), lead.get("name", "")[:60])
 
-        # Defensive: skip leads missing email
         to_email = lead.get("best_email", "").strip()
         if not to_email:
             logger.warning("  skipping — no email on lead")
@@ -184,7 +272,6 @@ def main():
             })
             continue
 
-        # Build + upload message
         msg = zoho.build_message(
             to_email=to_email,
             subject=rendered.subject,
@@ -194,7 +281,6 @@ def main():
 
         if not success:
             logger.error("  draft upload failed: %s", err)
-            # Mark the lead so we can see what broke
             leads_ws.batch_update(
                 [
                     {"range": rowcol_to_a1(lead["_row_idx"], col["status"] + 1),
@@ -209,7 +295,6 @@ def main():
             failures.append({"school": lead.get("name", ""), "error": err})
             continue
 
-        # Success: advance status and note
         leads_ws.batch_update(
             [
                 {"range": rowcol_to_a1(lead["_row_idx"], col["status"] + 1),
@@ -231,9 +316,14 @@ def main():
 
     # Summary email to Ketan
     if not args.dry_run and not args.no_summary and (drafts_summary or failures):
-        summary_html = _build_summary_html(drafts_summary, failures)
+        # Recompute pipeline counts AFTER drafts ran (so ready_to_send reflects what's left)
+        fresh_rows = leads_ws.get_all_values()
+        status_counts = _compute_pipeline_status(fresh_rows, col)
+        ready_after_run = status_counts.get("ready_to_send", 0)
+
+        summary_html = _build_summary_html(drafts_summary, failures, status_counts, ready_after_run)
         summary_msg = zoho.build_message(
-            to_email=config.ZOHO_EMAIL,  # send to self
+            to_email=config.ZOHO_EMAIL,
             subject=f"Enrollify: {len(drafts_summary)} draft(s) ready for approval",
             html_body=summary_html,
         )

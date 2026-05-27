@@ -135,6 +135,46 @@ def compute_recommendations(stage_counts: dict) -> dict:
     return recs
 
 
+def compute_pipeline_alert(stage_counts: dict) -> dict | None:
+    """
+    Top-of-page banner alert when the pipeline state needs attention.
+    Returns a dict {level, text, action_url, action_label} or None if no alert.
+    """
+    if not stage_counts:
+        return None
+    status_totals = stage_counts.get("_status_totals", {})
+    ready = status_totals.get("ready_to_send", 0)
+    pending = status_totals.get("pending_classify", 0)
+    needs_review = status_totals.get("needs_manual_review", 0)
+
+    # Low queue + waiting work upstream → push to run downstream
+    if ready < 10 and pending >= 100:
+        return {
+            "level": "warning",
+            "text": (
+                f"Draft queue is low ({ready} ready_to_send) and "
+                f"{pending} leads are waiting in pending_classify. "
+                f"Run downstream to refill the queue."
+            ),
+            "action_url": "#downstream",
+            "action_label": "Run downstream",
+        }
+
+    # Low queue with nothing upstream → push to Phase 1 discovery
+    if ready < 10 and pending < 50 and needs_review < 20:
+        return {
+            "level": "info",
+            "text": (
+                f"Draft queue is low ({ready} ready_to_send) and there's "
+                f"nothing waiting upstream. Discover new zips to refill."
+            ),
+            "action_url": "#discovery",
+            "action_label": "Run discovery",
+        }
+
+    return None
+
+
 def get_running_jobs() -> list[dict]:
     """Return jobs currently in 'queued' or 'running' state."""
     return [

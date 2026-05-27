@@ -79,6 +79,7 @@ def home(request: Request):
             "regions_list": regions.list_region_names(),
             "stage_counts": stage_counts,
             "recommendations": dashboard.compute_recommendations(stage_counts),
+            "pipeline_alert": dashboard.compute_pipeline_alert(stage_counts),
             "running_jobs": dashboard.get_running_jobs(),
             "last_job": dashboard.get_last_finished_job(),
         },
