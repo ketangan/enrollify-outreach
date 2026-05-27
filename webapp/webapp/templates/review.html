@@ -22,33 +22,7 @@
   {% endif %}
 </p>
 
-<form method="GET" action="/review" class="review-search">
-  <input type="hidden" name="mode" value="{{ mode }}">
-  <input type="search" name="q" value="{{ search_query }}" placeholder="Jump to a school by name or website…">
-  <button type="submit">Search</button>
-  {% if search_query %}<a href="/review?mode={{ mode }}" class="muted-link">Clear</a>{% endif %}
-</form>
-
-{% if search_msg %}
-  <p class="search-msg">{{ search_msg }}</p>
-{% endif %}
-
-{% if skipped_count > 0 and not search_query and not lead %}
-  <form method="POST" action="/review/clear-skipped" class="clear-skipped-form">
-    <input type="hidden" name="mode" value="{{ mode }}">
-    <p class="muted">You've skipped {{ skipped_count }} lead{% if skipped_count != 1 %}s{% endif %} this session.
-      <button type="submit" class="btn-link-inline">Reset skip list</button>
-    </p>
-  </form>
-{% elif skipped_count > 0 and not search_query %}
-  <p class="muted skip-indicator">
-    Skipped this session: {{ skipped_count }} ·
-    <form method="POST" action="/review/clear-skipped" style="display:inline">
-      <input type="hidden" name="mode" value="{{ mode }}">
-      <button type="submit" class="btn-link-inline">Reset</button>
-    </form>
-  </p>
-{% endif %}
+{# ─── TOP: Single-record review card (mobile-friendly) ─── #}
 
 {% if not lead %}
   <div class="empty-queue">
@@ -120,4 +94,98 @@
     </div>
   </div>
 {% endif %}
+
+{# ─── MIDDLE: Search bar (moved from top) ─── #}
+
+<div class="review-search-section">
+  <form method="GET" action="/review" class="review-search">
+    <input type="hidden" name="mode" value="{{ mode }}">
+    <input type="search" name="q" value="{{ search_query }}" placeholder="Jump to a school by name or website…">
+    <button type="submit">Search</button>
+    {% if search_query %}<a href="/review?mode={{ mode }}" class="muted-link">Clear</a>{% endif %}
+  </form>
+
+  {% if search_msg %}
+    <p class="search-msg">{{ search_msg }}</p>
+  {% endif %}
+
+  {% if skipped_count > 0 %}
+    <p class="muted skip-indicator">
+      Skipped this session: {{ skipped_count }} ·
+      <form method="POST" action="/review/clear-skipped" style="display:inline">
+        <input type="hidden" name="mode" value="{{ mode }}">
+        <button type="submit" class="btn-link-inline">Reset</button>
+      </form>
+    </p>
+  {% endif %}
+</div>
+
+{# ─── BOTTOM: Grid of all leads in current mode (desktop-friendly) ─── #}
+
+<h3 class="grid-heading">All {% if mode == 'pre_send' %}pre-send{% else %}manual review{% endif %} leads ({{ grid_total }})</h3>
+
+{% if grid_rows %}
+<table class="data-table review-grid">
+  <thead>
+    <tr>
+      <th>School</th>
+      <th>Owner Name</th>
+      <th>Email</th>
+      <th>Enrollment Method</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in grid_rows %}
+    <tr class="{% if not r.get('owner_name', '').strip() %}row-blank-owner{% endif %}">
+      <form method="POST" action="/review/grid-update">
+        <input type="hidden" name="lead_id" value="{{ r.get('id', '') }}">
+        <input type="hidden" name="mode" value="{{ mode }}">
+        <input type="hidden" name="page" value="{{ grid_page }}">
+        <td>
+          <div class="school-name">{{ r.get("name", "") }}</div>
+          <div class="school-meta">
+            {{ r.get("category", "") }} · {{ r.get("zip", "") }}
+            {% if r.get("website") %}
+              · <a href="{{ r.get('website') }}" target="_blank" rel="noopener">site ↗</a>
+            {% endif %}
+            · <a href="/review?id={{ r.get('id', '') }}&mode={{ mode }}" title="Load in top card">review ↑</a>
+          </div>
+        </td>
+        <td><input type="text" name="owner_name" value="{{ r.get('owner_name', '') }}" class="queue-input"></td>
+        <td><input type="email" name="best_email" value="{{ r.get('best_email', '') }}" class="queue-input"></td>
+        <td>
+          <select name="enrollment_method" class="queue-input">
+            <option value="">— keep current —</option>
+            {% for opt in method_options %}
+              <option value="{{ opt }}" {% if opt == r.get('enrollment_method', '') %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <button type="submit" class="btn-save-row">Save</button>
+        </td>
+      </form>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{# Pagination #}
+{% if grid_total_pages > 1 %}
+<div class="pagination">
+  {% if grid_page > 1 %}
+    <a href="/review?mode={{ mode }}&page={{ grid_page - 1 }}">← Prev</a>
+  {% endif %}
+  <span>Page {{ grid_page }} of {{ grid_total_pages }} · showing {{ grid_rows|length }} of {{ grid_total }}</span>
+  {% if grid_page < grid_total_pages %}
+    <a href="/review?mode={{ mode }}&page={{ grid_page + 1 }}">Next →</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<p class="muted-empty">No leads in this view.</p>
+{% endif %}
+
 {% endblock %}

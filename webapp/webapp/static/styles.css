@@ -242,6 +242,23 @@ form.filters button:hover { background: #2d4229; }
 .btn-link-inline:hover { color: #2d4229; }
 .clear-skipped-form { margin: 12px 0; }
 
+/* Search section (now between card and grid) */
+.review-search-section {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #e6dfd0;
+}
+
+.grid-heading {
+  font-size: 16px;
+  margin: 24px 0 12px;
+}
+
+.review-grid .school-name { font-weight: 600; font-size: 13px; }
+.review-grid .school-meta { font-size: 11px; color: #777; margin-top: 2px; }
+.review-grid .row-blank-owner { background: #fff8e1; }
+.review-grid .row-blank-owner:hover { background: #fff3c4; }
+
 .empty-queue {
   background: #fff;
   border: 1px solid #c8e6c9;

@@ -28,7 +28,7 @@ from fastapi.templating import Jinja2Templates
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from webapp.webapp import routes_coverage, routes_leads, routes_review, routes_actions, routes_queue
+from webapp.webapp import routes_coverage, routes_leads, routes_review, routes_actions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +58,6 @@ app.include_router(routes_coverage.router)
 app.include_router(routes_leads.router)
 app.include_router(routes_review.router)
 app.include_router(routes_actions.router)
-app.include_router(routes_queue.router)
 
 
 @app.get("/health")
