@@ -2,35 +2,55 @@
 {% block content %}
 <h2>Review</h2>
 
+{# Banner: leads edited via review that need downstream rerun to advance #}
+{% if review_edits_need_rerun > 0 %}
+<div class="pipeline-alert pipeline-alert-warning">
+  <strong>⚠</strong>
+  {{ review_edits_need_rerun }} lead{% if review_edits_need_rerun != 1 %}s{% endif %}
+  you edited here need downstream to advance.
+  <a href="/#downstream" style="margin-left: 6px;">Run downstream →</a>
+</div>
+{% endif %}
+
 {# Mode tabs #}
 <div class="review-tabs">
+  <a href="/review?mode=classify" class="review-tab {% if mode == 'classify' %}active{% endif %}">
+    Classify
+    <span class="tab-count">{{ counts.classify }}</span>
+  </a>
+  <a href="/review?mode=owner" class="review-tab {% if mode == 'owner' %}active{% endif %}">
+    Owner review
+    <span class="tab-count">{{ counts.owner }}</span>
+  </a>
   <a href="/review?mode=pre_send" class="review-tab {% if mode == 'pre_send' %}active{% endif %}">
     Pre-send polish
     <span class="tab-count">{{ counts.pre_send }}</span>
   </a>
-  <a href="/review?mode=manual" class="review-tab {% if mode == 'manual' %}active{% endif %}">
-    Manual review
-    <span class="tab-count">{{ counts.manual }}</span>
-  </a>
 </div>
 
 <p class="muted review-mode-hint">
-  {% if mode == 'pre_send' %}
-    Ready-to-send leads with no owner name. Fix the name so the draft uses it instead of "Hi there".
+  {% if mode == 'classify' %}
+    Phase 3 couldn't classify these. Look at the website and pick the enrollment method — or mark do-not-contact if the school has an online enrollment system.
+  {% elif mode == 'owner' %}
+    Phase 4 couldn't find owner/email. Look at the website and fill in what you can.
   {% else %}
-    Leads that need eyes — Phase 4 couldn't find an email or owner. Add what you can find manually.
+    Ready-to-send leads with no owner name. Fix the name so the draft uses it instead of "Hi there".
   {% endif %}
 </p>
 
-{# ─── TOP: Single-record review card (mobile-friendly) ─── #}
+{# ─── TOP: Single-record review card ─── #}
 
 {% if not lead %}
   <div class="empty-queue">
     <p>✅ Nothing left in this queue.</p>
-    {% if mode == 'pre_send' and counts.manual > 0 %}
-      <p class="muted">{{ counts.manual }} lead{% if counts.manual != 1 %}s{% endif %} waiting in Manual review. <a href="/review?mode=manual">Switch over →</a></p>
-    {% elif mode == 'manual' and counts.pre_send > 0 %}
-      <p class="muted">{{ counts.pre_send }} lead{% if counts.pre_send != 1 %}s{% endif %} waiting in Pre-send polish. <a href="/review?mode=pre_send">Switch over →</a></p>
+    {% if mode != 'classify' and counts.classify > 0 %}
+      <p class="muted">{{ counts.classify }} waiting in Classify. <a href="/review?mode=classify">Switch over →</a></p>
+    {% endif %}
+    {% if mode != 'owner' and counts.owner > 0 %}
+      <p class="muted">{{ counts.owner }} waiting in Owner review. <a href="/review?mode=owner">Switch over →</a></p>
+    {% endif %}
+    {% if mode != 'pre_send' and counts.pre_send > 0 %}
+      <p class="muted">{{ counts.pre_send }} waiting in Pre-send polish. <a href="/review?mode=pre_send">Switch over →</a></p>
     {% endif %}
   </div>
 {% else %}
@@ -60,15 +80,30 @@
       <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
       <input type="hidden" name="mode" value="{{ mode }}">
 
-      <label>
-        Owner name
-        <input type="text" name="owner_name" value="{{ lead.get('owner_name', '') }}">
-      </label>
-
-      <label>
-        Best email
-        <input type="email" name="best_email" value="{{ lead.get('best_email', '') }}">
-      </label>
+      {% if mode == 'classify' %}
+        <label>
+          Enrollment method
+          <select name="enrollment_method">
+            <option value="">— pick one —</option>
+            {% for opt in method_options %}
+              <option value="{{ opt }}" {% if opt == lead.get('enrollment_method', '') %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <p class="muted" style="font-size: 12px; margin: 4px 0 12px;">
+          Any *_qualify → moves to Phase 4 (owner lookup) on next downstream run.<br>
+          online_system_exclude → archived as out-of-scope.
+        </p>
+      {% else %}
+        <label>
+          Owner name
+          <input type="text" name="owner_name" value="{{ lead.get('owner_name', '') }}">
+        </label>
+        <label>
+          Best email
+          <input type="email" name="best_email" value="{{ lead.get('best_email', '') }}">
+        </label>
+      {% endif %}
 
       <div class="review-actions">
         <button type="submit" class="btn-primary">Save &amp; next</button>
@@ -95,7 +130,7 @@
   </div>
 {% endif %}
 
-{# ─── MIDDLE: Search bar (moved from top) ─── #}
+{# ─── MIDDLE: Search bar ─── #}
 
 <div class="review-search-section">
   <form method="GET" action="/review" class="review-search">
@@ -120,15 +155,18 @@
   {% endif %}
 </div>
 
-{# ─── BOTTOM: Grid of all leads in current mode (desktop-friendly) ─── #}
+{# ─── BOTTOM: Grid ─── #}
 
-<h3 class="grid-heading">All {% if mode == 'pre_send' %}pre-send{% else %}manual review{% endif %} leads ({{ grid_total }})</h3>
+<h3 class="grid-heading">
+  All {% if mode == 'classify' %}classify{% elif mode == 'owner' %}owner-review{% else %}pre-send{% endif %} leads ({{ grid_total }})
+</h3>
 
 {% if grid_rows %}
 <table class="data-table review-grid">
   <thead>
     <tr>
       <th>School</th>
+      <th>Website</th>
       <th>Owner Name</th>
       <th>Email</th>
       <th>Enrollment Method</th>
@@ -137,7 +175,7 @@
   </thead>
   <tbody>
   {% for r in grid_rows %}
-    <tr class="{% if not r.get('owner_name', '').strip() %}row-blank-owner{% endif %}">
+    <tr class="{% if not r.get('owner_name', '').strip() and mode == 'pre_send' %}row-blank-owner{% endif %}">
       <form method="POST" action="/review/grid-update">
         <input type="hidden" name="lead_id" value="{{ r.get('id', '') }}">
         <input type="hidden" name="mode" value="{{ mode }}">
@@ -145,12 +183,16 @@
         <td>
           <div class="school-name">{{ r.get("name", "") }}</div>
           <div class="school-meta">
-            {{ r.get("category", "") }} · {{ r.get("zip", "") }}
-            {% if r.get("website") %}
-              · <a href="{{ r.get('website') }}" target="_blank" rel="noopener">site ↗</a>
-            {% endif %}
-            · <a href="/review?id={{ r.get('id', '') }}&mode={{ mode }}" title="Load in top card">review ↑</a>
+            {{ r.get("category", "") }} · {{ r.get("zip", "") }} ·
+            <a href="/review?id={{ r.get('id', '') }}&mode={{ mode }}" title="Load in top card">review ↑</a>
           </div>
+        </td>
+        <td>
+          {% if r.get("website") %}
+            <a href="{{ r.get('website') }}" target="_blank" rel="noopener" class="grid-website">{{ r.get('website')[:50] }}</a>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
         </td>
         <td><input type="text" name="owner_name" value="{{ r.get('owner_name', '') }}" class="queue-input"></td>
         <td><input type="email" name="best_email" value="{{ r.get('best_email', '') }}" class="queue-input"></td>
@@ -171,7 +213,6 @@
   </tbody>
 </table>
 
-{# Pagination #}
 {% if grid_total_pages > 1 %}
 <div class="pagination">
   {% if grid_page > 1 %}

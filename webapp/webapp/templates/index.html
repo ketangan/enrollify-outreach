@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 
-{# ─── Top-of-page alert: pipeline state needs attention ────── #}
-{% if pipeline_alert %}
-<div class="pipeline-alert pipeline-alert-{{ pipeline_alert.level }}">
-  <strong>{% if pipeline_alert.level == 'warning' %}⚠{% else %}ℹ️{% endif %}</strong>
-  {{ pipeline_alert.text }}
+{# ─── Top-of-page alerts: pipeline state needs attention ────── #}
+{% for alert in pipeline_alert %}
+<div class="pipeline-alert pipeline-alert-{{ alert.level }}">
+  <strong>{% if alert.level == 'warning' %}⚠{% else %}ℹ️{% endif %}</strong>
+  {{ alert.text|safe }}
 </div>
-{% endif %}
+{% endfor %}
 
 {# ─── Status bar: currently-running jobs ──────────────── #}
 {% if running_jobs %}

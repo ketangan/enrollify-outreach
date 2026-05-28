@@ -1,19 +1,20 @@
 """
-Review routes — unified manual-review + grid editor.
+Review routes — unified manual-review + grid editor with three modes.
 
-Two modes (via tabs):
-  pre_send  — ready_to_send leads with blank owner_name
-  manual    — needs_manual_review leads
-
-Top section: one-record-at-a-time card (mobile-friendly).
-Bottom section: paginated grid of all leads in the current mode with inline edits.
+Modes:
+  classify  — needs_enrollment_system_classification (Phase 3 fallback;
+              user decides enrollment_method, lead moves to ready_for_owner_lookup
+              or online_system_exclude)
+  owner     — needs_owner_review (Phase 4 fallback; user fills owner/email,
+              lead moves to ready_to_send)
+  pre_send  — ready_to_send leads with blank owner_name (polish before draft)
 
 Endpoints:
-  GET  /review                → render the page
+  GET  /review                → render the page (top card + bottom grid)
   POST /review/save           → Save & Next from top card
   POST /review/skip           → Skip from top card
   POST /review/dnc            → Mark do-not-contact from top card
-  POST /review/grid-update    → Inline edit save from bottom grid (stays on page)
+  POST /review/grid-update    → Inline edit save from bottom grid
   POST /review/clear-skipped  → Reset session skip list
 """
 
@@ -45,13 +46,13 @@ HISTORY_MAX = 5
 SKIPPED_COOKIE = "review_skipped"
 SKIPPED_MAX = 100
 
+MODE_CLASSIFY = "classify"
+MODE_OWNER = "owner"
 MODE_PRE_SEND = "pre_send"
-MODE_MANUAL = "manual"
-VALID_MODES = (MODE_PRE_SEND, MODE_MANUAL)
+VALID_MODES = (MODE_CLASSIFY, MODE_OWNER, MODE_PRE_SEND)
 
 GRID_PAGE_SIZE = 20
 
-# Enrollment method options for the inline grid dropdown.
 ENROLLMENT_METHOD_OPTIONS = [
     "contact_form_qualify",
     "email_qualify",
@@ -84,10 +85,8 @@ def _push_history(history: list[str], lead_id: str) -> list[str]:
 
 
 def _set_history_cookie(response: Response, history: list[str]) -> None:
-    response.set_cookie(
-        HISTORY_COOKIE, json.dumps(history),
-        max_age=60 * 60 * 24, httponly=True, samesite="lax",
-    )
+    response.set_cookie(HISTORY_COOKIE, json.dumps(history),
+                        max_age=60 * 60 * 24, httponly=True, samesite="lax")
 
 
 def _load_skipped(cookie_value: str | None) -> list[str]:
@@ -109,25 +108,25 @@ def _push_skipped(skipped: list[str], lead_id: str) -> list[str]:
 
 
 def _set_skipped_cookie(response: Response, skipped: list[str]) -> None:
-    response.set_cookie(
-        SKIPPED_COOKIE, json.dumps(skipped),
-        max_age=60 * 60 * 24, httponly=True, samesite="lax",
-    )
+    response.set_cookie(SKIPPED_COOKIE, json.dumps(skipped),
+                        max_age=60 * 60 * 24, httponly=True, samesite="lax")
 
 
 def _clear_skipped_cookie(response: Response) -> None:
     response.delete_cookie(SKIPPED_COOKIE)
 
 
-# ─── Sheet helpers ─────────────────────────────────────────────────────
+# ─── Mode filters ──────────────────────────────────────────────────────
 
 def _matches_mode(lead: dict, mode: str) -> bool:
     status = str(lead.get("status", "")).strip()
     name = str(lead.get("owner_name", "")).strip()
+    if mode == MODE_CLASSIFY:
+        return status == "needs_enrollment_system_classification"
+    if mode == MODE_OWNER:
+        return status == "needs_owner_review"
     if mode == MODE_PRE_SEND:
         return status == "ready_to_send" and not name
-    if mode == MODE_MANUAL:
-        return status == "needs_manual_review"
     return False
 
 
@@ -141,8 +140,9 @@ def _find_lead_by_id(lead_id: str) -> dict | None:
 
 def _queue_counts(rows: list[dict]) -> dict[str, int]:
     return {
+        MODE_CLASSIFY: sum(1 for r in rows if _matches_mode(r, MODE_CLASSIFY)),
+        MODE_OWNER: sum(1 for r in rows if _matches_mode(r, MODE_OWNER)),
         MODE_PRE_SEND: sum(1 for r in rows if _matches_mode(r, MODE_PRE_SEND)),
-        MODE_MANUAL: sum(1 for r in rows if _matches_mode(r, MODE_MANUAL)),
     }
 
 
@@ -201,14 +201,9 @@ def _update_lead_fields(lead_id: str, updates: dict) -> bool:
     return True
 
 
-def _redirect_with_mode(path: str, mode: str, **extra) -> RedirectResponse:
-    qs_parts = [f"mode={mode}"]
-    for k, v in extra.items():
-        if v:
-            qs_parts.append(f"{k}={v}")
-    qs = "&".join(qs_parts)
+def _redirect_with_mode(path: str, mode: str) -> RedirectResponse:
     sep = "&" if "?" in path else "?"
-    return RedirectResponse(f"{path}{sep}{qs}", status_code=303)
+    return RedirectResponse(f"{path}{sep}mode={mode}", status_code=303)
 
 
 # ─── Routes ────────────────────────────────────────────────────────────
@@ -216,7 +211,7 @@ def _redirect_with_mode(path: str, mode: str, **extra) -> RedirectResponse:
 @router.get("/review", response_class=HTMLResponse)
 def review_view(
     request: Request,
-    mode: str = MODE_PRE_SEND,
+    mode: str = MODE_OWNER,
     id: str = "",
     q: str = "",
     page: int = 1,
@@ -224,12 +219,19 @@ def review_view(
     review_skipped: str = Cookie(default=None),
 ):
     if mode not in VALID_MODES:
-        mode = MODE_PRE_SEND
+        mode = MODE_OWNER
 
     history = _load_history(review_history)
     skipped = _load_skipped(review_skipped)
     rows = sheets.read_all_rows(config.TAB_LEADS)
     counts = _queue_counts(rows)
+
+    # Count leads that need a downstream rerun because of review edits
+    review_edits_need_rerun = sum(
+        1 for r in rows
+        if str(r.get("last_action", "")).strip().startswith("review_")
+        and str(r.get("status", "")).strip() == "ready_for_owner_lookup"
+    )
 
     search_msg = ""
     if id:
@@ -241,7 +243,6 @@ def review_view(
     else:
         lead = _next_lead_in_mode(rows, mode, skipped_ids=set(skipped))
 
-    # Previous lead in history (for Back button)
     prev_id = ""
     if lead:
         cur_id = str(lead.get("id", ""))
@@ -252,11 +253,8 @@ def review_view(
         elif history:
             prev_id = history[-1]
 
-    # ─── Grid: all leads matching current mode, paginated ───
+    # Grid: all leads matching current mode, sorted, paginated
     grid_leads = [r for r in rows if _matches_mode(r, mode)]
-    # Sort: blank owner_name first (only relevant for pre_send),
-    # then by school name. For manual mode all rows are needs_manual_review;
-    # sort by name only.
     if mode == MODE_PRE_SEND:
         grid_leads.sort(key=lambda r: (
             bool(str(r.get("owner_name", "")).strip()),
@@ -283,7 +281,7 @@ def review_view(
             "search_query": q,
             "search_msg": search_msg,
             "skipped_count": len(skipped),
-            # Grid data
+            "review_edits_need_rerun": review_edits_need_rerun,
             "grid_rows": grid_page,
             "grid_page": page,
             "grid_total_pages": total_pages,
@@ -299,26 +297,57 @@ def review_save(
     lead_id: str = Form(...),
     owner_name: str = Form(""),
     best_email: str = Form(""),
-    mode: str = Form(MODE_PRE_SEND),
+    enrollment_method: str = Form(""),
+    mode: str = Form(MODE_OWNER),
     review_history: str = Cookie(default=None),
     review_skipped: str = Cookie(default=None),
 ):
+    """Save & next from the top card.
+
+    Behavior per mode:
+      classify  → user picks enrollment_method.
+                  online_system_exclude → status=online_system_exclude
+                  any *_qualify          → status=ready_for_owner_lookup
+      owner / pre_send → fill owner_name + best_email.
+                  email non-empty → status=ready_to_send
+                  email empty     → status unchanged (partial save)
+    """
     owner_name = owner_name.strip()
     best_email = best_email.strip().lower()
+    enrollment_method = enrollment_method.strip()
 
-    if best_email:
-        updates = {
-            "owner_name": owner_name,
-            "best_email": best_email,
-            "email_confidence": "manual",
-            "status": "ready_to_send",
-            "last_action": "review_saved",
+    if mode == MODE_CLASSIFY:
+        # Classify mode is about enrollment_method. Email/owner are bonus.
+        updates: dict = {
+            "last_action": "review_classified",
         }
+        if enrollment_method:
+            updates["enrollment_method"] = enrollment_method
+            if enrollment_method == "online_system_exclude":
+                updates["status"] = "online_system_exclude"
+            else:
+                # Any *_qualify value → move to owner lookup
+                updates["status"] = "ready_for_owner_lookup"
+        if owner_name:
+            updates["owner_name"] = owner_name
+        if best_email:
+            updates["best_email"] = best_email
+            updates["email_confidence"] = "manual"
     else:
-        updates = {
-            "owner_name": owner_name,
-            "last_action": "review_partial",
-        }
+        # Owner review + Pre-send polish path
+        if best_email:
+            updates = {
+                "owner_name": owner_name,
+                "best_email": best_email,
+                "email_confidence": "manual",
+                "status": "ready_to_send",
+                "last_action": "review_saved",
+            }
+        else:
+            updates = {
+                "owner_name": owner_name,
+                "last_action": "review_partial",
+            }
 
     if not _update_lead_fields(lead_id, updates):
         logger.warning("review_save: lead %s not found", lead_id)
@@ -334,7 +363,7 @@ def review_save(
 @router.post("/review/skip")
 def review_skip(
     lead_id: str = Form(...),
-    mode: str = Form(MODE_PRE_SEND),
+    mode: str = Form(MODE_OWNER),
     review_history: str = Cookie(default=None),
     review_skipped: str = Cookie(default=None),
 ):
@@ -350,7 +379,7 @@ def review_skip(
 def review_dnc(
     lead_id: str = Form(...),
     reason: str = Form("manual_review_rejection"),
-    mode: str = Form(MODE_PRE_SEND),
+    mode: str = Form(MODE_OWNER),
     review_history: str = Cookie(default=None),
     review_skipped: str = Cookie(default=None),
 ):
@@ -376,30 +405,36 @@ def review_grid_update(
     owner_name: str = Form(""),
     best_email: str = Form(""),
     enrollment_method: str = Form(""),
-    mode: str = Form(MODE_PRE_SEND),
+    website: str = Form(""),
+    mode: str = Form(MODE_OWNER),
     page: int = Form(1),
 ):
     """Inline edit from the bottom grid. Stays on the current page after save."""
     owner_name = owner_name.strip()
     best_email = best_email.strip().lower()
     enrollment_method = enrollment_method.strip()
+    website = website.strip()
 
-    updates: dict = {
-        "last_action": "review_grid_edit",
-    }
+    updates: dict = {"last_action": "review_grid_edit"}
     if owner_name:
         updates["owner_name"] = owner_name
     if best_email:
         updates["best_email"] = best_email
         updates["email_confidence"] = "manual"
+    if website:
+        updates["website"] = website
     if enrollment_method:
         updates["enrollment_method"] = enrollment_method
-        # If user picked the exclude method, demote the lead so it won't get drafted
+
+    # Mode-aware status promotion
+    if mode == MODE_CLASSIFY and enrollment_method:
         if enrollment_method == "online_system_exclude":
             updates["status"] = "online_system_exclude"
+        else:
+            updates["status"] = "ready_for_owner_lookup"
+    elif mode == MODE_OWNER and owner_name and best_email:
+        updates["status"] = "ready_to_send"
 
-    # If pre_send mode and user filled both name+email, promote to ready_to_send
-    # (lead is already ready_to_send, but this ensures status is correct after manual edits)
     if not _update_lead_fields(lead_id, updates):
         logger.warning("review_grid_update: lead %s not found", lead_id)
 
@@ -407,7 +442,7 @@ def review_grid_update(
 
 
 @router.post("/review/clear-skipped")
-def review_clear_skipped(mode: str = Form(MODE_PRE_SEND)):
+def review_clear_skipped(mode: str = Form(MODE_OWNER)):
     response = _redirect_with_mode("/review", mode)
     _clear_skipped_cookie(response)
     return response

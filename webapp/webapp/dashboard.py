@@ -23,7 +23,10 @@ logger = logging.getLogger(__name__)
 STAGE_PENDING_STATUSES = {
     "discovery": [],  # Discovery doesn't pull from existing leads; it adds new ones
     "downstream": ["pending_classify", "ready_for_owner_lookup"],
-    "review": ["needs_manual_review"],
+    "review": [
+        "needs_enrollment_system_classification",
+        "needs_owner_review",
+    ],
     "daily": ["ready_to_send"],
 }
 
@@ -135,34 +138,78 @@ def compute_recommendations(stage_counts: dict) -> dict:
     return recs
 
 
-def compute_pipeline_alert(stage_counts: dict) -> dict | None:
+def count_review_edited_pending_rerun() -> int:
     """
-    Top-of-page banner alert when the pipeline state needs attention.
-    Returns a dict {level, text, action_url, action_label} or None if no alert.
+    Count leads that were manually edited via /review and now need a
+    downstream rerun to advance them. Signal:
+        last_action LIKE 'review_%' AND status = 'ready_for_owner_lookup'
+    """
+    try:
+        rows = sheets.read_all_rows(config.TAB_LEADS)
+    except Exception as e:
+        logger.warning("count_review_edited_pending_rerun: %s", e)
+        return 0
+    n = 0
+    for r in rows:
+        last_action = str(r.get("last_action", "")).strip()
+        status = str(r.get("status", "")).strip()
+        if last_action.startswith("review_") and status == "ready_for_owner_lookup":
+            n += 1
+    return n
+
+
+def compute_pipeline_alert(stage_counts: dict) -> list[dict]:
+    """
+    Top-of-page banner alerts when the pipeline state needs attention.
+    Returns a list of {level, text, action_url, action_label} dicts; empty list when no alerts.
     """
     if not stage_counts:
-        return None
+        return []
     status_totals = stage_counts.get("_status_totals", {})
     ready = status_totals.get("ready_to_send", 0)
     pending = status_totals.get("pending_classify", 0)
-    needs_review = status_totals.get("needs_manual_review", 0)
+    needs_review_total = (
+        status_totals.get("needs_enrollment_system_classification", 0)
+        + status_totals.get("needs_owner_review", 0)
+    )
 
-    # Low queue + waiting work upstream → push to run downstream
+    alerts: list[dict] = []
+
+    # Alert 1: leads were manually edited and need a downstream rerun to advance.
+    # This is a separate sheet read — only do it if there's reason to suspect edits
+    # might be pending (e.g. there are ready_for_owner_lookup rows at all).
+    ready_for_owner_lookup = status_totals.get("ready_for_owner_lookup", 0)
+    if ready_for_owner_lookup > 0:
+        review_pending_rerun = count_review_edited_pending_rerun()
+        if review_pending_rerun > 0:
+            alerts.append({
+                "level": "warning",
+                "text": (
+                    f"{review_pending_rerun} lead{'s' if review_pending_rerun != 1 else ''} "
+                    f"edited during manual review need downstream to advance "
+                    f"(currently in <code>ready_for_owner_lookup</code>)."
+                ),
+                "action_url": "#downstream",
+                "action_label": "Run downstream",
+            })
+
+    # Alert 2: low draft queue + waiting work upstream → push to run downstream
     if ready < 10 and pending >= 100:
-        return {
+        alerts.append({
             "level": "warning",
             "text": (
                 f"Draft queue is low ({ready} ready_to_send) and "
-                f"{pending} leads are waiting in pending_classify. "
+                f"{pending} leads are waiting in <code>pending_classify</code>. "
                 f"Run downstream to refill the queue."
             ),
             "action_url": "#downstream",
             "action_label": "Run downstream",
-        }
+        })
+        return alerts
 
-    # Low queue with nothing upstream → push to Phase 1 discovery
-    if ready < 10 and pending < 50 and needs_review < 20:
-        return {
+    # Alert 3: low queue with nothing upstream → push to Phase 1 discovery
+    if ready < 10 and pending < 50 and needs_review_total < 20:
+        alerts.append({
             "level": "info",
             "text": (
                 f"Draft queue is low ({ready} ready_to_send) and there's "
@@ -170,9 +217,9 @@ def compute_pipeline_alert(stage_counts: dict) -> dict | None:
             ),
             "action_url": "#discovery",
             "action_label": "Run discovery",
-        }
+        })
 
-    return None
+    return alerts
 
 
 def get_running_jobs() -> list[dict]:
