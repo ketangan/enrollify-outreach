@@ -718,3 +718,79 @@ sent leads with no reply sat indefinitely. Now they age out and archive.
 - Phase 2 dedupe was patched to check Archive in addition to Already_Contacted.
   Combined with internal Leads dedupe, dupes should not accumulate going forward.
   If they do, this script is the safety net.
+
+### 2026-05-26 — Manual review split + dashboard fixes
+
+#### Problem
+`needs_manual_review` was a single status used by BOTH Phase 3 (classifier
+fallback) and Phase 4 (owner-finder fallback). When a lead landed there,
+there was no way to know which phase had failed or what action was needed —
+"manually verify the school's enrollment system" vs "manually look up the
+owner's email" are completely different tasks.
+
+#### Status refactor
+Split `needs_manual_review` into two statuses:
+
+- `needs_enrollment_system_classification` — Phase 3 fallback. User picks
+  the enrollment_method in /review (or marks online_system_exclude). On
+  save, lead transitions to `ready_for_owner_lookup` (or
+  `online_system_exclude`) and Phase 4 picks it up on next downstream run.
+
+- `needs_owner_review` — Phase 4 fallback. User fills owner_name + best_email
+  in /review. On save, lead transitions to `ready_to_send`.
+
+#### Files changed
+- `src/classifier.py`: Phase 3 fallback now uses `CLASSIFY_FALLBACK_STATUS`
+  constant (= `needs_enrollment_system_classification`).
+  Also fixed a real bug: `valid_statuses` set was missing
+  `third_party_form_qualify`, so the validator forced legitimate
+  third-party-form classifications back to manual review. This had been
+  contributing to manual review backlog growth since Phase 3 was deployed.
+
+- `scripts/run_phase_4_owners.py`: Phase 4 fallback now uses
+  `OWNER_FALLBACK_STATUS` constant (= `needs_owner_review`).
+
+- `scripts/migrate_manual_review.py` (one-off): split existing
+  needs_manual_review rows based on `last_action` prefix
+  (`phase3_*` → classify; `phase4_*` → owner). Has-email rows default
+  to owner. Ambiguous rows default to classify (safer — sends through
+  full pipeline again rather than skipping it).
+
+- `webapp/webapp/routes_review.py`: three modes (classify / owner / pre_send)
+  with mode-aware Save behavior. Classify mode shows enrollment_method
+  dropdown; the other two modes show owner_name + best_email inputs.
+
+- `webapp/webapp/templates/review.html`: three tabs at top, a dedicated
+  Website column in the bottom grid (was a tiny "site ↗" link), and a
+  banner that warns when leads edited via Review need downstream to advance.
+
+#### Dashboard fixes (same session)
+- `STAGE_PENDING_STATUSES["review"]` was pointing at the old `needs_manual_review`
+  name, so the Review card on the home page was showing 0 pending after the
+  migration. Updated to count both new statuses.
+- New `compute_pipeline_alert` returns a *list* of alerts (was returning
+  one or none). Three alert types now: review-edits-need-rerun,
+  low-queue-with-upstream-work, low-queue-with-nothing-upstream.
+- New `count_review_edited_pending_rerun()` detects leads where
+  `last_action LIKE 'review_%'` AND `status = 'ready_for_owner_lookup'`.
+  When > 0, both the home page and /review show a "Run downstream" banner.
+
+#### Migration outcome
+- 408 leads in `needs_manual_review` before migration
+- 299 → `needs_enrollment_system_classification`
+- 109 → `needs_owner_review`
+
+#### Why the classify bucket is bigger than the owner bucket
+Two factors compound:
+1. The fixed `third_party_form_qualify` validator bug had been silently
+   sending Phase 3 classifications into manual review for weeks. Many of
+   those rows still have `last_action=phase3_classified` and ended up
+   correctly routed to classify in this migration.
+2. Phase 4 has a Stage 2 web-search fallback that catches many cases that
+   would otherwise have fallen to manual review.
+
+#### Known gap (deferred)
+No "retry Phase 4 lookup" button. If you mark a classify lead as
+`ready_for_owner_lookup` via review, it still needs you to click Run
+Downstream from the dashboard. Auto-running Phase 4 on save was considered
+and rejected (cost surprise + latency + failure handling).
