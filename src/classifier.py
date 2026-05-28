@@ -11,7 +11,8 @@ Output enum:
 - contact_form_qualify
 - email_qualify
 - pdf_form_qualify
-- needs_manual_review
+- third_party_form_qualify
+- needs_enrollment_system_classification  (formerly needs_manual_review for Phase 3 fallback)
 """
 
 from __future__ import annotations
@@ -29,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 HAIKU_MODEL = "claude-haiku-4-5"
 MAX_OUTPUT_TOKENS = 150
+
+# Status used when Phase 3 can't confidently classify a lead.
+# Used to be "needs_manual_review" — renamed so Phase 3 vs Phase 4 fallbacks are distinguishable.
+CLASSIFY_FALLBACK_STATUS = "needs_enrollment_system_classification"
 
 # Strong signals that a site has an online enrollment system
 ONLINE_SYSTEM_KEYWORDS = [
@@ -67,7 +72,7 @@ EMAIL_ENROLLMENT_KEYWORDS = [
 
 @dataclass
 class Classification:
-    status: str  # one of the enum values
+    status: str
     reason: str
     used_llm: bool
     pages_fetched: int = 0
@@ -95,7 +100,6 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
     combined_snippet = " ".join(p.raw_html_snippet for p in pages if p.raw_html_snippet)
     combined_text = " ".join(p.text for p in pages if p.text)
 
-    # Vendor markers = definite online system
     hit, reason = _check_vendor_markers(combined_snippet)
     if hit:
         return Classification(
@@ -105,7 +109,6 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
             pages_fetched=len(pages),
         )
 
-    # Online system keywords
     hit, reason = _check_keywords(combined_text, ONLINE_SYSTEM_KEYWORDS)
     if hit:
         return Classification(
@@ -115,7 +118,6 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
             pages_fetched=len(pages),
         )
 
-    # PDF form signals
     hit, reason = _check_keywords(combined_text, PDF_FORM_KEYWORDS)
     if hit:
         return Classification(
@@ -125,7 +127,7 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
             pages_fetched=len(pages),
         )
 
-    return None  # Uncertain — escalate to LLM
+    return None
 
 
 SYSTEM_PROMPT = """You are an enrollment-process classifier for small activity-based schools (dance, music, preschool, sports, etc.).
@@ -133,7 +135,7 @@ SYSTEM_PROMPT = """You are an enrollment-process classifier for small activity-b
 Given a school's website content, determine how prospective families begin the enrollment process.
 
 Respond with ONLY a JSON object (no markdown, no prose):
-{"status": "<online_system_exclude | contact_form_qualify | email_qualify | pdf_form_qualify | third_party_form_qualify | needs_manual_review>", "reason": "<1-sentence explanation citing specific evidence>"}
+{"status": "<online_system_exclude | contact_form_qualify | email_qualify | pdf_form_qualify | third_party_form_qualify | needs_enrollment_system_classification>", "reason": "<1-sentence explanation citing specific evidence>"}
 
 Classification rules (apply in order — pick the first that fits):
 
@@ -159,7 +161,7 @@ Classification rules (apply in order — pick the first that fits):
 
 5. email_qualify — if the only path is emailing the school directly (no form, no online system, no PDF)
 
-6. needs_manual_review — ONLY if:
+6. needs_enrollment_system_classification — ONLY if:
    - The site couldn't be classified because content is missing/broken/cookie-wall
    - No enrollment mechanism of any kind is mentioned anywhere
 
@@ -193,7 +195,7 @@ def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classif
                 {
                     "type": "text",
                     "text": SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},  # prompt caching
+                    "cache_control": {"type": "ephemeral"},
                 }
             ],
             messages=[{"role": "user", "content": user_content}],
@@ -201,40 +203,47 @@ def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classif
     except Exception as e:
         logger.warning("LLM call failed: %s", e)
         return Classification(
-            status="needs_manual_review",
+            status=CLASSIFY_FALLBACK_STATUS,
             reason=f"llm_error:{type(e).__name__}",
             used_llm=True,
             pages_fetched=len(pages),
         )
 
     raw = resp.content[0].text.strip()
-    # Strip markdown fences if present
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
 
     try:
         parsed = json.loads(raw)
-        status = parsed.get("status", "needs_manual_review")
+        status = parsed.get("status", CLASSIFY_FALLBACK_STATUS)
         reason = parsed.get("reason", "")
     except json.JSONDecodeError:
         logger.warning("Failed to parse LLM response: %s", raw[:200])
         return Classification(
-            status="needs_manual_review",
+            status=CLASSIFY_FALLBACK_STATUS,
             reason=f"parse_error:{raw[:100]}",
             used_llm=True,
             pages_fetched=len(pages),
         )
 
+    # Bug fix: third_party_form_qualify was missing from the valid set.
+    # Also accept the legacy needs_manual_review value (LLM may emit it from training)
+    # but normalize to the new name.
     valid_statuses = {
         "online_system_exclude",
         "contact_form_qualify",
         "email_qualify",
         "pdf_form_qualify",
-        "needs_manual_review",
+        "third_party_form_qualify",
+        "needs_enrollment_system_classification",
+        "needs_manual_review",  # accepted but normalized below
     }
     if status not in valid_statuses:
-        status = "needs_manual_review"
-        reason = f"invalid_status:{status}"
+        original = status
+        status = CLASSIFY_FALLBACK_STATUS
+        reason = f"invalid_status:{original}"
+    elif status == "needs_manual_review":
+        status = CLASSIFY_FALLBACK_STATUS
 
     return Classification(
         status=status,
@@ -246,7 +255,6 @@ def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classif
 
 def classify_lead(website: str, client: Anthropic) -> Classification:
     """Full Phase 3 classification pipeline for one lead."""
-    # Stage 0: cheap skip-list domain check (pre-filter layer)
     skip, reason = skip_lists.is_skipped_by_domain(website)
     if skip:
         return Classification(
@@ -256,11 +264,10 @@ def classify_lead(website: str, client: Anthropic) -> Classification:
             pages_fetched=0,
         )
 
-    # Stage 1: fetch homepage
     home = fetcher.fetch(website)
     if home.error:
         return Classification(
-            status="needs_manual_review",
+            status=CLASSIFY_FALLBACK_STATUS,
             reason=f"fetch_failed:{home.error}",
             used_llm=False,
             pages_fetched=0,
@@ -268,22 +275,18 @@ def classify_lead(website: str, client: Anthropic) -> Classification:
 
     pages = [home]
 
-    # Stage 2: try local classification from homepage alone
     verdict = local_classify(pages)
     if verdict:
         return verdict
 
-    # Stage 3: fetch enrollment sub-pages
     sub_urls = fetcher.find_enrollment_links(home, max_links=2)
     for sub_url in sub_urls:
         sub = fetcher.fetch(sub_url)
         if not sub.error:
             pages.append(sub)
 
-    # Stage 4: retry local classification with more context
     verdict = local_classify(pages)
     if verdict:
         return verdict
 
-    # Stage 5: LLM fallback
     return llm_classify(pages, client)

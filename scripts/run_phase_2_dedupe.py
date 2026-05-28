@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Phase 2: Dedupe Leads against Already_Contacted.
+Phase 2: Dedupe Leads against Already_Contacted + Archive.
 
 For each lead with status=pending_classify:
-  - If website matches a row in Already_Contacted (normalized compare): mark already_contacted
+  - If website matches a row in Already_Contacted or Archive (normalized compare):
+    mark already_contacted
   - Else if school name fuzzy-matches >= 90%: mark already_contacted
   - Else: leave alone
 
@@ -22,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from gspread.utils import rowcol_to_a1
 from rapidfuzz import fuzz
 
 from src import config, sheets
@@ -35,6 +37,10 @@ logger = logging.getLogger("phase2")
 
 FUZZY_THRESHOLD = 90
 
+# Batch size for Sheets writes. 50 cells/batch_update call keeps us well under
+# the 60 writes/minute quota even at maximum throughput.
+BATCH_SIZE = 50
+
 
 def _normalize_url(url: str) -> str:
     """Strip protocol, www., trailing slash; lowercase."""
@@ -44,7 +50,6 @@ def _normalize_url(url: str) -> str:
     url = re.sub(r"^https?://", "", url)
     url = re.sub(r"^www\.", "", url)
     url = url.rstrip("/")
-    # Drop path/query — compare domain only for reliability
     url = url.split("/")[0]
     return url
 
@@ -91,7 +96,6 @@ def find_match(
 
     n = _normalize_name(lead_name)
     if n and contacted_names:
-        # Get best fuzzy match
         best_name = None
         best_score = 0
         for candidate in contacted_names:
@@ -119,7 +123,6 @@ def main():
                 len(contacted), len(archived))
 
     # Archive uses 'name' (Leads schema), Already_Contacted uses 'school_name'.
-    # Normalize: copy 'name' -> 'school_name' for archived rows before indexing.
     for r in archived:
         if not r.get("school_name") and r.get("name"):
             r["school_name"] = r["name"]
@@ -142,7 +145,7 @@ def main():
         sys.exit(1)
 
     matches = []
-    for i, row in enumerate(all_rows[1:], start=2):  # skip header, 1-indexed
+    for i, row in enumerate(all_rows[1:], start=2):
         if len(row) <= max(website_col, name_col):
             continue
         status = row[status_col - 1] if len(row) >= status_col else ""
@@ -158,7 +161,7 @@ def main():
         if is_match:
             matches.append((i, lead_name, reason))
 
-    logger.info("Found %d leads matching Already_Contacted", len(matches))
+    logger.info("Found %d leads matching Already_Contacted or Archive", len(matches))
     for row_idx, name, reason in matches[:20]:
         logger.info("  row %d: %s (%s)", row_idx, name, reason)
     if len(matches) > 20:
@@ -168,14 +171,30 @@ def main():
         logger.info("DRY RUN. Pass --commit to apply.")
         return
 
-    logger.info("Applying status=already_contacted to %d rows...", len(matches))
+    if not matches:
+        return
+
+    # Build batched cell updates. Each match = 2 cells.
+    # batch_update sends many cell-updates in a single API call → avoids rate limits.
+    logger.info("Applying status=already_contacted to %d rows in batches...", len(matches))
+    updates = []
     for row_idx, _, reason in matches:
-        leads_ws.update_cell(row_idx, status_col, "already_contacted")
-        leads_ws.update_cell(row_idx, last_action_col, f"dedupe:{reason}")
+        updates.append({
+            "range": rowcol_to_a1(row_idx, status_col),
+            "values": [["already_contacted"]],
+        })
+        updates.append({
+            "range": rowcol_to_a1(row_idx, last_action_col),
+            "values": [[f"dedupe:{reason}"]],
+        })
+
+    for i in range(0, len(updates), BATCH_SIZE):
+        chunk = updates[i:i + BATCH_SIZE]
+        leads_ws.batch_update(chunk, value_input_option="USER_ENTERED")
+        logger.info("  applied %d/%d updates", min(i + BATCH_SIZE, len(updates)), len(updates))
 
     logger.info("Done.")
 
 
 if __name__ == "__main__":
     main()
-    

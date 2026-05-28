@@ -4,7 +4,7 @@ Phase 4: Find owner + email for qualified leads.
 
 Processes leads with status=ready_for_owner_lookup.
 On success -> status=ready_to_send
-On failure -> status=needs_manual_review
+On failure -> status=needs_owner_review  (was: needs_manual_review)
 
 Usage:
   python scripts/run_phase_4_owners.py --limit 10 --dry-run
@@ -35,6 +35,10 @@ logger = logging.getLogger("phase4")
 
 POLITE_DELAY_SECONDS = 1.5
 
+# Status used when Phase 4 can't find a usable owner/email.
+# Renamed from "needs_manual_review" so Phase 3 vs Phase 4 fallbacks are distinguishable.
+OWNER_FALLBACK_STATUS = "needs_owner_review"
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -62,7 +66,6 @@ def main():
         logger.error("Missing columns in Leads: %s", missing)
         sys.exit(1)
 
-    # Collect todo
     todo = []
     for i, row in enumerate(all_rows[1:], start=2):
         if len(row) <= max(col.values()):
@@ -106,11 +109,10 @@ def main():
 
         confidence_counts[result.email_confidence] += 1
 
-        # Determine new status — empty email means we can't send, full stop
+        # Empty email = can't send, route to manual owner review
         if not result.best_email:
-            new_status = "needs_manual_review"
+            new_status = OWNER_FALLBACK_STATUS
             review_count += 1
-            # Force confidence down if LLM claimed medium/high with no email
             if result.email_confidence in {"high", "medium"}:
                 logger.warning("   LLM returned %s confidence with empty email — forcing low",
                                result.email_confidence)
@@ -118,7 +120,7 @@ def main():
         elif result.email_confidence in {"high", "medium"}:
             new_status = "ready_to_send"
         else:
-            new_status = "needs_manual_review"
+            new_status = OWNER_FALLBACK_STATUS
             review_count += 1
 
         logger.info(
