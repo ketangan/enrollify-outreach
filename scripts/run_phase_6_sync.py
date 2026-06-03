@@ -4,10 +4,13 @@ Phase 6 sync: reconcile Zoho Sent + Inbox with the Leads sheet.
 
 - Sent items → mark leads as `sent`, record sent_at and sent_message_id,
   schedule follow_up_at = sent_at + 7 days.
-- Inbox replies:
+- Inbox replies (threaded):
     * Real human reply → mark `replied`, send 🚨 alert
     * Mailer-daemon bounce → mark `bounced`, capture error, send 📭 alert
-- Follow-up sends detected by In-Reply-To threading.
+- Inbox bounces (UNTHREADED): mailer-daemon notifications that don't carry
+  In-Reply-To headers. We scan the inbox for bounce-shaped messages and
+  match them to leads by extracting the recipient email from the bounce body.
+- Follow-up sends detected by In-Reply-To threading in Sent folder.
 
 Usage:
   python scripts/run_phase_6_sync.py              # run once, real updates
@@ -18,10 +21,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import email
+import imaplib
 import logging
 import re
+import ssl
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -53,6 +59,20 @@ BOUNCE_SUBJECT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# SMTP error codes — accept both 4xx (soft-bounces-turned-permanent) and 5xx (hard).
+# Zoho gives up after ~4 days of retrying 4xx and sends a permanent failure notice
+# with the original 4xx code preserved in the body.
+SMTP_CODE_PATTERN = re.compile(r"\b([45]\d\d)\b[^\n]{0,200}")
+
+# Headers and body lines that contain the failed recipient address.
+RECIPIENT_PATTERNS = [
+    re.compile(r"Final-Recipient:\s*(?:rfc822;\s*)?([^\s;,<>]+@[^\s;,<>]+)", re.IGNORECASE),
+    re.compile(r"Original-Recipient:\s*(?:rfc822;\s*)?([^\s;,<>]+@[^\s;,<>]+)", re.IGNORECASE),
+    re.compile(r"To:\s*\"?[^\"<]*\"?\s*<?([^\s;,<>]+@[^\s;,<>]+)>?", re.IGNORECASE),
+]
+
+EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
 
 def _is_bounce(from_email: str, subject: str) -> bool:
     """True if this looks like a mail-server bounce, not a human reply."""
@@ -64,14 +84,49 @@ def _is_bounce(from_email: str, subject: str) -> bool:
 
 
 def _extract_bounce_reason(snippet: str) -> str:
-    """Pull a short reason string out of a bounce body snippet."""
+    """Pull a short reason string out of a bounce body snippet.
+    Catches both 4xx and 5xx SMTP error codes.
+    """
     if not snippet:
         return "bounced"
-    # Look for an SMTP 5xx error code line
-    match = re.search(r"(5\d\d)[^\n]{0,200}", snippet)
+    match = SMTP_CODE_PATTERN.search(snippet)
     if match:
         return f"bounce_{match.group(1)}:{match.group(0)[:200]}"
     return f"bounce:{snippet[:200]}"
+
+
+def _extract_recipient_from_bounce(body: str) -> str:
+    """
+    Try to pull the recipient email address out of a bounce body.
+    Bounce messages typically include Final-Recipient / Original-Recipient
+    DSN headers and/or repeat the To: header from the failed message.
+    Returns lowercased email or "".
+    """
+    if not body:
+        return ""
+
+    for pattern in RECIPIENT_PATTERNS:
+        m = pattern.search(body)
+        if m:
+            candidate = m.group(1).strip().strip("<>").lower()
+            # Avoid matching enrollifyapp.com (the sender) or zoho.com infra addresses
+            if candidate and not candidate.endswith("@enrollifyapp.com") \
+               and "mailer-daemon" not in candidate \
+               and "postmaster" not in candidate \
+               and "@zoho.com" not in candidate \
+               and "@zohomail.com" not in candidate:
+                return candidate
+
+    # Fallback: grab ANY email from the body and pick the first non-infra one
+    for em in EMAIL_REGEX.findall(body):
+        em_low = em.lower()
+        if not em_low.endswith("@enrollifyapp.com") \
+           and "mailer-daemon" not in em_low \
+           and "postmaster" not in em_low \
+           and "@zoho.com" not in em_low \
+           and "@zohomail.com" not in em_low:
+            return em_low
+    return ""
 
 
 # ─── Sheet helpers ─────────────────────────────────────────────────────
@@ -80,10 +135,10 @@ def _index_leads_by_email(leads_rows: list[dict]) -> dict[str, list[dict]]:
     """Leads keyed by lowercase email (multiple leads may share same email)."""
     by_email = {}
     for lead in leads_rows:
-        email = (lead.get("best_email") or "").strip().lower()
-        if not email:
+        email_addr = (lead.get("best_email") or "").strip().lower()
+        if not email_addr:
             continue
-        by_email.setdefault(email, []).append(lead)
+        by_email.setdefault(email_addr, []).append(lead)
     return by_email
 
 
@@ -137,32 +192,33 @@ def _send_bounce_alert(school_name: str, to_email: str, reason: str) -> None:
         logger.error("Failed to send bounce alert: %s", err)
 
 
-# ─── Follow-up detection ───────────────────────────────────────────────
+# ─── IMAP helpers ──────────────────────────────────────────────────────
+
+def _imap_connect():
+    """Connect & login to Zoho IMAP. Caller is responsible for logout."""
+    ctx = ssl.create_default_context()
+    conn = imaplib.IMAP4_SSL(
+        host=config.ZOHO_IMAP_HOST,
+        port=config.ZOHO_IMAP_PORT,
+        ssl_context=ctx,
+    )
+    conn.login(config.ZOHO_EMAIL, config.ZOHO_APP_PASSWORD)
+    return conn
+
 
 def _fetch_followup_message_map(original_message_ids: set, since_days: int) -> dict[str, str]:
     """
     Fetch sent messages with their In-Reply-To headers.
     Returns {sent_message_id: in_reply_to_id} for messages that reply to known originals.
     """
-    import email
-    import imaplib
-    import ssl
-    from datetime import datetime, timedelta, timezone
-
     if not original_message_ids:
         return {}
 
     result_map = {}
+    conn = None
     try:
-        ctx = ssl.create_default_context()
-        conn = imaplib.IMAP4_SSL(
-            host=config.ZOHO_IMAP_HOST,
-            port=config.ZOHO_IMAP_PORT,
-            ssl_context=ctx,
-        )
-        conn.login(config.ZOHO_EMAIL, config.ZOHO_APP_PASSWORD)
+        conn = _imap_connect()
         conn.select("Sent", readonly=True)
-
         since_date = (datetime.now(timezone.utc) - timedelta(days=since_days)).strftime("%d-%b-%Y")
         status, data = conn.search(None, f'(SINCE "{since_date}")')
         if status != "OK":
@@ -180,12 +236,110 @@ def _fetch_followup_message_map(original_message_ids: set, since_days: int) -> d
     except Exception as e:
         logger.warning("Follow-up detection IMAP fetch failed: %s", e)
     finally:
-        try:
-            conn.logout()
-        except Exception:
-            pass
+        if conn:
+            try:
+                conn.logout()
+            except Exception:
+                pass
 
     return result_map
+
+
+def _fetch_unthreaded_bounces(since_days: int) -> list[dict]:
+    """
+    Scan the Inbox for bounce-shaped messages that did NOT thread to any
+    sent message (no In-Reply-To header, OR In-Reply-To doesn't match anything
+    we sent). These come from mailer-daemon@mx.zohomail.com when Zoho's
+    own MTA gives up after retrying a soft bounce.
+
+    Returns list of {from, subject, body, recipient} dicts. We do all the
+    parsing here so the caller doesn't need IMAP knowledge.
+    """
+    results: list[dict] = []
+    conn = None
+    try:
+        conn = _imap_connect()
+        conn.select("INBOX", readonly=True)
+        since_date = (datetime.now(timezone.utc) - timedelta(days=since_days)).strftime("%d-%b-%Y")
+        # Search broadly for bounce-shaped messages by FROM and SUBJECT.
+        # We OR the two; IMAP search syntax is RPN-ish.
+        status, data = conn.search(
+            None,
+            f'(SINCE "{since_date}") (OR '
+            'FROM "mailer-daemon" '
+            '(OR FROM "postmaster" '
+            '(OR SUBJECT "undelivered" '
+            '(OR SUBJECT "returned to sender" '
+            '(OR SUBJECT "delivery failure" SUBJECT "delivery status")))))',
+        )
+        if status != "OK":
+            logger.warning("IMAP search for bounces failed")
+            return []
+
+        uids = data[0].split()
+        logger.info("  %d candidate bounce-shaped messages in Inbox", len(uids))
+
+        for uid in uids:
+            status, msg_data = conn.fetch(uid, "(RFC822)")
+            if status != "OK":
+                continue
+            try:
+                msg = email.message_from_bytes(msg_data[0][1])
+            except Exception:
+                continue
+
+            from_addr = (msg.get("From") or "").strip()
+            subject = (msg.get("Subject") or "").strip()
+            in_reply_to = (msg.get("In-Reply-To") or "").strip()
+
+            # Verify it really looks like a bounce
+            if not _is_bounce(from_addr, subject):
+                continue
+
+            # Extract body — bounce messages are usually multipart with the
+            # diagnostic info in the first text/plain part.
+            body_text = ""
+            if msg.is_multipart():
+                for part in msg.walk():
+                    ctype = part.get_content_type()
+                    if ctype in ("text/plain", "message/delivery-status",
+                                 "message/rfc822", "message/global-delivery-status"):
+                        try:
+                            payload = part.get_payload(decode=True)
+                            if payload:
+                                body_text += payload.decode("utf-8", errors="replace") + "\n\n"
+                        except Exception:
+                            continue
+            else:
+                try:
+                    payload = msg.get_payload(decode=True)
+                    if payload:
+                        body_text = payload.decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+
+            recipient = _extract_recipient_from_bounce(body_text)
+            if not recipient:
+                logger.debug("  bounce-shaped msg with no extractable recipient; skipping")
+                continue
+
+            results.append({
+                "from": from_addr,
+                "subject": subject,
+                "body": body_text,
+                "recipient": recipient,
+                "in_reply_to": in_reply_to,
+            })
+    except Exception as e:
+        logger.warning("Unthreaded-bounce IMAP scan failed: %s", e)
+    finally:
+        if conn:
+            try:
+                conn.logout()
+            except Exception:
+                pass
+
+    return results
 
 
 # ─── Main ──────────────────────────────────────────────────────────────
@@ -230,14 +384,12 @@ def main():
     sent_updates = 0
     follow_up_updates = 0
 
-    # Set of all known original message IDs (from leads marked 'sent')
     original_message_ids = {
         lead.get("sent_message_id", "").strip()
         for lead in leads_list
         if lead.get("status") == "sent" and lead.get("sent_message_id", "").strip()
     }
 
-    # Map sent_id -> in_reply_to for follow-up detection
     follow_up_message_map = _fetch_followup_message_map(original_message_ids, args.since_days)
 
     for sm in sent_msgs:
@@ -245,7 +397,6 @@ def main():
         if not candidates:
             continue
 
-        # Is this a follow-up?
         replied_to = follow_up_message_map.get(sm.message_id)
         if replied_to and replied_to in original_message_ids:
             target = None
@@ -266,7 +417,6 @@ def main():
                 follow_up_updates += 1
             continue
 
-        # First-time send: find an awaiting_approval candidate
         target = None
         for lead in candidates:
             current_status = lead.get("status", "")
@@ -303,7 +453,7 @@ def main():
 
     logger.info("Sent-sync: %d new sends, %d follow-up sends.", sent_updates, follow_up_updates)
 
-    # ══════════════════ REPLY / BOUNCE SYNC ══════════════════
+    # ══════════════════ REPLY / THREADED-BOUNCE SYNC ══════════════════
     # Rebuild the message-id index from current sheet contents
     message_id_to_lead = {}
     fresh_rows = sheets.read_all_rows(config.TAB_LEADS)
@@ -318,9 +468,11 @@ def main():
 
     reply_updates = 0
     bounce_updates = 0
+    # Track recipient addresses already processed in this run so the unthreaded
+    # bounce scan doesn't re-mark the same lead.
+    handled_recipients: set[str] = set()
 
     for reply in replies:
-        # Match by In-Reply-To or any References entry
         matched_lead = message_id_to_lead.get(reply.in_reply_to)
         if not matched_lead:
             for ref in reply.references:
@@ -330,7 +482,6 @@ def main():
         if not matched_lead:
             continue
 
-        # Skip if already terminal
         cur_status = matched_lead.get("status", "")
         if cur_status in ("replied", "bounced", "do_not_contact"):
             continue
@@ -339,7 +490,7 @@ def main():
 
         if is_bounce:
             bounce_reason = _extract_bounce_reason(reply.snippet)
-            logger.info("  📭 BOUNCE: %s (%s)",
+            logger.info("  📭 BOUNCE (threaded): %s (%s)",
                         matched_lead.get("name", ""),
                         matched_lead.get("best_email", ""))
         else:
@@ -347,7 +498,6 @@ def main():
                         matched_lead.get("name", ""), reply.from_email)
 
         if not args.dry_run:
-            # Find row index by sent_message_id
             row_idx = None
             for i, r in enumerate(all_rows[1:], start=2):
                 if len(r) > col["sent_message_id"] and \
@@ -378,6 +528,9 @@ def main():
                     reason=bounce_reason,
                 )
                 bounce_updates += 1
+                em = (matched_lead.get("best_email") or "").strip().lower()
+                if em:
+                    handled_recipients.add(em)
             else:
                 leads_ws.batch_update([
                     {"range": rowcol_to_a1(row_idx, col["status"] + 1),
@@ -401,11 +554,75 @@ def main():
             else:
                 reply_updates += 1
 
-    logger.info("Reply-sync: %d replies, %d bounces.", reply_updates, bounce_updates)
+    # ══════════════════ UNTHREADED BOUNCE SCAN ══════════════════
+    # Catches mailer-daemon notifications that don't thread (no In-Reply-To)
+    # or that thread but to message IDs we no longer have. Matches by
+    # recipient email extracted from the bounce body.
+    logger.info("Scanning inbox for unthreaded bounces (last %d days)...", args.since_days)
+    unthreaded = _fetch_unthreaded_bounces(args.since_days)
+    logger.info("  %d unthreaded bounce candidates", len(unthreaded))
+
+    unthreaded_bounce_updates = 0
+    for b in unthreaded:
+        recipient = b["recipient"]
+        if recipient in handled_recipients:
+            continue  # already processed in the threaded pass
+
+        candidates = by_email.get(recipient, [])
+        if not candidates:
+            continue
+
+        # Pick the first non-terminal candidate. Prefer status=sent;
+        # fall back to awaiting_approval.
+        target = None
+        for lead in candidates:
+            cur_status = lead.get("status", "")
+            if cur_status in ("replied", "bounced", "do_not_contact", "closed_no_reply"):
+                continue
+            if cur_status == "sent":
+                target = lead
+                break
+            if not target:
+                target = lead
+        if not target:
+            continue
+
+        bounce_reason = _extract_bounce_reason(b["body"])
+        logger.info("  📭 BOUNCE (unthreaded): %s (%s)",
+                    target.get("name", ""), recipient)
+
+        if not args.dry_run:
+            row_idx = target["_row_idx"]
+            updates = [
+                {"range": rowcol_to_a1(row_idx, col["status"] + 1),
+                 "values": [["bounced"]]},
+                {"range": rowcol_to_a1(row_idx, col["last_action"] + 1),
+                 "values": [["phase6_bounce_detected_unthreaded"]]},
+            ]
+            if "do_not_contact_reason" in col:
+                updates.append({
+                    "range": rowcol_to_a1(row_idx, col["do_not_contact_reason"] + 1),
+                    "values": [[bounce_reason]],
+                })
+            leads_ws.batch_update(updates, value_input_option="USER_ENTERED")
+
+            _send_bounce_alert(
+                school_name=target.get("name", ""),
+                to_email=recipient,
+                reason=bounce_reason,
+            )
+
+        handled_recipients.add(recipient)
+        unthreaded_bounce_updates += 1
+
+    total_bounce_updates = bounce_updates + unthreaded_bounce_updates
+
+    logger.info("Reply-sync: %d replies, %d threaded bounces, %d unthreaded bounces.",
+                reply_updates, bounce_updates, unthreaded_bounce_updates)
     logger.info("")
     logger.info("=" * 50)
     logger.info("Phase 6 sync complete. Sent: %d. Replies: %d. Bounces: %d.",
-                sent_updates, reply_updates, bounce_updates)
+                sent_updates, reply_updates, total_bounce_updates)
 
 
 if __name__ == "__main__":
