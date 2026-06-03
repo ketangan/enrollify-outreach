@@ -733,3 +733,30 @@ form.filters button:hover { background: #2d4229; }
 .task a:hover {
   text-decoration: underline;
 }
+
+.task pre {
+  background: #f3ede1;
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin: 6px 0;
+  overflow-x: auto;
+}
+
+.task pre code {
+  background: transparent;
+  padding: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #1a1915;
+  white-space: pre;
+}
+
+.task-warn {
+  background: #fff3cd;
+  border-left: 3px solid #ffa726;
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-size: 12px !important;
+  color: #6b3a00 !important;
+  margin-top: 8px !important;
+}

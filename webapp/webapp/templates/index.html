@@ -137,52 +137,105 @@
 
     <div class="task">
       <h4>Add zip codes for a new area</h4>
-      <p>Edit <code>config/regions.yaml</code>. Add zips under an existing region or define a new one (e.g. <code>South_Bay</code> with Redondo/Torrance zips). Then use the Discovery card above with the region selected.</p>
+      <p>Edit <code>config/regions.yaml</code>. Add zips under an existing region or define a new one:</p>
+      <pre><code>South_Bay:
+  - 90277  # Redondo Beach
+  - 90501  # Torrance</code></pre>
+      <p>Then use the Discovery card above with the region selected. <code>--auto</code> processes zips ordered by distance from <code>HOME_ZIP=90045</code>.</p>
+      <p class="task-warn">⚠ Each zip uses roughly $0.50 of Places API credit. <code>--max-zips 2</code> is a safe default. Don't run a 100-zip region unattended.</p>
     </div>
 
     <div class="task">
       <h4>Check for duplicate drafts in Zoho before sending</h4>
-      <p>Run <code>python scripts/audit_drafts.py</code>. Cross-references each draft against Leads + Already_Contacted + Archive. Flags real duplicates and legitimate follow-ups separately.</p>
+      <p><strong>Run before every batch send:</strong></p>
+      <pre><code>python scripts/audit_drafts.py</code></pre>
+      <p>Read-only. Scans Zoho Drafts (last 90 days), cross-references against Leads + Already_Contacted + Archive. Reports flagged initials and flagged follow-ups separately.</p>
+      <p><strong>Initial flagged</strong> = address was already used in a prior send. Delete in Zoho before sending.<br>
+      <strong>Follow-up flagged</strong> = follow-up was already sent OR lead is terminal (replied/bounced/closed). Delete in Zoho.</p>
     </div>
 
     <div class="task">
       <h4>See which schools clicked the demo link</h4>
-      <p>Run <code>python scripts/show_clicks.py</code> (add <code>--since-days 7</code> for last week, <code>--campaign followup</code> to filter). Highlights "clicked but not replied" leads as second-follow-up candidates.</p>
+      <p>Run with optional filters:</p>
+      <pre><code>python scripts/show_clicks.py
+python scripts/show_clicks.py --since-days 7
+python scripts/show_clicks.py --campaign followup
+python scripts/show_clicks.py --campaign initial --since-days 30</code></pre>
+      <p>Highlights "clicked but not replied" leads &mdash; prime second-follow-up candidates.</p>
     </div>
 
     <div class="task">
       <h4>Mark a lead as do-not-contact</h4>
-      <p>Quickest: in <a href="/review">/review</a> grid, click the <strong>DNC</strong> button on a row. For a specific school: <a href="/leads">/leads</a> &rarr; search &rarr; click Edit &uarr; &rarr; DNC button on the top card.</p>
+      <p>Three paths, fastest first:</p>
+      <ol>
+        <li><strong>Grid DNC</strong> &mdash; <a href="/review">/review</a> bottom grid, click the red <strong>DNC</strong> button on any row. Confirms first.</li>
+        <li><strong>Top-card DNC</strong> &mdash; <a href="/review">/review</a> top card, click <strong>Mark do-not-contact</strong>.</li>
+        <li><strong>From search</strong> &mdash; <a href="/leads">/leads</a> &rarr; search &rarr; click <strong>Edit &uarr;</strong> &rarr; DNC button.</li>
+      </ol>
+      <p>All three set <code>status=do_not_contact</code> with a reason stored in <code>do_not_contact_reason</code>.</p>
     </div>
 
     <div class="task">
       <h4>Find a specific school</h4>
-      <p>Search bar on <a href="/leads">/leads</a> does case-insensitive "contains" across name, website, and email. Click <strong>Edit &uarr;</strong> on a row to open it in <a href="/review">/review</a>.</p>
+      <p>Search bar on <a href="/leads">/leads</a> does case-insensitive "contains" across name, website, and email. Combine with status / zip / category filters if needed.</p>
+      <p>Click <strong>Edit &uarr;</strong> on a row to open in <a href="/review">/review</a>. The Review page auto-picks the right mode (classify / owner / pre_send) based on the lead's current status.</p>
     </div>
 
     <div class="task">
       <h4>Re-run downstream after editing leads in Review</h4>
-      <p>If you edited leads in Review (classified or filled in owner), they're <code>ready_for_owner_lookup</code> and need Phase 4 to run. Click <strong>Run downstream</strong> in the pipeline above. The banner at the top of this page appears when this is needed.</p>
+      <p>If you edited leads in Review (classified or filled in owner), they're now <code>ready_for_owner_lookup</code> and need Phase 4 to advance them to <code>ready_to_send</code>.</p>
+      <p>An amber banner appears at the top of this page when this is needed. Click <strong>Run downstream</strong> in the Downstream card above to process them.</p>
     </div>
 
     <div class="task">
       <h4>Age out stale leads + archive disqualified ones (weekly)</h4>
-      <p>Run weekly, in this order:</p>
-      <ol>
-        <li><code>python scripts/run_close_stale.py --commit</code> &mdash; marks sent-but-no-reply &ge; 7 days post-follow-up as <code>closed_no_reply</code></li>
-        <li><code>python scripts/run_cleanup.py --commit</code> &mdash; moves disqualified statuses (<code>online_system_exclude</code>, <code>closed_no_reply</code>, <code>bounced</code>, <code>do_not_contact</code>) from Leads to Archive</li>
-      </ol>
+      <p><strong>Always dry-run first</strong> &mdash; no <code>--commit</code> flag means read-only:</p>
+      <pre><code>python scripts/run_close_stale.py
+python scripts/run_cleanup.py</code></pre>
+      <p>Inspect the output. If it looks right:</p>
+      <pre><code>python scripts/run_close_stale.py --commit
+python scripts/run_cleanup.py --commit</code></pre>
+      <p><code>run_close_stale</code> &mdash; marks sent leads with no reply &ge; 7 days post-follow-up as <code>closed_no_reply</code>. Use <code>--days N</code> to change the threshold.</p>
+      <p><code>run_cleanup</code> &mdash; moves <code>online_system_exclude</code>, <code>closed_no_reply</code>, <code>bounced</code>, <code>do_not_contact</code>, <code>already_contacted</code> from Leads to Archive. Idempotent (dedupes by id). Rate-limited at 30 writes/min; 500+ row cleanups take 10&ndash;20 min.</p>
+      <p class="task-warn">⚠ Cleanup deletes rows from Leads. The Archive copy is the only record afterward.</p>
     </div>
 
     <div class="task">
       <h4>Verify how many emails I've actually sent</h4>
-      <p>Run <code>python scripts/sent_email_count.py</code>. Scans Zoho Sent folder, separates initial sends from follow-ups, lists any duplicate-send recipients.</p>
+      <pre><code>python scripts/sent_email_count.py</code></pre>
+      <p>Read-only. Scans Zoho Sent (last 90 days). Reports:</p>
+      <ul>
+        <li>Total initial sends</li>
+        <li>Total follow-up sends</li>
+        <li>Unique recipients (schools actually reached)</li>
+        <li>Recipients who got the same initial more than once</li>
+      </ul>
+    </div>
+
+    <div class="task">
+      <h4>Run the daily pipeline manually</h4>
+      <p>Normally runs via GitHub Actions at 14:30 UTC Mon&ndash;Fri. To trigger now, click <strong>Run daily now</strong> in the Daily Run card above, or from terminal:</p>
+      <pre><code>python scripts/run_daily.py</code></pre>
+      <p>Order: sync (Phase 6) &rarr; followup (6b) &rarr; owners (Phase 4) &rarr; drafts (Phase 5). Skippable steps:</p>
+      <pre><code>python scripts/run_daily.py --skip-sync
+python scripts/run_daily.py --skip-followup
+python scripts/run_daily.py --skip-owners
+python scripts/run_daily.py --skip-drafts</code></pre>
+    </div>
+
+    <div class="task">
+      <h4>Sync sent + replies + bounces from Zoho only</h4>
+      <pre><code>python scripts/run_phase_6_sync.py
+python scripts/run_phase_6_sync.py --dry-run
+python scripts/run_phase_6_sync.py --since-days 60</code></pre>
+      <p>Reads Sent (marks <code>sent</code>) and Inbox (marks <code>replied</code> / <code>bounced</code>). Default scan window is 30 days; bump with <code>--since-days</code> if you sent older messages outside the system.</p>
+      <p>Both threaded bounces (mailer-daemon with <code>In-Reply-To</code>) and unthreaded ones (standalone failure notices) are caught. Detects both 4xx and 5xx SMTP codes.</p>
     </div>
 
     <div class="task">
       <h4>What do the Review tabs mean?</h4>
       <ul>
-        <li><strong>Classify</strong> &mdash; <code>needs_enrollment_system_classification</code>: Phase 3 couldn't decide. Pick <code>enrollment_method</code> or DNC.</li>
+        <li><strong>Classify</strong> &mdash; <code>needs_enrollment_system_classification</code>: Phase 3 couldn't decide. Pick <code>enrollment_method</code> (contact_form_qualify / email_qualify / pdf_form_qualify / third_party_form_qualify) or mark <code>online_system_exclude</code>.</li>
         <li><strong>Owner review</strong> &mdash; <code>needs_owner_review</code>: Phase 4 couldn't find owner/email. Fill in what you can.</li>
         <li><strong>Pre-send polish</strong> &mdash; <code>ready_to_send</code> leads with blank owner_name. Add a name so the draft uses it instead of "Hi there".</li>
       </ul>
@@ -190,12 +243,62 @@
 
     <div class="task">
       <h4>A school's email is bouncing &mdash; what happens?</h4>
-      <p>Phase 6 sync auto-detects mailer-daemon notifications and flips the lead to <code>bounced</code> with the SMTP error code in <code>do_not_contact_reason</code>. You get a &#x1F4ED; alert email. Next cleanup run archives the row. No manual action needed.</p>
+      <p>Phase 6 sync auto-detects mailer-daemon notifications (both threaded replies and unthreaded ones from <code>mailer-daemon@mx.zohomail.com</code>) and flips the lead to <code>bounced</code> with the SMTP error code in <code>do_not_contact_reason</code>. You get a &#x1F4ED; alert email per bounce.</p>
+      <p>Both 4xx (soft bounces that became permanent after retry) and 5xx codes are caught. Next <code>run_cleanup.py --commit</code> archives the row. No manual action needed.</p>
+    </div>
+
+    <div class="task">
+      <h4>List drafts side-by-side with their Lead data</h4>
+      <pre><code>python scripts/list_drafts_with_leads.py</code></pre>
+      <p>Read-only. For every Zoho draft, prints <code>school_name | website | owner_name | best_email</code>. Useful for spot-checking before bulk send when <code>audit_drafts</code> reports all-clear but you still want to eyeball recipients.</p>
+    </div>
+
+    <div class="task">
+      <h4>Find duplicate Leads (same school across multiple zips)</h4>
+      <p>The auto-dedupe runs after every Phase 1, but if you suspect dupes accumulated (e.g. after a big import or schema change):</p>
+      <pre><code>python -c "from src import dedupe_within_leads; print(dedupe_within_leads.dedupe_within_leads(dry_run=True))"</code></pre>
+      <p>Reports <code>checked</code>, <code>duplicates_found</code>, <code>rows_demoted</code>. To actually demote them, drop <code>dry_run=True</code>:</p>
+      <pre><code>python -c "from src import dedupe_within_leads; print(dedupe_within_leads.dedupe_within_leads())"
+python scripts/run_cleanup.py --commit</code></pre>
+      <p>Lower-priority duplicates get flipped to <code>do_not_contact</code> with reason <code>internal_duplicate:&lt;kept_id&gt;</code>. The kept row is chosen by status priority (replied &gt; sent &gt; awaiting_approval &gt; ready_to_send &gt; &hellip;).</p>
+    </div>
+
+    <div class="task">
+      <h4>Inspect the email templates the system uses</h4>
+      <p>To see exactly what subject + body Phase 5 will render:</p>
+      <pre><code>python -c "
+from src import config, sheets
+for r in sheets.read_all_rows(config.TAB_TEMPLATES):
+    print('---', r.get('template_id'), '---')
+    print('SUBJECT:', r.get('subject'))
+    print('BODY:')
+    print(r.get('body'))
+    print()
+"</code></pre>
+      <p>Templates live in the <code>Templates</code> tab of the Google Sheet. Edit there to change copy &mdash; no code changes needed. Lead's <code>enrollment_method</code> picks the template.</p>
+    </div>
+
+    <div class="task">
+      <h4>Reset a lead so I can reclassify it</h4>
+      <p>To put a lead back in <code>pending_classify</code> so Phase 3 reruns on it:</p>
+      <pre><code>python scripts/reset_for_reclassify.py --id &lt;lead_id&gt;</code></pre>
+      <p>Use sparingly &mdash; the LLM-classified result usually won't change without a prompt fix.</p>
     </div>
 
     <div class="task">
       <h4>I'm getting low replies &mdash; should I rework the pitch?</h4>
-      <p>Not until ~80&ndash;100 sends with confirmed clean deliverability (mail-tester &ge; 9/10). Below that volume, 0 replies is noise, not signal. Check <code>scripts/sent_email_count.py</code> for your current send count.</p>
+      <p>Not until ~80&ndash;100 sends with confirmed clean deliverability. Below that volume, 0 replies is noise, not signal.</p>
+      <p><strong>Step 1: Confirm send volume.</strong></p>
+      <pre><code>python scripts/sent_email_count.py</code></pre>
+      <p>You want at least 80 unique recipients before declaring the pitch broken.</p>
+      <p><strong>Step 2: Confirm deliverability isn't the problem.</strong></p>
+      <ul>
+        <li><strong>mail-tester.com</strong> &mdash; visit the site, get a temp address (e.g. <code>test-xxxxx@srv1.mail-tester.com</code>), send a real outreach email to it from Zoho, click "Check your score." Anything below 9/10 means the score itself is the problem. 10/10 = deliverability clean.</li>
+        <li><strong>Send to a personal Gmail account.</strong> Send a real outreach email to a Gmail address you own. Check whether it lands in Inbox, Promotions, or Spam. Spam = your sender reputation or content is being flagged.</li>
+        <li><strong>MX Toolbox blacklist check</strong> &mdash; <a href="https://mxtoolbox.com/blacklists.aspx" target="_blank">mxtoolbox.com/blacklists.aspx</a>. Enter <code>enrollifyapp.com</code> and check Zoho's outbound IP <code>136.143.188.16</code>. Anything on a major RBL (SpamCop, Spamhaus, Barracuda) needs to be cleared via Zoho support before sending more.</li>
+        <li><strong>Verify DNS records still pass.</strong> Use <a href="https://mxtoolbox.com" target="_blank">mxtoolbox.com</a> SPF / DKIM / DMARC checks against enrollifyapp.com. SPF must include <code>zoho.com</code>; DKIM record at <code>zoho._domainkey</code> must verify; DMARC should be at <code>p=quarantine</code> or stronger.</li>
+      </ul>
+      <p><strong>Step 3: Only after all of the above clears, look at the pitch.</strong> Real-world signal beats email at this scale &mdash; in-person events (festivals, community days, parent meet-and-greets) have given way better conversion than cold email so far.</p>
     </div>
 
   </div>
