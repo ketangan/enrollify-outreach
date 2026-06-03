@@ -639,3 +639,97 @@ form.filters button:hover { background: #2d4229; }
   cursor: pointer;
 }
 .btn-cancel:hover { background: #ffebee; }
+
+/* ─── Common tasks cheat sheet ────────────────────────────────────
+   Append these rules to webapp/webapp/static/styles.css
+─────────────────────────────────────────────────────────────────── */
+
+.common-tasks {
+  margin: 32px 0 16px;
+  padding: 12px 16px;
+  background: #fbf9f4;
+  border: 1px solid #e8e2d2;
+  border-radius: 8px;
+}
+
+.common-tasks summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  padding: 6px 0;
+  color: #3d5a3a;
+  list-style: none;
+  user-select: none;
+}
+
+.common-tasks summary::before {
+  content: "▶";
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 11px;
+  transition: transform 0.15s;
+  color: #8a8378;
+}
+
+.common-tasks[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.common-tasks summary:hover {
+  color: #2d4229;
+}
+
+.task-list {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.task {
+  background: #fff;
+  border: 1px solid #ede6d6;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.task h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1915;
+}
+
+.task p, .task ol, .task ul {
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #54504a;
+}
+
+.task ol, .task ul {
+  padding-left: 20px;
+}
+
+.task li {
+  margin-bottom: 4px;
+}
+
+.task code {
+  background: #f3ede1;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #6b3a00;
+  white-space: nowrap;
+}
+
+.task a {
+  color: #3d5a3a;
+  text-decoration: none;
+}
+
+.task a:hover {
+  text-decoration: underline;
+}

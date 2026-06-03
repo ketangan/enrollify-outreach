@@ -129,4 +129,76 @@
 
 </div>
 
+{# ─── Common tasks cheat sheet (collapsible) ──────────────────── #}
+<details class="common-tasks">
+  <summary>How do I&hellip; (common tasks)</summary>
+
+  <div class="task-list">
+
+    <div class="task">
+      <h4>Add zip codes for a new area</h4>
+      <p>Edit <code>config/regions.yaml</code>. Add zips under an existing region or define a new one (e.g. <code>South_Bay</code> with Redondo/Torrance zips). Then use the Discovery card above with the region selected.</p>
+    </div>
+
+    <div class="task">
+      <h4>Check for duplicate drafts in Zoho before sending</h4>
+      <p>Run <code>python scripts/audit_drafts.py</code>. Cross-references each draft against Leads + Already_Contacted + Archive. Flags real duplicates and legitimate follow-ups separately.</p>
+    </div>
+
+    <div class="task">
+      <h4>See which schools clicked the demo link</h4>
+      <p>Run <code>python scripts/show_clicks.py</code> (add <code>--since-days 7</code> for last week, <code>--campaign followup</code> to filter). Highlights "clicked but not replied" leads as second-follow-up candidates.</p>
+    </div>
+
+    <div class="task">
+      <h4>Mark a lead as do-not-contact</h4>
+      <p>Quickest: in <a href="/review">/review</a> grid, click the <strong>DNC</strong> button on a row. For a specific school: <a href="/leads">/leads</a> &rarr; search &rarr; click Edit &uarr; &rarr; DNC button on the top card.</p>
+    </div>
+
+    <div class="task">
+      <h4>Find a specific school</h4>
+      <p>Search bar on <a href="/leads">/leads</a> does case-insensitive "contains" across name, website, and email. Click <strong>Edit &uarr;</strong> on a row to open it in <a href="/review">/review</a>.</p>
+    </div>
+
+    <div class="task">
+      <h4>Re-run downstream after editing leads in Review</h4>
+      <p>If you edited leads in Review (classified or filled in owner), they're <code>ready_for_owner_lookup</code> and need Phase 4 to run. Click <strong>Run downstream</strong> in the pipeline above. The banner at the top of this page appears when this is needed.</p>
+    </div>
+
+    <div class="task">
+      <h4>Age out stale leads + archive disqualified ones (weekly)</h4>
+      <p>Run weekly, in this order:</p>
+      <ol>
+        <li><code>python scripts/run_close_stale.py --commit</code> &mdash; marks sent-but-no-reply &ge; 7 days post-follow-up as <code>closed_no_reply</code></li>
+        <li><code>python scripts/run_cleanup.py --commit</code> &mdash; moves disqualified statuses (<code>online_system_exclude</code>, <code>closed_no_reply</code>, <code>bounced</code>, <code>do_not_contact</code>) from Leads to Archive</li>
+      </ol>
+    </div>
+
+    <div class="task">
+      <h4>Verify how many emails I've actually sent</h4>
+      <p>Run <code>python scripts/sent_email_count.py</code>. Scans Zoho Sent folder, separates initial sends from follow-ups, lists any duplicate-send recipients.</p>
+    </div>
+
+    <div class="task">
+      <h4>What do the Review tabs mean?</h4>
+      <ul>
+        <li><strong>Classify</strong> &mdash; <code>needs_enrollment_system_classification</code>: Phase 3 couldn't decide. Pick <code>enrollment_method</code> or DNC.</li>
+        <li><strong>Owner review</strong> &mdash; <code>needs_owner_review</code>: Phase 4 couldn't find owner/email. Fill in what you can.</li>
+        <li><strong>Pre-send polish</strong> &mdash; <code>ready_to_send</code> leads with blank owner_name. Add a name so the draft uses it instead of "Hi there".</li>
+      </ul>
+    </div>
+
+    <div class="task">
+      <h4>A school's email is bouncing &mdash; what happens?</h4>
+      <p>Phase 6 sync auto-detects mailer-daemon notifications and flips the lead to <code>bounced</code> with the SMTP error code in <code>do_not_contact_reason</code>. You get a &#x1F4ED; alert email. Next cleanup run archives the row. No manual action needed.</p>
+    </div>
+
+    <div class="task">
+      <h4>I'm getting low replies &mdash; should I rework the pitch?</h4>
+      <p>Not until ~80&ndash;100 sends with confirmed clean deliverability (mail-tester &ge; 9/10). Below that volume, 0 replies is noise, not signal. Check <code>scripts/sent_email_count.py</code> for your current send count.</p>
+    </div>
+
+  </div>
+</details>
+
 {% endblock %}
