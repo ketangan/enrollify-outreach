@@ -220,11 +220,22 @@ def review_view(
 ):
     if mode not in VALID_MODES:
         mode = MODE_OWNER
-
+ 
     history = _load_history(review_history)
     skipped = _load_skipped(review_skipped)
     rows = sheets.read_all_rows(config.TAB_LEADS)
     counts = _queue_counts(rows)
+ 
+    # If user came here via /review?id=... (e.g. from /leads Edit link),
+    # auto-pick the mode that matches the lead's current status. This way
+    # the Save & Next button advances through the right queue.
+    if id and not request.query_params.get("mode"):
+        lead_for_mode = _find_lead_by_id(id)
+        if lead_for_mode:
+            for m in VALID_MODES:
+                if _matches_mode(lead_for_mode, m):
+                    mode = m
+                    break
 
     # Count leads that need a downstream rerun because of review edits
     review_edits_need_rerun = sum(

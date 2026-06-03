@@ -5,6 +5,11 @@
 
 <form method="GET" action="/leads" class="filters">
   <label>
+    Search:
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="School name, website, or email…" style="width: 240px;">
+  </label>
+
+  <label>
     Status:
     <select name="status">
       <option value="">— any —</option>
@@ -50,6 +55,7 @@
       <th>Confidence</th>
       <th>Last Action</th>
       <th>Website</th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
@@ -64,16 +70,21 @@
       <td>{{ r.get("email_confidence", "") }}</td>
       <td>{{ r.get("last_action", "") }}</td>
       <td>{% if r.get("website") %}<a href="{{ r.get('website') }}" target="_blank" rel="noopener">↗</a>{% endif %}</td>
+      <td>
+        {% if r.get("id") %}
+          <a href="/review?id={{ r.get('id') }}" class="edit-link" title="Open in Review page">Edit ↗</a>
+        {% endif %}
+      </td>
     </tr>
   {% else %}
-    <tr><td colspan="9" class="muted">No leads match the current filters.</td></tr>
+    <tr><td colspan="10" class="muted">No leads match the current filters.</td></tr>
   {% endfor %}
   </tbody>
 </table>
 
 {% if total_pages > 1 %}
 <div class="pagination">
-  {% set qs %}status={{ filters.status }}&zip={{ filters.zip }}&category={{ filters.category }}&admin={{ filters.admin }}{% endset %}
+  {% set qs %}q={{ filters.q }}&status={{ filters.status }}&zip={{ filters.zip }}&category={{ filters.category }}&admin={{ filters.admin }}{% endset %}
   {% if page > 1 %}
     <a href="/leads?{{ qs }}&page={{ page - 1 }}">← Prev</a>
   {% endif %}

@@ -1,32 +1,28 @@
 # Enrollify Outreach — Project Source of Truth
 
 > **⚠️ READ THIS FIRST if you're Claude in a new session.**
-> This document IS the memory. At the start of every session, Ketan pastes this entire file as his first message. Before closing any session, output an updated version of this file in a code block for Ketan to commit to the repo. Every decision, schema change, phase transition, or tool swap must be reflected here. If something is ambiguous, ask — don't guess.
+> This document IS the memory. Ketan pastes it at the start of every session. Before closing any session, output an updated version in a code block for Ketan to commit. Every decision, schema change, or tool swap must be reflected here. If ambiguous, ask — don't guess.
 
-**Last updated:** 2026-04-21
-**Current phase:** 0 complete — ready for Phase 1
-**Repo:** (Ketan's private GitHub repo — `enrollify-outreach`)
+**Last updated:** 2026-05-26
+**Status:** MVP shipped (Phases 0–6). Phases 7–9 done. Phase 8 webapp live at https://enrollify-admin.onrender.com. Auth still pending.
+**Repo:** private GitHub repo `enrollify-outreach`
 
 ---
 
 ## Who & what
 
 - **Owner:** Ketan Gandhi, co-founder of Enrollify (enrollifyapp.com)
-- **Co-founder:** Natasha Julka (referenced on the website, but NOT named in cold outreach emails — team size is deliberately not disclosed in outreach)
-- **Goal of this project:** Automate cold outreach to small activity-based schools (dance studios, preschools, sports academies, etc.) that lack online enrollment systems.
-- **Target daily volume:** ~20–25 emails
-- **Budget cap:** $20/month ideal, $100/month absolute max
-- **Geographic start:** LA area (zip 90045 and concentric expansion), then California, then US
+- **Co-founder:** Natasha Julka (on the website, but NOT named in cold outreach — team size deliberately not disclosed)
+- **Goal:** Automate cold outreach to small activity-based schools (dance, music, preschool, sports, etc.) without online enrollment systems
+- **Target volume:** ~20–25 emails/day
+- **Budget cap:** $20/mo ideal, $100/mo absolute max
+- **Geographic start:** LA area (90045) → California → US
 
 ## Working agreement with Claude
 
-- **Claude has no memory between sessions.** This file IS the memory.
-- **Session protocol:**
-  1. New chat → Ketan pastes this file as first message + states what to work on
-  2. Claude confirms sync, proceeds
-  3. Before closing session → Claude outputs updated `PROJECT.md` in a code block
-  4. Ketan commits to repo
-- **Tone:** direct, no flattery, push back when Ketan is wrong. Ketan is a senior engineer — skip the hand-holding on code.
+- Claude has no memory between sessions. This file IS the memory.
+- **Session protocol:** Ketan pastes this file → states task → Claude confirms → at session end Claude outputs updated PROJECT.md.
+- **Tone:** direct, no flattery, push back when Ketan is wrong. Ketan is a senior engineer — skip hand-holding on code.
 
 ---
 
@@ -34,186 +30,141 @@
 
 | Area | Decision | Why |
 |---|---|---|
-| Data store | Google Sheets | Visibility, mobile-accessible, manual edit friendly |
-| LLM | Claude Haiku via Anthropic API | Cheapest capable model; Ketan's Pro subscription doesn't cover API |
-| Scraping | Google Places API | Free within $200/mo credit, structured data, no ToS risk |
-| Email sending | Zoho Mail Lite ($1/user/month) | Upgraded from free tier — free tier doesn't include IMAP; Mail Lite does |
-| Email access protocol | IMAP (drafts) + SMTP (send) | For programmatic draft writing and sending |
-| Push notifications | Pushover free tier | One-time $5 app purchase, free API, reliable on iOS/Android |
-| Runtime | Python 3.11+ on Ketan's Mac | Manual trigger initially; Phase 9 may add GitHub Actions cron |
-| Secrets | `.env` file, git-ignored | Never commit real keys |
+| Data store | Google Sheets | Visibility, mobile-accessible, manual edit friendly. DB migration deferred until 1+ paying customer. |
+| LLM | Claude Haiku via Anthropic API | Cheapest capable model |
+| Scraping | Google Places API (New) | Free within $200/mo credit, structured, no ToS risk |
+| Email | Zoho Mail Lite ($1/mo) | Free tier doesn't have IMAP; Lite does |
+| Mail protocols | IMAP (drafts) + SMTP (send) | |
+| Webapp | FastAPI + Jinja2 + HTMX on Render free tier | No React. Reuses `src/*` modules directly. |
+| Runtime | Python 3.14 local (Mac), 3.12.7 on Render | GitHub Actions cron at 14:30 UTC Mon–Fri runs `run_daily.py` |
+| Secrets | `.env` locally, GitHub repo secrets + Render Secret File in prod | |
 
-## Tools NOT chosen and why
-
-- Clay.com, Apollo.io, Hunter.io, Apify, Google Workspace — see earlier rationale
-- Second outreach domain — deferred until Enrollify has 5+ paying customers
-- AI-generated `specific_observation` — rejected in favor of static per-method paragraphs (simpler, cheaper, zero LLM failure mode for this piece)
+**Tools rejected:** Clay/Apollo/Hunter (cost), Apify (complexity), Google Workspace (overkill), second outreach domain (until 5+ paying customers), AI-generated `specific_observation` (static per-method paragraphs are simpler/cheaper), pick-and-choose plan tier (decision paralysis + business-ops complexity; revisit when there's a real customer asking for it).
 
 ---
 
 ## Target school categories
 
-- Dance studios
-- Music schools
-- Sports academies
-- Pre-schools
-- Day-cares
-- Martial arts schools
-- Art studios
-- Gymnastics / cheer academies
-- Swim schools
-- Tutoring / learning centers (independents, not chains)
-- Language schools for children
-- Coding / STEM academies for children
-- Montessori schools (independents)
+Dance studios, music schools, sports academies, pre-schools, day-cares, martial arts, art studios, gymnastics/cheer, swim schools, tutoring/learning centers (independents only), language schools for kids, coding/STEM for kids, Montessori (independents).
 
-## Disqualification criteria (mark as `online_system_exclude`)
+**Disqualification → `online_system_exclude`:** has online enrollment form, login/portal button, or uses known third-party enrollment software (ClassDojo, Jackrabbit, DanceStudio-Pro, Brightwheel, Procare, Mindbody, iClassPro, etc.).
 
-Any of:
-- Has an online enrollment form on their site
-- Has a parent/student "Login" button/portal
-- Uses recognized third-party enrollment software (ClassDojo, Jackrabbit, DanceStudio-Pro, Brightwheel, Procare, Mindbody, etc.)
+When uncertain: mark `needs_enrollment_system_classification`, never auto-email.
 
-When uncertain: mark as `needs_manual_review`, never auto-email.
-
-## Special case: schools without websites
-
-Schools discovered via Google Places that have **no website** are NOT discarded. Their data is still collected including:
-- Google reviews (text, rating, date, reviewer)
-- Yelp reviews (if available — TBD if scraping allowed within Yelp ToS; may need to skip)
-- Basic business info (name, address, phone, hours, category)
-
-These schools are marked with `status = no_website_collected` and set aside from the main outreach flow. Phase 10 (deferred) may use this data for a separate "website + enrollment" pitch. See deferred features below.
-
----
-
-## Phase plan
-
-| Phase | Status | Goal |
-|---|---|---|
-| 0 | **DONE** ✅ | Setup: accounts, keys, sheet, Zoho, repo scaffolding, templates written |
-| 1 | Ready to start | Lead discovery via Google Places API (no LLM) — including no-website schools |
-| 2 | Not started | Dedupe against existing contacted list |
-| 3 | Not started | Enrollment method classification (Claude Haiku) |
-| 4 | Not started | Owner discovery + email guessing + SMTP verify |
-| 5 | Not started | Draft generation + morning approval email |
-| 6 | Not started | Follow-up scheduling + reply detection (Pushover alerts) |
-| 7 | Not started | Coverage tracking + zip code expansion logic |
-| 8 | Not started | Mobile-friendly approval UI |
-| 9 | Not started | GitHub Actions cron for unattended runs |
-| **10** | **Deferred** | Website-builder upsell pitch to no-website schools |
-
-**MVP = Phases 0–6.** 7–9 are improvements. **10 is deferred** — data is collected during Phase 1 but the outreach feature is not built until Enrollify has 10+ paying customers, per owner's decision to avoid dilution of core product focus.
+**Schools without websites** are not discarded — collected into `No_Website_Schools` tab with reviews for **Phase 10 (deferred)**: website-builder upsell, not built until Enrollify has 10+ paying customers.
 
 ---
 
 ## Google Sheet schema
 
-**Spreadsheet name:** `Enrollify Outreach`
-**Shared with:** Google service account email as Editor
+Spreadsheet: `Enrollify Outreach`. Service account has Editor access.
 
-### Tab 1: `Leads`
-
-Columns (order matters — code indexes by position):
+### Tab: `Leads`
 
 ```
-id | name | website | category | city | state | zip | phone | address | discovered_date | status | enrollment_method | owner_name | owner_title | owner_source_url | best_email | email_confidence | last_action | sent_at | follow_up_at | follow_up_sent_at | replied_at | notes
+id | name | website | category | city | state | zip | phone | address |
+discovered_date | status | enrollment_method | owner_name | owner_title |
+owner_source_url | best_email | email_confidence | last_action |
+sent_at | sent_message_id | follow_up_at | follow_up_sent_at | replied_at |
+do_not_contact_reason | notes
 ```
 
-### Status enum
+### Status enum (current)
 
 ```
-pending_classify       → discovered, not yet classified
-needs_manual_review    → AI couldn't decide, Ketan needs to act
-online_system_exclude  → disqualified (has online enrollment)
-ready_for_owner_lookup → classified as qualified, need to find owner
-ready_for_email_guess  → owner found, need to construct email
-ready_to_send          → ready for draft generation
-awaiting_approval      → draft created, awaiting morning review
-sent                   → initial email sent, waiting for reply/follow-up
-follow_up_sent         → follow-up sent
-replied                → 🚨 reply received, Ketan engaging
-closed_no_reply        → after follow-up, no response — dead lead
-already_contacted      → imported from existing sheet, skip
-do_not_contact         → Ketan manually marked — never email
-no_website_collected   → no website; data collected for Phase 10
+pending_classify                          → discovered, awaiting Phase 3
+needs_enrollment_system_classification    → Phase 3 fallback (user picks enrollment_method)
+online_system_exclude                     → disqualified
+ready_for_owner_lookup                    → classified, awaiting Phase 4
+needs_owner_review                        → Phase 4 fallback (user fills owner+email)
+ready_to_send                             → draft-ready
+awaiting_approval                         → draft in Zoho, awaiting send
+sent                                      → initial email sent
+follow_up_sent                            → (unused — handled by follow_up_sent_at timestamp on sent rows)
+replied                                   → 🚨 human reply received
+bounced                                   → mailer-daemon bounce detected
+closed_no_reply                           → 7 days post-follow-up, no reply, auto-archived
+already_contacted                         → matched against Already_Contacted or Archive on dedupe
+do_not_contact                            → manual or internal_duplicate
+no_website_collected                      → Phase 10 holding bin
 ```
 
 ### Enrollment method enum
 
 ```
-online_system_exclude, email_or_phone_qualify, pdf_form_qualify,
-contact_form_qualify, needs_manual_review
+contact_form_qualify, email_qualify, pdf_form_qualify,
+third_party_form_qualify, online_system_exclude, needs_manual_review
 ```
 
 ### Email confidence enum
 
 ```
-high, medium, low, unverified
+high, medium, low, unverified, manual
 ```
 
-### Tab 2: `Already_Contacted`
+### Other tabs
 
-Columns: `school_name | email | contacted_date | outcome | notes`
-Imported from Ketan's existing "already emailed" sheet.
-
-### Tab 3: `Coverage`
-
-Columns: `zip | city | total_found | qualified | contacted | replied | status | started_date | completed_date`
-
-Status enum: `not_started, in_progress, complete`
-
-### Tab 4: `Templates`
-
-Columns: `template_id | subject | body | observation | last_updated`
-
-Rows:
-- `contact_form` — initial email for schools using contact forms
-- `email` — initial email for schools using direct email enrollment
-- `pdf_form` — initial email for schools using downloadable PDF forms
-- `follow_up` — follow-up email (`observation` column empty)
-
-Placeholders supported in body: `{{owner_first_name}}`, `{{school_name}}`, `{{category}}`, `{{specific_observation}}`.
-Placeholders supported in observation: `{{school_name}}`.
-
-### NEW — Tab 5: `No_Website_Schools` (for Phase 10)
-
-Added to collect data on schools discovered without websites. Columns:
-
-```
-id | name | category | city | state | zip | phone | address | discovered_date | google_rating | google_review_count | google_reviews_json | yelp_url | yelp_rating | yelp_review_count | yelp_reviews_json | status | notes
-```
-
-`google_reviews_json` and `yelp_reviews_json` hold arrays of review objects serialized as JSON strings (keeps things simple in Sheets).
-
-Status enum for this tab: `collected, pitched, responded, closed_won, closed_lost, do_not_contact`
+- **`Already_Contacted`** — Ketan's prior outreach. `school_name | email | contacted_date | outcome | notes`
+- **`Coverage`** — `zip | city | total_found | qualified | contacted | replied | status | started_date | completed_date | admin`
+- **`Templates`** — `template_id | subject | body | observation | last_updated`. Rows: `contact_form`, `email`, `pdf_form`, `third_party_form`, `follow_up`
+- **`No_Website_Schools`** — Phase 10 holding bin with `google_reviews_json | yelp_reviews_json` etc.
+- **`Archive`** — moved here by `run_cleanup.py` from archivable statuses (online_system_exclude, do_not_contact, closed_no_reply, bounced, already_contacted)
 
 ---
 
-## Secrets (`.env` variables)
+## Pipeline phases & files
+
+| Phase | Script(s) | Purpose |
+|---|---|---|
+| 1 — Discovery | `scripts/run_phase_1_discovery.py` | Google Places → `Leads` (pending_classify). Auto-runs `dedupe_within_leads` after each zip. |
+| 1.5 — Internal dedupe | `src/dedupe_within_leads.py` | Demotes same-school-different-zip duplicates to `do_not_contact` |
+| 2 — Contact dedupe | `scripts/run_phase_2_dedupe.py` | Dedupes against Already_Contacted + Archive. Marks matches `already_contacted`. |
+| 3 — Classify | `scripts/run_phase_3_classify.py` | URL prefilter → keyword scan → Haiku. Sets enrollment_method or escalates to `needs_enrollment_system_classification`. |
+| 4 — Owner lookup | `scripts/run_phase_4_owners.py` | Fetch about/team pages → regex emails → Haiku picks owner+email. Stage-2 web-search fallback if Stage 1 finds no name. Failures → `needs_owner_review`. |
+| 5 — Draft | `scripts/run_phase_5_drafts.py` | Renders template → IMAP-appends to Zoho Drafts → emails Ketan a daily summary with pipeline state. |
+| 6 — Sync | `scripts/run_phase_6_sync.py` | Reads Zoho Sent (marks `sent`) + Inbox (replies → `replied` + 🚨 alert; bounces → `bounced` + 📭 alert). |
+| 6b — Follow-up draft | `scripts/run_phase_6_followup.py` | Threaded follow-up drafts after 7 days. |
+| Lifecycle | `scripts/run_close_stale.py` | Sent + no reply ≥ 7 days post-follow-up → `closed_no_reply`. |
+| Cleanup | `scripts/run_cleanup.py` | Move archivable statuses from `Leads` → `Archive`. Idempotent (dedupes by id). Rate-limited at 30 writes/min. |
+| Migration (one-off) | `scripts/migrate_manual_review.py` | Already run. Split legacy `needs_manual_review` into the two new statuses. |
+| Daily orchestrator | `scripts/run_daily.py` | sync → followup → owners → drafts. GitHub Actions runs at 14:30 UTC Mon–Fri. |
+| Admin one-offs | `scripts/audit_drafts.py`, `scripts/list_drafts_with_leads.py` | Audit Zoho Drafts against Leads+Archive (flags duplicates before send). |
+
+---
+
+## Webapp (Phase 8) — live at https://enrollify-admin.onrender.com
+
+Routes:
+- `/` — pipeline diagram, per-stage pending counts, recommendations, banner alerts (low-queue, review-edits-need-rerun), running-jobs status bar
+- `/coverage` — region progress table
+- `/leads` — filterable list (status/zip/category)
+- `/review` — three tabs (classify / owner / pre_send). Top: one record at a time (mobile-friendly). Bottom: paginated grid with inline edits. Banner when review edits need downstream rerun.
+- `/jobs`, `/jobs/{id}` — subprocess job status, scroll-preserving auto-refresh, cancel button (SIGTERM)
+
+Key modules:
+- `webapp/webapp/dashboard.py` — stage counts, pipeline alerts (list), `count_review_edited_pending_rerun()`
+- `webapp/webapp/jobs_runner.py` — subprocess spawner; stale-job cleanup on uvicorn start
+- `webapp/webapp/routes_actions.py` — POST handlers for action buttons
+
+**Critical TODO:** no auth on the webapp. Anyone with the URL can trigger sends, spend Places API credit, mark leads do-not-contact. Don't share the URL publicly.
+
+---
+
+## Secrets (`.env`)
 
 ```
-# Anthropic API
 ANTHROPIC_API_KEY=
-
-# Google Cloud (Places API + Sheets API)
 GOOGLE_PLACES_API_KEY=
 GOOGLE_SHEETS_CREDENTIALS_PATH=./config/google-service-account.json
 GOOGLE_SHEET_ID=
-
-# Zoho Mail (Mail Lite paid tier)
 ZOHO_EMAIL=ketan@enrollifyapp.com
 ZOHO_APP_PASSWORD=
 ZOHO_IMAP_HOST=imap.zoho.com
 ZOHO_IMAP_PORT=993
 ZOHO_SMTP_HOST=smtp.zoho.com
 ZOHO_SMTP_PORT=465
-
-# Pushover (Phase 6)
 PUSHOVER_USER_KEY=
 PUSHOVER_APP_TOKEN=
-
-# Project config
 DEFAULT_DAILY_EMAIL_CAP=20
 WORKING_HOURS_START=9
 WORKING_HOURS_END=17
@@ -221,576 +172,94 @@ TIMEZONE=America/Los_Angeles
 HOME_ZIP=90045
 ```
 
----
-
-## Email templates (finalized)
-
-All 3 initial templates share the same body. Only `observation` differs per method.
-
-### Subject (all initial templates)
-```
-Reimagining enrollment for smaller schools
-```
-
-### Subject (follow-up)
-```
-Re: Reimagining enrollment for smaller schools
-```
-
-### Observations (per method, static)
-
-**contact_form:**
-`I was on {{school_name}}'s site earlier and noticed that families interested in signing up are asked to fill out a contact form to get started.`
-
-**email:**
-`I came across {{school_name}}'s website and saw that prospective families are directed to email the school directly to begin enrollment.`
-
-**pdf_form:**
-`I was browsing {{school_name}}'s website and noticed enrollment starts with a downloadable PDF form that families fill out and return.`
-
-### Body (shared across contact_form, email, pdf_form)
-
-```html
-Hi {{owner_first_name}},<br><br>
-
-{{specific_observation}}<br><br>
-
-We've been building Enrollify — enrollment software designed specifically for {{category}} schools like yours, where the big platforms are overkill and scheduling tools treat enrollment as an afterthought.<br><br>
-
-Here's what's included:<br>
-<ul>
-<li>Custom-built enrollment forms tailored to your programs and branding</li>
-<li>A clean dashboard where every submission lands organized and searchable</li>
-<li>Built-in reporting on enrollment trends and application activity</li>
-<li>Lead management so prospective families don't slip through the cracks</li>
-<li>AI-generated summaries of each applicant, scored against your criteria</li>
-<li>One-click exports to Brightwheel and other tools you may already use</li>
-<li>Zero setup on your end — no servers, no databases, no maintenance</li>
-</ul><br>
-
-If you'd like to see it in action, I can send over a custom enrollment form built specifically for {{school_name}}, ready to try. No call required, no commitment. If you like it, we'll set you up with an extended free trial on the full platform — everything unlocked.<br><br>
-
-A bit of context: Enrollify is built by a team with decades of experience shipping software at companies large and small, and with direct experience running enrollment for online schools — which is where the idea came from.<br><br>
-
-Happy to send one over if you'd like to see it.<br><br>
-
-Thanks,<br>
-Ketan<br>
-<a href="https://enrollifyapp.com">enrollifyapp.com</a>
-```
-
-### Follow-up body
-
-```html
-Hi {{owner_first_name}},<br><br>
-
-Just wanted to follow up in case my note from last week got buried.<br><br>
-
-We've been working on a small demo inspired by {{school_name}}'s website that shows what enrollment could look like with a simple online form and admin view — instead of managing everything over email.<br><br>
-
-If you're open to it, happy to send over a demo link, or walk you through it briefly if that's easier.<br><br>
-
-Thanks,<br>
-Ketan<br>
-<a href="https://enrollifyapp.com">enrollifyapp.com</a>
-```
+In production (Render): same vars as env vars except Google credentials live at `/etc/secrets/google-service-account.json`.
+In GitHub Actions: same as Render, credentials as `GOOGLE_SHEETS_CREDENTIALS_JSON` secret.
 
 ---
 
-## Progress log
-
-### 2026-04-16 — Session 1
-- Agreed on phased approach (0-9)
-- Confirmed tool stack
-- Confirmed session protocol
-
-### 2026-04-21 — Session 2
-- **Phase 0 complete.** Zoho Mail Lite set up (upgraded from free due to IMAP limitation), all DNS records configured, IMAP enabled, app password generated.
-- Google Cloud project, Places API key, Sheets API, service account all set up.
-- Google Sheet created with 4 tabs, dropdowns, conditional formatting.
-- All 4 email templates finalized and in the Sheet.
-- Added **deferred Phase 10**: website-builder upsell to no-website schools. Data collected during Phase 1, outreach feature postponed until Enrollify has 10+ paying customers.
-- Added **Tab 5: `No_Website_Schools`** to schema.
-- Switched `specific_observation` from Claude-generated to static per-method paragraphs (cost + reliability win).
-- Decided Natasha is on the website but NOT named in cold outreach (avoid disclosing team size).
-- Ready for Phase 1.
-
-### Open questions for Phase 1
-- Yelp scraping: is it within Yelp's ToS at our volume? Investigate before writing scraper. If not, skip Yelp for Phase 1, fall back to Google reviews only.
-- Confirm Google Places API returns review data via `places.getDetails` — verify field availability in "New" API.
-
-## Progress log
-
-### 2026-04-16 — Session 1
-- Agreed on phased approach (0-9)
-- Confirmed tool stack
-- Confirmed session protocol
-
-### 2026-04-21 — Session 2 (Phase 1 delivered)
-- Phase 1 code written:
-  - src/config.py, src/sheets.py, src/skip_lists.py
-  - src/regions.py + config/regions.yaml (using pgeocode, not uszipcode)
-  - src/places.py (Google Places API "New" client with pre-filter + auth error handling)
-  - scripts/run_phase_1_discovery.py
-  - scripts/run_cleanup.py
-- Regions pre-configured: LA_City, LA_County, Greater_LA, Palm_Springs, Bakersfield,
-  Phoenix, San_Diego, Bay_Area, Sacramento, Orange_County.
-- Archive cleanup statuses: online_system_exclude, already_contacted, do_not_contact, closed_no_reply.
-- Dev notes:
-  - Ketan's venv is on Python 3.14; pgeocode works fine, uszipcode broke.
-  - "Places API (New)" must be explicitly enabled in Google Cloud — separate from old "Places API".
-  - Sheet tabs must match config.py exactly (case + underscores). Renamed tabs to:
-    Leads, Already_Contacted, Coverage, Templates, No_Website_Schools, Archive.
-  - places.py distinguishes auth errors (fatal, abort) from transient errors (continue).
-
-### 2026-04-21 — Phase 1 first successful run
-- First real run: zip 90045
-- Result: 514 total places discovered, 428 written to Leads (status=pending_classify),
-  51 to No_Website_Schools (status=collected), 35 pre-filtered skips.
-- 5 categories hit 60-result cap: preschool, daycare, martial_arts, gymnastics, montessori.
-  (Documented limitation; deferred fix.)
-- Cost: ~$1-2 of Google Places API credit for one zip.
-- Phase 1 complete for MVP purposes.
-
-### Next session: Phase 2 — dedupe against Already_Contacted
-Before running Phase 3 classification, we filter Leads against Already_Contacted:
-- Match by email (case-insensitive exact) AND school_name (fuzzy match >= 90% similarity)
-- Any match: row status → already_contacted
-- Runs as a standalone script: `python scripts/run_phase_2_dedupe.py`
-- Should be re-runnable idempotently (repeated runs produce same result)
-
-### Known limitations carried into future phases
-- 60-result cap per category/zip in Places API. Dense zips may miss schools.
-  Fix candidates: split by sub-area, use different query phrasings per sub-category. Phase 9 problem.
-- `process_zip` is not idempotent — re-running on a completed zip duplicates rows.
-  Mitigation: use `process_region`, which skips completed zips.
-- Cleanup script deletes rows one at a time (Sheets API batching complexity).
-  Fine at small volumes; revisit if cleanup is run on 1000+ rows.
-
-### 2026-04-21 — Phase 2 delivered
-- scripts/run_phase_2_dedupe.py: dedupes Leads against Already_Contacted
-- Matching: normalized website (primary) + 90% fuzzy name match (fallback)
-- Added rapidfuzz to requirements.txt
-- Dry-run default; --commit to apply status=already_contacted
-- First run against 90045: 0 matches (expected — contacted list covers different zips)
-- Bug found & fixed during setup: Leads tab column 11 header was "pending_classify"
-  (the default value) instead of "status". Renamed header.
-
-### Phase status
-- Phase 0: DONE
-- Phase 1: DONE
-- Phase 2: DONE
-- Phase 3 next: enrollment method classification via Claude Haiku
-
-### 2026-04-21 — Phase 3 delivered
-- src/fetcher.py: website fetching + HTML cleanup (homepage + enrollment sub-pages)
-- src/classifier.py: 3-stage classifier (pre-filter → local keywords → Haiku)
-- scripts/run_phase_3_classify.py: CLI with --zip, --limit, --dry-run flags
-- scripts/fix_status.py, scripts/reset_for_reclassify.py: one-off cleanup utilities
-- Added beautifulsoup4 to requirements.txt
-- Prompt tuned once after first run (was too conservative, was flagging ~45% for manual review)
-- Prompt caching enabled for Haiku calls
-
-### Phase 3 first run results (20 leads, zip 90045)
-- 11 online_system_exclude, 3 ready_for_owner_lookup, 6 needs_manual_review
-- Decision source: 2 local, 16 LLM, 2 fetch_failed
-- Cost estimate: ~$0.03 for 20 leads
-
-### Known issues
-- Opus1 (opus1.io) vendor not in skip_lists — add before next run
-- ~10-15% of sites fetch-fail (404, 403, cookie walls) — acceptable
-
-### Phase status
-- Phase 0: DONE
-- Phase 1: DONE
-- Phase 2: DONE
-- Phase 3: DONE (small sample; full 430 can run anytime)
-- Phase 4 next: Owner discovery + email guessing
-
-
-### 2026-04-22 — Phase 4 delivered
-- src/owner_finder.py: extracts emails via regex + mailto links, Haiku picks best owner + email
-- scripts/run_phase_4_owners.py: processes ready_for_owner_lookup leads
-- Fixes during development:
-  - Removed footer/header from NOISE_TAGS — they contain legit contact info
-  - Extract emails from mailto: hrefs, not just text
-  - Hard safety: empty best_email ALWAYS → needs_manual_review regardless of LLM confidence
-- First run: 2/3 qualified advanced to ready_to_send, 1 to manual review (genuinely no email)
-
-### Known issue (accepted)
-- Phase 3 sometimes misclassifies schools with embedded inquiry forms as contact_form_qualify
-  when they should be online_system_exclude (e.g. Music Teacher LA's /request-info/ form).
-  Caught by human review in Phase 5. Not a fix target for now.
-
-### Phase status
-- Phases 0-4: DONE
-- Phase 5 next: draft generation + morning approval flow
-
-### 2026-04-22 — Phase 5 delivered
-- src/zoho.py: IMAP APPEND to Drafts folder, SMTP send for summary emails
-- src/drafter.py: template rendering with {{placeholder}} substitution from Templates tab
-- scripts/run_phase_5_drafts.py: full CLI with --dry-run, --limit, --no-summary
-- scripts/preview_draft.py, scripts/reset_phase5.py: debug utilities
-- Python 3.14 compat fix: imaplib.Time2Internaldate requires timezone-aware datetime
-- First real run: 2 drafts uploaded to Zoho successfully, approval email received
-
-### Known limitation (carried forward)
-- Category per lead is set by first matching Phase 1 category query.
-  Multi-discipline schools (e.g. "arts academy" surfaced via music query)
-  end up with a single category. Causes template to say "music schools like yours"
-  when the school is actually multi-discipline. Caught manually in Phase 5 approval
-  review. Not worth fixing for MVP.
-
-### Phase status
-- Phases 0-5: DONE
-- Phase 6 next: follow-up scheduling + reply detection (Pushover alerts)
-
-### 2026-04-22 — Phase 6 delivered
-- src/zoho_sync.py: IMAP fetch for Sent + Inbox, threaded-reply builder
-- scripts/run_phase_6_sync.py: reconciles Sent folder + detects replies, emails alerts
-- scripts/run_phase_6_followup.py: drafts threaded follow-ups using In-Reply-To headers
-- First sync run: 2 sent emails detected from prior manual send, message_ids captured
-- Reply alerts go to Ketan's own email (skipped Pushover for MVP)
-- Follow-up script creates proper threaded replies (not fresh emails)
-
-### Phase status
-- Phases 0-6 DONE. MVP complete.
-- Phases 7-9 are improvements (coverage automation, mobile UI, cron)
-
-### 2026-04-22 — Phase 5 + 6 + daily orchestrator delivered
-- scripts/run_daily.py: orchestrator that runs sync → follow-up drafts → initial drafts in sequence
-- Daily routine: `python scripts/run_daily.py` in the morning, review Zoho Drafts, send approved
-- Sub-phases are independently skippable (--skip-sync, --skip-followup, --skip-drafts)
-- Failures in early steps don't block later steps — drafts still get created if sync has issues
-- Generates 1-3 summary emails per run depending on what happened
-
-### Daily loop (MVP operating model)
-1. Morning: `python scripts/run_daily.py`
-2. Review Zoho Drafts folder, click send on approved ones
-3. Respond immediately to any reply alerts
-4. When leads run low: manually run Phase 1/3/4 on a new zip
-
-### Phase status
-- Phases 0-6: DONE. MVP shipped.
-- Phases 7-9: deferred (not built until operating data justifies them)
-
-### 2026-04-23 — Templates expanded + third_party_form classification added
-- Discovered in morning review: classifier was bucketing Google Form / Jotform / Typeform
-  schools as contact_form_qualify. These schools are actually among the highest-value leads
-  (already committed to digital intake, just using a clunky free tool).
-- Added 5th enrollment method: `third_party_form_qualify`.
-- Updated classifier prompt in src/classifier.py to detect hosted forms (Google Forms,
-  Jotform, Typeform, Formstack, Wufoo, Cognito Forms).
-- Added 5th template `third_party_form` to Templates tab with dedicated observation
-  paragraph and body positioning Enrollify as upgrade over generic hosted form.
-- Updated ENROLLMENT_METHOD_TO_TEMPLATE mapping in src/drafter.py.
-- Updated all 4 initial templates (contact_form, email, pdf_form, third_party_form) to
-  include "export data and leave, no questions asked" guarantee after the free trial offer.
-- Followup template unchanged.
-
-### Known limitation
-- Already-classified leads retain their old enrollment_method. New classifier only applies
-  to leads entering Phase 3 after this change. To re-classify existing leads, use
-  reset_for_reclassify.py.
-
-### 2026-04-23 — Owner finder improvements
-- Added 11 more URL patterns for owner page detection (leadership, director, principal,
-  founder, meet, bio, people, educators, instructor, partnership, etc.)
-- Decoupled owner name extraction from email selection in Haiku prompt — name now
-  extracted even when no usable email is present
-- Deferred automated Google search for missing owner names until manual workload
-  justifies the complexity/cost
-
-### Known limitation
-- Owner finder still misses JavaScript-rendered team pages, pages behind cookie walls,
-  and sites where owner info lives in non-standard URL patterns.
-- For these, manual Google search remains the fallback.
-
-### 2026-05-14 — Phase 4 owner-recovery deferred
-- Stage 2 owner finder (web search + SMTP verify when scraping fails to find email)
-  was scoped but deferred. Roughly 30-40% of qualified leads die at "owner name found,
-  no email" — fixing this is the next highest-leverage Phase 4 improvement.
-- Estimated effort: 2-3 hours of code.
-
-### 2026-05-18 — GitHub Actions cron delivered (Phase 9)
-- .github/workflows/daily.yml created. Runs `run_daily.py` at 14:30 UTC Mon-Fri.
-- All secrets stored as GitHub repo secrets (ANTHROPIC_API_KEY, GOOGLE_PLACES_API_KEY,
-  GOOGLE_SHEETS_CREDENTIALS_JSON, GOOGLE_SHEET_ID, ZOHO_APP_PASSWORD).
-- Approval emails still go to ketan@enrollifyapp.com → manual review via Zoho Drafts.
-- Status: workflow committed. Verify Ketan has enabled it in Actions tab if running.
-
-### 2026-05-19 — Phase 4 missing from daily run (bug fix)
-- Discovered Phase 4 was NOT being called in scripts/run_daily.py — only sync, followup,
-  drafts. Rows reset to ready_for_owner_lookup sat untouched.
-- Fixed: added run_phase("run_phase_4_owners.py", extra) between followup and drafts in
-  run_daily.py. Added --skip-owners CLI flag.
-
-### 2026-05-19 — Expansion to 90066 (Mar Vista)
-- Phase 1 results: 541 places, 471 with website, 44 without, 26 skipped, 8 duplicates
-  from 90045 (martial arts schools mainly).
-- Phase 3 classify: 463 leads → 190 online_system_exclude (41%), 150 ready_for_owner_lookup
-  (33%), 123 needs_manual_review (27%), 26 fetch_failed.
-- Qualify rate (33%) matches 90045 — demographically similar.
-- Phase 4 owner lookup running at session end.
-
-### 2026-05-19 — Outreach reality check
-- Total sent: ~43 unique emails (was double-counted as 96 earlier due to follow-ups +
-  daily Zoho summary emails). Zero replies.
-- Below industry floor (1-2% expected). Hypothesis: pitch/deliverability problem,
-  not lead volume problem. Diagnosis deferred; Ketan chose to expand zip + build
-  Stage 2 owner finder first.
-
-### Next priorities
-1. Web-search owner finder (Stage 2 of Phase 4) — recovers ~30-40% lost-at-email-step leads
-2. Decide: webapp dashboard OR Phase 7 (zip expansion automation) based on observed pain
-3. Phase 7 if not webapp: --next flag, capped-category re-query, coverage dashboard
-4. Phase 8 mobile approval UI — deferred until lead volume justifies
-5. Webapp migration — deferred until 1+ paying customer (Ketan's prior decision)
-
-### Operational notes
-- Phase 4 NOW part of daily run (after followup, before drafts)
-- Manual Phase 4 invocation for reset leads: `python scripts/run_phase_4_owners.py`
-- Pipeline order in daily run: sync → followup → owners → drafts
-
-### 2026-05-20 — Phase 7: zip expansion automation (DONE)
-
-- New `src/coverage.py` module: single source of truth for Coverage tab.
-  All reads/writes centralized here so the future webapp can import the same
-  functions instead of duplicating logic.
-- New CLI flags on `scripts/run_phase_1_discovery.py`:
-  - `--next --region X` — auto-pick closest uncompleted zip, process it
-  - `--auto --region X --max-zips N` — loop N zips, ordered by distance from HOME_ZIP
-  - `--coverage [--region X]` — show progress dashboard
-  - `--max-api-calls N` — hard cost cap (default 500, ~5 zips, ~$2.50)
-  - `--admin NAME` — tag rows with admin name (or set $ENROLLIFY_ADMIN env var)
-- Added `admin` column to Coverage tab for future multi-admin scenarios
-  (e.g., a collaborator running outreach for Oregon while Ketan runs LA).
-- Concurrency safety: `--next`/`--auto` skip zips marked `in_progress` by
-  anyone else. Coverage tab is the lock.
-- Cost guardrail: `--auto` checks API call count between zips and stops
-  before exceeding `--max-api-calls`.
-- API call counter added to `src/places.py` (`get_api_call_count`,
-  `reset_api_call_count`, `_bump_api_count`).
-- Removed: bare `--region` without `--auto`/`--next`. Was a footgun — could
-  process 80+ zips and burn $40+ in Places API costs by accident.
-- Deferred (intentional): narrower-term re-query for capped categories.
-  Risk of missing schools that handle multiple categories outweighs the
-  recovery value. Capped zips (~70-80% of LA-area zips) accept partial data.
-
-### Next priorities
-1. Webapp dashboard — multi-admin operations, manual lead actions, run
-   phases via buttons. Hosting: Render (already paying) or Cloudflare.
-2. Phase 8 mobile approval UI — deferred until webapp exists
-3. Webapp migration of full sheet — deferred until 1+ paying customer
-
-### Known limitations carried forward
-- 60-result Places API cap still loses data in dense zips. ~70% of LA zips
-  process as `partial_complete`.
-- 0 replies from 43 sends remains unexplained. Within statistical noise but
-  unvalidated. Pitch diagnosis still deferred.
-
-### 2026-05-20 — Phase 8 webapp scaffold started
-- FastAPI + Jinja2 + HTMX stack
-- New `webapp/` directory; reuses `src/*` modules
-- Hosting target: Render (Ketan to set up new service)
-- Scaffold-only; routes/features pending
-
-### 2026-05-20 — Phase 8 webapp progress
-
-Routes shipped:
-- `/coverage` — region progress dashboard
-- `/leads` — filterable list (status, zip, category, admin) with pagination
-- `/review` — mobile-friendly one-at-a-time manual review queue
-  - Save & next (promotes to ready_to_send if email non-empty)
-  - Skip (session-only, doesn't track across reloads)
-  - Mark do-not-contact (with confirm)
-  - Back button (cookie-based, last 5 actioned leads)
-
-Architecture decisions:
-- FastAPI + Jinja2 + HTMX (no React)
-- Reuses `src/coverage.py`, `src/sheets.py`, `src/regions.py` directly
-- Sheet writes are one-cell-at-a-time (acceptable for v1; addressed by DB migration)
-- No auth (v1 ships unprotected; deploy carefully)
-- No caching (every page load = full sheet read)
-
-Routes remaining for v1:
-- Pipeline diagram + action buttons (--next, --auto, run downstream, run daily)
-- Job system (subprocess + status JSON files in webapp/jobs/)
-- Render deployment
-
-### Known v1 limitations
-- No auth — webapp must not be deployed publicly until added
-- Sheet reads not cached — slow first load on every page
-- Skip is forgetful across reloads
-- Lead writes are one-cell-at-a-time (multiple API calls per save)
-
-### 2026-05-20 — Phase 8 webapp v1 mostly complete
-
-Pages:
-- `/` — Pipeline diagram with embedded action buttons, live pending counts,
-  per-phase recommendations (ok/caution/avoid), status bar for running jobs
-- `/coverage` — Region progress table
-- `/leads` — Filterable lead list (status/zip/category)
-- `/review` — Mobile-friendly manual review queue with Save/Skip/DNC/Back
-- `/jobs` and `/jobs/{id}` — Job status with scroll-preserving auto-refresh
-
-Subsystems:
-- `webapp/webapp/dashboard.py` — counts pending leads per stage,
-  generates recommendations from thresholds
-- `webapp/webapp/jobs_runner.py` — subprocess-based job spawner with
-  status JSON files; cleans up stale 'running' jobs on app startup
-  (handles the case where uvicorn restart killed a subprocess)
-- `webapp/webapp/routes_actions.py` — POST endpoints for the action buttons
-
-Compatibility notes:
-- Starlette 1.0.0 requires `TemplateResponse(request, "name.html", context)`
-  not the old `TemplateResponse("name.html", {"request": request, ...})`
-- Python 3.14 + Jinja2 3.1.6 has an LRU cache bug with the old API; the
-  new signature avoids it.
-
-v1 still TODO:
-- Deploy to Render
-- Add auth (deferred — webapp is local-only until then)
-
-### Reminder for next session
-- Phase 3 was interrupted at lead 139 of 1393. Resume by running
-  `python scripts/run_phase_3_classify.py` — it will pick up
-  `pending_classify` leads from where it left off.
-- Phase 4 owners run after that.
-
-### 2026-05-20 — Phase 8 webapp deployed to Render
-
-- Live: https://enrollify-admin.onrender.com
-- Render service: enrollify-admin (free tier, oregon region)
-- Auto-deploys from main branch
-- Python 3.12.7 (Render); locally Ketan uses 3.14
-- Google credentials mounted as Render Secret File at
-  /etc/secrets/google-service-account.json
-- Free tier sleeps after 15 min idle; first request takes ~30-60s
-- Job history in webapp/jobs/*.json is ephemeral (no persistent disk)
-
-### Phase 8 status: v1 SHIPPED. Auth pending.
-
-### Critical TODO before sharing URL
-- Add basic auth — currently anyone with the URL can:
-  - View all lead data
-  - Trigger Run daily (sends emails via your Zoho)
-  - Spin up Phase 1 zips (costs money via Places API)
-  - Mark leads do-not-contact
-
-### 2026-05-20 — Lead lifecycle close-out
-
-- Added scripts/run_close_stale.py: marks leads as closed_no_reply when their
-  follow_up_sent_at is older than --days (default 7) and no reply came in.
-- Patched scripts/run_phase_2_dedupe.py: dedupe index now includes the
-  Archive tab, not just Already_Contacted. Prevents previously-archived
-  schools from re-entering the pipeline if Phase 1 re-surfaces them.
-- Cadence: run close_stale + cleanup weekly, manually.
-
-Closed bug: closed_no_reply status was defined but never set anywhere.
-sent leads with no reply sat indefinitely. Now they age out and archive.
-
-### 2026-05-20 — Internal-Leads dedupe (Phase 1.5)
-
-- New `src/dedupe_within_leads.py`: demotes duplicate Leads rows (same website
-  or phone discovered in multiple zip codes) to `do_not_contact` with
-  reason `internal_duplicate:<kept_id>`.
-- Wired into `scripts/run_phase_1_discovery.py` to run automatically after
-  each `process_zip()`. Webapp's Phase 1 buttons trigger it implicitly.
-- Status priority ladder determines which row survives:
-  replied > sent > awaiting_approval > ready_to_send >
-  ready_for_owner_lookup > needs_manual_review > pending_classify >
-  online_system_exclude > do_not_contact > closed_no_reply
-
-### One-time backfill
-- Initial run found 877 duplicates in 1788 leads (49% of sheet was duplicate).
-- Caught one near-miss: A to Z Soccer Academy (90066) was `sent` while three
-  other zip copies were progressing in parallel; one was about to send Manuel
-  a second email.
-
-### Cleanup script — known issue
-- `run_cleanup.py` is rate-limited by Sheets API at 60 writes/min/user.
-- Current throttle: 30 req/min (2s sleep between delete operations).
-- Large cleanups (500+ rows) take 10-20 minutes. Cron-friendly; don't run
-  back-to-back manual cleanups.
-
-### Future improvement
-- Phase 2 dedupe was patched to check Archive in addition to Already_Contacted.
-  Combined with internal Leads dedupe, dupes should not accumulate going forward.
-  If they do, this script is the safety net.
-
-### 2026-05-26 — Manual review split + dashboard fixes
-
-#### Problem
-`needs_manual_review` was a single status used by BOTH Phase 3 (classifier
-fallback) and Phase 4 (owner-finder fallback). When a lead landed there,
-there was no way to know which phase had failed or what action was needed —
-"manually verify the school's enrollment system" vs "manually look up the
-owner's email" are completely different tasks.
-
-#### Status refactor
-Split `needs_manual_review` into two statuses:
-
-- `needs_enrollment_system_classification` — Phase 3 fallback. User picks
-  the enrollment_method in /review (or marks online_system_exclude). On
-  save, lead transitions to `ready_for_owner_lookup` (or
-  `online_system_exclude`) and Phase 4 picks it up on next downstream run.
-
-- `needs_owner_review` — Phase 4 fallback. User fills owner_name + best_email
-  in /review. On save, lead transitions to `ready_to_send`.
-
-#### Files changed
-- `src/classifier.py`: Phase 3 fallback now uses `CLASSIFY_FALLBACK_STATUS`
-  constant (= `needs_enrollment_system_classification`).
-  Also fixed a real bug: `valid_statuses` set was missing
-  `third_party_form_qualify`, so the validator forced legitimate
-  third-party-form classifications back to manual review. This had been
-  contributing to manual review backlog growth since Phase 3 was deployed.
-
-- `scripts/run_phase_4_owners.py`: Phase 4 fallback now uses
-  `OWNER_FALLBACK_STATUS` constant (= `needs_owner_review`).
-
-- `scripts/migrate_manual_review.py` (one-off): split existing
-  needs_manual_review rows based on `last_action` prefix
-  (`phase3_*` → classify; `phase4_*` → owner). Has-email rows default
-  to owner. Ambiguous rows default to classify (safer — sends through
-  full pipeline again rather than skipping it).
-
-- `webapp/webapp/routes_review.py`: three modes (classify / owner / pre_send)
-  with mode-aware Save behavior. Classify mode shows enrollment_method
-  dropdown; the other two modes show owner_name + best_email inputs.
-
-- `webapp/webapp/templates/review.html`: three tabs at top, a dedicated
-  Website column in the bottom grid (was a tiny "site ↗" link), and a
-  banner that warns when leads edited via Review need downstream to advance.
-
-#### Dashboard fixes (same session)
-- `STAGE_PENDING_STATUSES["review"]` was pointing at the old `needs_manual_review`
-  name, so the Review card on the home page was showing 0 pending after the
-  migration. Updated to count both new statuses.
-- New `compute_pipeline_alert` returns a *list* of alerts (was returning
-  one or none). Three alert types now: review-edits-need-rerun,
-  low-queue-with-upstream-work, low-queue-with-nothing-upstream.
-- New `count_review_edited_pending_rerun()` detects leads where
-  `last_action LIKE 'review_%'` AND `status = 'ready_for_owner_lookup'`.
-  When > 0, both the home page and /review show a "Run downstream" banner.
-
-#### Migration outcome
-- 408 leads in `needs_manual_review` before migration
-- 299 → `needs_enrollment_system_classification`
-- 109 → `needs_owner_review`
-
-#### Why the classify bucket is bigger than the owner bucket
-Two factors compound:
-1. The fixed `third_party_form_qualify` validator bug had been silently
-   sending Phase 3 classifications into manual review for weeks. Many of
-   those rows still have `last_action=phase3_classified` and ended up
-   correctly routed to classify in this migration.
-2. Phase 4 has a Stage 2 web-search fallback that catches many cases that
-   would otherwise have fallen to manual review.
-
-#### Known gap (deferred)
-No "retry Phase 4 lookup" button. If you mark a classify lead as
-`ready_for_owner_lookup` via review, it still needs you to click Run
-Downstream from the dashboard. Auto-running Phase 4 on save was considered
-and rejected (cost surprise + latency + failure handling).
+## Email templates (current — Templates tab)
+
+**Subject (initial):** `Reimagining enrollment for smaller schools`
+**Subject (follow-up):** `Re: Reimagining enrollment for smaller schools`
+
+**Observations (per method, static):**
+- `contact_form` — `I was on {{school_name}}'s site earlier and noticed that families interested in signing up are asked to fill out a contact form to get started.`
+- `email` — `I came across {{school_name}}'s website and saw that prospective families are directed to email the school directly to begin enrollment.`
+- `pdf_form` — `I was browsing {{school_name}}'s website and noticed enrollment starts with a downloadable PDF form that families fill out and return.`
+- `third_party_form` — (matches schools using Google Forms / Jotform / Typeform / Formstack / Wufoo / Cognito Forms)
+
+**Body (shared):**
+```html
+Hi {{owner_first_name}},
+
+{{specific_observation}}
+
+We've been building Enrollify — enrollment software designed specifically for {{category}} schools like yours, where the big platforms are overkill and scheduling tools treat enrollment as an afterthought.
+
+Here's what's included:
+- Custom-built enrollment forms tailored to your programs and branding
+- A clean dashboard where every submission lands organized and searchable
+- Built-in reporting on enrollment trends and application activity
+- Lead management so prospective families don't slip through the cracks
+- AI-generated summaries of each applicant, scored against your criteria
+- One-click exports to Brightwheel and other tools you may already use
+- Zero setup on your end — no servers, no databases, no maintenance
+
+If you'd like to see it in action, I can send over a custom enrollment form built specifically for {{school_name}}, ready to try. No call required, no commitment. If you like it, we'll set you up with an extended free trial on the full platform — everything unlocked. If it's not for you, export your data and walk away. No questions asked.
+
+A bit of context: Enrollify is built by a team with decades of experience shipping software at companies large and small, and with direct experience running enrollment for online schools — which is where the idea came from.
+
+Happy to send one over if you'd like to see it.
+
+Thanks,
+Ketan
+enrollifyapp.com
+```
+
+**Follow-up body:** "Just wanted to follow up in case my note from last week got buried. We've been working on a small demo inspired by {{school_name}}'s website…"
+
+---
+
+## Deliverability state (2026-05-26)
+
+- DMARC at `p=quarantine`, `pct=100`, `rua=mailto:ketan@enrollifyapp.com`
+- SPF: `v=spf1 include:zoho.com ~all` ✓
+- DKIM: `zoho._domainkey` verified ✓
+- Zoho outbound IP `136.143.188.16` was on SpamCop; cleared after 48hrs + Zoho support ticket
+- Currently listed on s5h.net only (low impact)
+- **0 replies from ~43 sends remains unexplained.** Likely deliverability was eating a meaningful fraction during early sends. Wait for ~80-100 sends with clean auth before declaring pitch broken.
+
+---
+
+## Known limitations & deferred work
+
+- **60-result Places API cap per category/zip.** ~70% of LA zips process as `partial_complete`. Fix candidates exist (sub-area splits, narrower queries) but rejected — risk of missing multi-category schools outweighs recovery.
+- **No auth on webapp.** Highest-priority outstanding work. Don't share URL until fixed.
+- **No "retry Phase 4 lookup" button.** Editing a lead in Review's classify tab marks it `ready_for_owner_lookup`; user must click Run Downstream from dashboard. Auto-running on save rejected (cost surprise + latency + failure handling).
+- **DB migration deferred** until 1+ paying customer. All sheet operations rate-limited at 60 writes/min/user; batched updates are mandatory (`update_cell` loops will fail on >30 rows).
+- **Phase 10 (no-website upsell)** deferred until 10+ paying customers.
+- **Multi-discipline schools** get a single `category` from Phase 1's first matching query. Template may say "music schools like yours" when school does music + dance. Caught in Phase 5 review, not worth fixing.
+- **Phase 4 ~30-40% lost-at-email-step.** Stage 2 web search recovers some; remaining hit `needs_owner_review` and need manual lookup.
+
+---
+
+## Operational notes
+
+- **Daily routine:** GitHub Actions runs `run_daily.py` at 14:30 UTC. Ketan reviews Zoho Drafts, sends approved. Responds to reply alerts.
+- **When pending_classify > 100 and ready_to_send < 10:** banner appears on `/`. Click Run Downstream.
+- **When new zip needed:** webapp Phase 1 buttons or CLI `python scripts/run_phase_1_discovery.py --next --region LA_City` / `--auto --region X --max-zips N --max-api-calls 500`.
+- **Weekly cadence:** run `close_stale.py --commit` then `run_cleanup.py --commit` to age out dead leads and archive disqualified ones.
+- **Pipeline order in daily run:** sync → followup → owners → drafts.
+- **Sheet rate-limit:** if you see APIError 429, the script needs batched updates (`worksheet.batch_update` with 50-cell chunks + sleep), not `update_cell` in a loop. Affects close_stale, cleanup, dedupe, phase_2, phase_4. All current scripts are batched.
+
+---
+
+## Working priorities (most recent → oldest)
+
+1. **Send the 28 safe drafts + 50-100 more.** Don't rework pitch until deliverability-clean data exists.
+2. Auth on webapp.
+3. Field a real customer before any new tier/pricing changes.
+4. DB migration after 1+ paying customer.
+
+Deferred (do not build without explicit request):
+- Phase 10 upsell, pick-and-choose pricing tier, retry-Phase-4 button, multi-discipline category fix, Yelp scraping, capped-category narrower re-queries.

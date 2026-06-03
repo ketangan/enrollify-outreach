@@ -1,8 +1,10 @@
 """
 Leads routes — filterable list of all leads.
 
-Filters: status, zip, category, admin. All optional query params.
-Defaults to page 1, 100 per page.
+Filters: status, zip, category, admin (dropdowns), q (free-text contains).
+All optional query params. Defaults to page 1, 100 per page.
+
+The q filter is case-insensitive "contains" across name + website + best_email.
 """
 
 from __future__ import annotations
@@ -30,6 +32,18 @@ templates.env.cache = None
 PAGE_SIZE = 100
 
 
+def _matches_text_search(row: dict, q_lower: str) -> bool:
+    """Case-insensitive contains match across name, website, best_email."""
+    if not q_lower:
+        return True
+    fields = (
+        str(row.get("name", "")),
+        str(row.get("website", "")),
+        str(row.get("best_email", "")),
+    )
+    return any(q_lower in f.lower() for f in fields)
+
+
 @router.get("/leads", response_class=HTMLResponse)
 def leads_view(
     request: Request,
@@ -37,6 +51,7 @@ def leads_view(
     zip: str = "",
     category: str = "",
     admin: str = "",
+    q: str = "",
     page: int = 1,
 ):
     try:
@@ -57,11 +72,13 @@ def leads_view(
         filtered = [r for r in filtered if str(r.get("zip", "")).strip() == zip]
     if category:
         filtered = [r for r in filtered if str(r.get("category", "")).strip() == category]
-    # Leads sheet doesn't have admin column today — placeholder for when it does
     if admin:
         filtered = [r for r in filtered if str(r.get("admin", "")).strip() == admin]
+    if q:
+        q_lower = q.strip().lower()
+        filtered = [r for r in filtered if _matches_text_search(r, q_lower)]
 
-    # Get distinct values for filter dropdowns (from ALL rows, not filtered)
+    # Distinct values for filter dropdowns (from ALL rows)
     distinct_statuses = sorted({str(r.get("status", "")).strip() for r in rows if r.get("status")})
     distinct_zips = sorted({str(r.get("zip", "")).strip() for r in rows if r.get("zip")})
     distinct_categories = sorted({str(r.get("category", "")).strip() for r in rows if r.get("category")})
@@ -89,6 +106,7 @@ def leads_view(
                 "zip": zip,
                 "category": category,
                 "admin": admin,
+                "q": q,
             },
             "distinct_statuses": distinct_statuses,
             "distinct_zips": distinct_zips,
