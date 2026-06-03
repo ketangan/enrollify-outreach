@@ -180,6 +180,7 @@
         <input type="hidden" name="lead_id" value="{{ r.get('id', '') }}">
         <input type="hidden" name="mode" value="{{ mode }}">
         <input type="hidden" name="page" value="{{ grid_page }}">
+        <input type="hidden" name="action_type" value="save">
         <td>
           <div class="school-name">{{ r.get("name", "") }}</div>
           <div class="school-meta">
@@ -204,8 +205,14 @@
             {% endfor %}
           </select>
         </td>
-        <td>
+        <td style="white-space: nowrap;">
           <button type="submit" class="btn-save-row">Save</button>
+          <button type="submit"
+                  class="btn-dnc-row"
+                  onclick="if(!confirm('Mark as do-not-contact?')) return false; this.form.action_type.value='dnc';"
+                  title="Mark this lead as do-not-contact">
+            DNC
+          </button>
         </td>
       </form>
     </tr>

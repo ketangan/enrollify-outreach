@@ -14,7 +14,7 @@ Endpoints:
   POST /review/save           → Save & Next from top card
   POST /review/skip           → Skip from top card
   POST /review/dnc            → Mark do-not-contact from top card
-  POST /review/grid-update    → Inline edit save from bottom grid
+  POST /review/grid-update    → Inline edit from bottom grid (Save OR DNC)
   POST /review/clear-skipped  → Reset session skip list
 """
 
@@ -220,15 +220,14 @@ def review_view(
 ):
     if mode not in VALID_MODES:
         mode = MODE_OWNER
- 
+
     history = _load_history(review_history)
     skipped = _load_skipped(review_skipped)
     rows = sheets.read_all_rows(config.TAB_LEADS)
     counts = _queue_counts(rows)
- 
+
     # If user came here via /review?id=... (e.g. from /leads Edit link),
-    # auto-pick the mode that matches the lead's current status. This way
-    # the Save & Next button advances through the right queue.
+    # auto-pick the mode that matches the lead's current status.
     if id and not request.query_params.get("mode"):
         lead_for_mode = _find_lead_by_id(id)
         if lead_for_mode:
@@ -313,31 +312,18 @@ def review_save(
     review_history: str = Cookie(default=None),
     review_skipped: str = Cookie(default=None),
 ):
-    """Save & next from the top card.
-
-    Behavior per mode:
-      classify  → user picks enrollment_method.
-                  online_system_exclude → status=online_system_exclude
-                  any *_qualify          → status=ready_for_owner_lookup
-      owner / pre_send → fill owner_name + best_email.
-                  email non-empty → status=ready_to_send
-                  email empty     → status unchanged (partial save)
-    """
+    """Save & next from the top card."""
     owner_name = owner_name.strip()
     best_email = best_email.strip().lower()
     enrollment_method = enrollment_method.strip()
 
     if mode == MODE_CLASSIFY:
-        # Classify mode is about enrollment_method. Email/owner are bonus.
-        updates: dict = {
-            "last_action": "review_classified",
-        }
+        updates: dict = {"last_action": "review_classified"}
         if enrollment_method:
             updates["enrollment_method"] = enrollment_method
             if enrollment_method == "online_system_exclude":
                 updates["status"] = "online_system_exclude"
             else:
-                # Any *_qualify value → move to owner lookup
                 updates["status"] = "ready_for_owner_lookup"
         if owner_name:
             updates["owner_name"] = owner_name
@@ -345,7 +331,6 @@ def review_save(
             updates["best_email"] = best_email
             updates["email_confidence"] = "manual"
     else:
-        # Owner review + Pre-send polish path
         if best_email:
             updates = {
                 "owner_name": owner_name,
@@ -394,6 +379,7 @@ def review_dnc(
     review_history: str = Cookie(default=None),
     review_skipped: str = Cookie(default=None),
 ):
+    """Top-card DNC."""
     updates = {
         "status": "do_not_contact",
         "do_not_contact_reason": reason,
@@ -419,8 +405,26 @@ def review_grid_update(
     website: str = Form(""),
     mode: str = Form(MODE_OWNER),
     page: int = Form(1),
+    action_type: str = Form("save"),
 ):
-    """Inline edit from the bottom grid. Stays on the current page after save."""
+    """Inline grid edit. action_type=save (default) or action_type=dnc.
+
+    DNC path: ignores other fields, sets status=do_not_contact with
+    reason=manual_review_grid_dnc, last_action=review_grid_dnc.
+
+    Save path: same behavior as before (field updates + mode-aware status promotion).
+    """
+    if action_type == "dnc":
+        updates = {
+            "status": "do_not_contact",
+            "do_not_contact_reason": "manual_review_grid_dnc",
+            "last_action": "review_grid_dnc",
+        }
+        if not _update_lead_fields(lead_id, updates):
+            logger.warning("review_grid_update (dnc): lead %s not found", lead_id)
+        return RedirectResponse(f"/review?mode={mode}&page={page}", status_code=303)
+
+    # save path
     owner_name = owner_name.strip()
     best_email = best_email.strip().lower()
     enrollment_method = enrollment_method.strip()
@@ -437,7 +441,6 @@ def review_grid_update(
     if enrollment_method:
         updates["enrollment_method"] = enrollment_method
 
-    # Mode-aware status promotion
     if mode == MODE_CLASSIFY and enrollment_method:
         if enrollment_method == "online_system_exclude":
             updates["status"] = "online_system_exclude"
