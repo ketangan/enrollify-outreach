@@ -34,6 +34,7 @@ _template_cache: dict[str, dict] | None = None
 
 HONORIFICS = {"mr", "mr.", "mrs", "mrs.", "ms", "ms.", "miss", "dr", "dr.", "prof", "prof.", "rev", "rev."}
 
+
 def _first_name(full_name: str) -> str:
     if not full_name:
         return ""
@@ -41,6 +42,7 @@ def _first_name(full_name: str) -> str:
     while parts and parts[0].lower().rstrip(".") in {h.rstrip(".") for h in HONORIFICS}:
         parts = parts[1:]
     return parts[0] if parts else ""
+
 
 def _load_templates() -> dict[str, dict]:
     """Load + cache templates from the Templates tab. Keyed by template_id."""
@@ -61,14 +63,6 @@ def _load_templates() -> dict[str, dict]:
         }
     _template_cache = cache
     return cache
-
-
-def _first_name(full_name: str) -> str:
-    """Extract the first name from a full name string. Empty if unparseable."""
-    if not full_name:
-        return ""
-    parts = full_name.strip().split()
-    return parts[0] if parts else ""
 
 
 def _render(text: str, ctx: dict) -> str:
@@ -100,6 +94,7 @@ def render_email(lead: dict) -> RenderedEmail | None:
     owner_name = str(lead.get("owner_name", "")).strip()
     school_name = str(lead.get("name", "")).strip()
     category = str(lead.get("category", "")).strip() or "school"
+    lead_id = str(lead.get("id", "")).strip()
 
     # Fallbacks
     first_name = _first_name(owner_name) or "there"
@@ -115,6 +110,7 @@ def render_email(lead: dict) -> RenderedEmail | None:
         "school_name": school_name,
         "category": category_display,
         "specific_observation": observation,
+        "lead_id": lead_id,
     }
     body = _render(tpl["body"], body_ctx)
     subject = _render(tpl["subject"], body_ctx)
@@ -141,10 +137,12 @@ def render_follow_up(lead: dict, greeting_override: str | None = None) -> Render
     owner_name = str(lead.get("owner_name", "")).strip()
     school_name = str(lead.get("name", "")).strip()
     first_name = _first_name(owner_name) or "there"
+    lead_id = str(lead.get("id", "")).strip()
 
     ctx = {
         "owner_first_name": first_name,
         "school_name": school_name,
+        "lead_id": lead_id,
     }
     body = _render(tpl["body"], ctx)
     
