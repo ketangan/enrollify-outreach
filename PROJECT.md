@@ -251,15 +251,36 @@ enrollifyapp.com
 - **Weekly cadence:** run `close_stale.py --commit` then `run_cleanup.py --commit` to age out dead leads and archive disqualified ones.
 - **Pipeline order in daily run:** sync → followup → owners → drafts.
 - **Sheet rate-limit:** if you see APIError 429, the script needs batched updates (`worksheet.batch_update` with 50-cell chunks + sleep), not `update_cell` in a loop. Affects close_stale, cleanup, dedupe, phase_2, phase_4. All current scripts are batched.
+- **Click tracking review (Mondays):** `python scripts/show_clicks.py --since-days 7` — surfaces schools that clicked the demo link in follow-ups but didn't reply. These are in-person visit candidates.
+- **Click tracking infra:** Apps Script web app receives POSTs from demo.html on real user gestures (mouse/scroll/key/touch within 8s of page load). Writes to `Click_Log` tab. `{{lead_id}}` placeholder in follow_up template renders `?utm_content=<lead_id>` in URL. Apps Script URL is hardcoded in demo.html and committed to ketangan/enrollify-website repo. If abused, redeploy Apps Script → update URL → re-upload demo.html → commit. Drafter's `_first_name()` now strips honorifics ("Dr. Sarah" → "Sarah").
 
 ---
 
 ## Working priorities (most recent → oldest)
 
-1. **Send the 28 safe drafts + 50-100 more.** Don't rework pitch until deliverability-clean data exists.
-2. Auth on webapp.
-3. Field a real customer before any new tier/pricing changes.
-4. DB migration after 1+ paying customer.
+1. **Send 20 emails/day, every weekday.** Click tracking is live; the funnel-improvement loop now depends on volume.
+2. **Mondays: review click data, visit top clickers in person.** This is the new highest-leverage activity — in-person is the only channel with proven conversion (Brent + Carmen via festival).
+3. **Cloudflare consolidation (Path A).** `round-bread-580b` (static-assets Worker) + `enrollify-website` (orphan Worker connected to GitHub repo) → one Cloudflare Pages project hooked to ketangan/enrollify-website. Result: `git push` deploys instead of drag-and-drop. Do on a weekend when uninterrupted. Until then, every site update requires re-upload via Cloudflare dashboard.
+4. **Auth on webapp.** Still the biggest tech gap.
+5. **Field a real customer before any new tier/pricing changes.**
+6. **DB migration after 1+ paying customer.**
 
 Deferred (do not build without explicit request):
-- Phase 10 upsell, pick-and-choose pricing tier, retry-Phase-4 button, multi-discipline category fix, Yelp scraping, capped-category narrower re-queries.
+- Phase 10 upsell, pick-and-choose pricing tier, retry-Phase-4 button, multi-discipline category fix, Yelp scraping, capped-category narrower re-queries
+- Third demo video (current 2 demos suffice; Veo can't render full marketing videos)
+- Server-side click tracking via Cloudflare Worker (route-shadowed by static-assets Worker; client-side JS approach won)
+- Adding demo link / click tracking to initial templates (only follow_up tracks for now; revisit after seeing follow-up click data)
+- Click_Log cleanup/archival (Google Sheets handles millions of rows; revisit at 10k+ entries)
+
+---
+
+## Recently shipped (this week)
+
+- **Click tracking via Apps Script** — gesture-filtered, written to Click_Log tab, schema matches `show_clicks.py` reader. `{{lead_id}}` substitution in drafter.
+- **Webapp common tasks cheat sheet** on home page — 17 collapsible tasks with code blocks, dry-run guidance, deliverability checks.
+- **Phase 6 sync** — unthreaded bounce detection + 4xx code matching. Caught 6 new bounces on first run.
+- **audit_drafts.py** — follow-up-aware duplicate detection (don't flag legitimate Re: follow-ups).
+- **/leads search** + Edit↗ button to /review with auto-mode-pick.
+- **Grid DNC button** on /review bottom grid.
+- **Mail-tester 10/10 deliverability confirmed.** Pitch is the bottleneck now, not delivery.
+- **dry-salad-8b7e Cloudflare Worker deleted** — was route-shadowed, never wrote a row, dead code.
