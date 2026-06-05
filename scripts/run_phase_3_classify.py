@@ -53,7 +53,7 @@ def main():
     args = parser.parse_args()
 
     config.validate()
-    anthropic_client = Anthropic()
+    anthropic_client = Anthropic(max_retries=5)
 
     leads_ws = sheets.get_tab(config.TAB_LEADS)
     all_rows = leads_ws.get_all_values()

@@ -19,9 +19,12 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import re
+import time
 from dataclasses import dataclass
 
+import anthropic
 from anthropic import Anthropic
 
 from src import config, fetcher, skip_lists
@@ -34,6 +37,14 @@ MAX_OUTPUT_TOKENS = 150
 # Status used when Phase 3 can't confidently classify a lead.
 # Used to be "needs_manual_review" — renamed so Phase 3 vs Phase 4 fallbacks are distinguishable.
 CLASSIFY_FALLBACK_STATUS = "needs_enrollment_system_classification"
+
+# ─── Retry config for rate-limit handling ────────────────────────────
+# The Anthropic SDK itself retries transient failures (default 2x). We add
+# an outer layer ON TOP for rate-limit (429) cases where the SDK gives up
+# but the retry-after window is longer than the SDK's reach.
+MAX_RATE_LIMIT_RETRIES = 4         # outer attempts after SDK gives up
+RATE_LIMIT_RETRY_CAP_SECONDS = 300  # never sleep longer than 5 min per attempt
+RATE_LIMIT_RETRY_FLOOR_SECONDS = 2  # never sleep less than 2s per attempt
 
 # Strong signals that a site has an online enrollment system
 ONLINE_SYSTEM_KEYWORDS = [
@@ -168,6 +179,84 @@ Classification rules (apply in order — pick the first that fits):
 IMPORTANT: Pick the first category whose evidence you see. Don't flag for manual review just to be cautious."""
 
 
+def _retry_after_seconds(err: anthropic.RateLimitError, attempt: int) -> float:
+    """
+    Pick a sleep duration in response to a RateLimitError.
+    Order of preference:
+      1. The server's Retry-After header (in seconds)
+      2. Exponential backoff: 2^attempt + jitter
+
+    Always clamped to [RATE_LIMIT_RETRY_FLOOR_SECONDS, RATE_LIMIT_RETRY_CAP_SECONDS].
+    """
+    server_hint = None
+    try:
+        if err.response is not None:
+            raw = err.response.headers.get("retry-after")
+            if raw is not None:
+                server_hint = float(raw)
+    except (AttributeError, ValueError, TypeError):
+        server_hint = None
+
+    if server_hint is not None and server_hint > 0:
+        sleep_s = server_hint + random.uniform(0, 1)
+    else:
+        sleep_s = (2 ** attempt) + random.uniform(0, 1)
+
+    return max(RATE_LIMIT_RETRY_FLOOR_SECONDS, min(sleep_s, RATE_LIMIT_RETRY_CAP_SECONDS))
+
+
+def _call_llm_with_retry(client: Anthropic, user_content: str):
+    """
+    Call Claude with rate-limit-aware retry.
+
+    The Anthropic SDK already retries transient failures internally (default 2x).
+    This wraps another layer ON TOP specifically for 429s where the SDK has
+    already given up but a longer wait would likely succeed.
+
+    Raises the final exception if retries are exhausted or a non-retryable
+    error occurs.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(MAX_RATE_LIMIT_RETRIES):
+        try:
+            return client.messages.create(
+                model=HAIKU_MODEL,
+                max_tokens=MAX_OUTPUT_TOKENS,
+                system=[
+                    {
+                        "type": "text",
+                        "text": SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=[{"role": "user", "content": user_content}],
+            )
+        except anthropic.RateLimitError as e:
+            last_exc = e
+            sleep_s = _retry_after_seconds(e, attempt)
+            logger.warning(
+                "Rate limited (attempt %d/%d). Sleeping %.1fs before retry.",
+                attempt + 1, MAX_RATE_LIMIT_RETRIES, sleep_s,
+            )
+            time.sleep(sleep_s)
+        except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+            # Transient network issue. Short backoff, then retry.
+            last_exc = e
+            sleep_s = (2 ** attempt) + random.uniform(0, 1)
+            sleep_s = min(sleep_s, 30)  # network blips shouldn't need >30s
+            logger.warning(
+                "Network error %s (attempt %d/%d). Sleeping %.1fs before retry.",
+                type(e).__name__, attempt + 1, MAX_RATE_LIMIT_RETRIES, sleep_s,
+            )
+            time.sleep(sleep_s)
+        # All other anthropic errors (BadRequest, Auth, 5xx) bubble up — they
+        # aren't fixed by retrying.
+
+    # Exhausted retries
+    assert last_exc is not None
+    raise last_exc
+
+
 def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classification:
     """Call Claude Haiku with the combined page content."""
     combined_text = []
@@ -188,17 +277,16 @@ def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classif
     )
 
     try:
-        resp = client.messages.create(
-            model=HAIKU_MODEL,
-            max_tokens=MAX_OUTPUT_TOKENS,
-            system=[
-                {
-                    "type": "text",
-                    "text": SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=[{"role": "user", "content": user_content}],
+        resp = _call_llm_with_retry(client, user_content)
+    except anthropic.RateLimitError as e:
+        # Outer retry exhausted on 429s — return fallback so the lead can be
+        # picked up on a later run when the rate window clears.
+        logger.error("LLM rate-limited after %d retries — falling back.", MAX_RATE_LIMIT_RETRIES)
+        return Classification(
+            status=CLASSIFY_FALLBACK_STATUS,
+            reason="llm_error:rate_limited_after_retries",
+            used_llm=True,
+            pages_fetched=len(pages),
         )
     except Exception as e:
         logger.warning("LLM call failed: %s", e)

@@ -760,3 +760,50 @@ form.filters button:hover { background: #2d4229; }
   color: #6b3a00 !important;
   margin-top: 8px !important;
 }
+
+/* ─── Copy visible rows button + grid header layout ────────────
+   Append to webapp/webapp/static/styles.css
+─────────────────────────────────────────────────────────────────── */
+
+.grid-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 32px 0 12px;
+  flex-wrap: wrap;
+}
+
+.grid-header .grid-heading {
+  margin: 0;
+}
+
+.btn-copy-rows {
+  background: #fbf8f3;
+  border: 1px solid #d4cdb8;
+  color: #3d5a3a;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.btn-copy-rows:hover {
+  background: #f3ede1;
+  border-color: #3d5a3a;
+}
+
+.btn-copy-rows.btn-copy-success {
+  background: #d4e6cf;
+  border-color: #3d5a3a;
+  color: #2d4229;
+}
+
+.btn-copy-rows.btn-copy-error {
+  background: #f6d9d1;
+  border-color: #d88b7a;
+  color: #6b3a00;
+}

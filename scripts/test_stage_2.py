@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src import config, owner_finder, sheets
 
-client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+client = Anthropic(api_key=config.ANTHROPIC_API_KEY, max_retries=5)
 
 # Find a lead where Stage 1 left owner_name empty
 rows = sheets.read_all_rows(config.TAB_LEADS)

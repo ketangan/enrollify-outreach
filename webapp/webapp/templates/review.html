@@ -157,9 +157,17 @@
 
 {# ─── BOTTOM: Grid ─── #}
 
-<h3 class="grid-heading">
-  All {% if mode == 'classify' %}classify{% elif mode == 'owner' %}owner-review{% else %}pre-send{% endif %} leads ({{ grid_total }})
-</h3>
+<div class="grid-header">
+  <h3 class="grid-heading">
+    All {% if mode == 'classify' %}classify{% elif mode == 'owner' %}owner-review{% else %}pre-send{% endif %} leads ({{ grid_total }})
+  </h3>
+
+  {% if grid_rows %}
+  <button type="button" id="copyVisibleRows" class="btn-copy-rows" title="Copy school, website, zip, owner, email — tab-separated, paste into Sheets/Excel">
+    📋 Copy visible rows
+  </button>
+  {% endif %}
+</div>
 
 {% if grid_rows %}
 <table class="data-table review-grid">
@@ -175,7 +183,12 @@
   </thead>
   <tbody>
   {% for r in grid_rows %}
-    <tr class="{% if not r.get('owner_name', '').strip() and mode == 'pre_send' %}row-blank-owner{% endif %}">
+    <tr class="{% if not r.get('owner_name', '').strip() and mode == 'pre_send' %}row-blank-owner{% endif %}"
+        data-school="{{ r.get('name', '') }}"
+        data-website="{{ r.get('website', '') }}"
+        data-zip="{{ r.get('zip', '') }}"
+        data-owner="{{ r.get('owner_name', '') }}"
+        data-email="{{ r.get('best_email', '') }}">
       <form method="POST" action="/review/grid-update">
         <input type="hidden" name="lead_id" value="{{ r.get('id', '') }}">
         <input type="hidden" name="mode" value="{{ mode }}">
@@ -231,6 +244,59 @@
   {% endif %}
 </div>
 {% endif %}
+
+<script>
+  // ─── Copy visible grid rows as TSV ───────────────────────
+  // Reads data-* attributes from each <tr> in the current page's grid
+  // (filled server-side, so we get clean untruncated values even if
+  // an input is mid-edit). Tab-separated rows paste cleanly into
+  // Google Sheets, Excel, or Notes.
+  (function() {
+    const btn = document.getElementById('copyVisibleRows');
+    if (!btn) return;
+
+    btn.addEventListener('click', async () => {
+      const rows = document.querySelectorAll('table.review-grid tbody tr');
+      if (!rows.length) {
+        flash(btn, 'No rows', false);
+        return;
+      }
+
+      const lines = [];
+      rows.forEach(tr => {
+        const fields = [
+          tr.dataset.school || '',
+          tr.dataset.website || '',
+          tr.dataset.zip || '',
+          tr.dataset.owner || '',
+          tr.dataset.email || '',
+        ].map(s => s.replace(/[\t\r\n]+/g, ' ').trim());
+        lines.push(fields.join('\t'));
+      });
+
+      const tsv = lines.join('\n');
+
+      try {
+        await navigator.clipboard.writeText(tsv);
+        flash(btn, `✓ Copied ${rows.length} row${rows.length === 1 ? '' : 's'}`, true);
+      } catch (err) {
+        console.error('Clipboard write failed:', err);
+        flash(btn, 'Copy failed — check console', false);
+      }
+    });
+
+    function flash(button, text, success) {
+      const original = button.innerHTML;
+      button.innerHTML = text;
+      button.classList.toggle('btn-copy-success', success);
+      button.classList.toggle('btn-copy-error', !success);
+      setTimeout(() => {
+        button.innerHTML = original;
+        button.classList.remove('btn-copy-success', 'btn-copy-error');
+      }, 1800);
+    }
+  })();
+</script>
 
 {% else %}
 <p class="muted-empty">No leads in this view.</p>
