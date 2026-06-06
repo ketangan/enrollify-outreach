@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +44,11 @@ ZOHO_DRAFTS_WEB_URL = "https://mail.zoho.com/zm/#mail/folder/drafts"
 # Thresholds for the "what to run next" recommendation in the summary email
 LOW_QUEUE_THRESHOLD = 10        # ready_to_send count below this = low queue
 PENDING_REFILL_THRESHOLD = 50   # pending_classify above this = worth running downstream
+
+# Google Sheets allows 60 write requests / minute / user. Each lead update is one
+# batch_update call. Sleeping 1.2s between calls caps us at ~50/min — safely under
+# the limit and leaves headroom for other workflows hitting the same sheet.
+SHEET_WRITE_THROTTLE_SEC = 1.2
 
 
 def _collect_ready_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
@@ -292,6 +298,7 @@ def main():
                 ],
                 value_input_option="USER_ENTERED",
             )
+            time.sleep(SHEET_WRITE_THROTTLE_SEC)
             failures.append({"school": lead.get("name", ""), "error": err})
             continue
 
@@ -304,6 +311,7 @@ def main():
             ],
             value_input_option="USER_ENTERED",
         )
+        time.sleep(SHEET_WRITE_THROTTLE_SEC)
 
         drafts_summary.append({
             "school": lead.get("name", ""),

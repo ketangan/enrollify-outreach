@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -37,6 +38,11 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("phase6fu")
+
+# Google Sheets allows 60 write requests / minute / user. Throttle each
+# batch_update call so concurrent workflows (Phase 5, sync) don't trip the
+# combined per-minute write quota.
+SHEET_WRITE_THROTTLE_SEC = 1.2
 
 
 def _due_today(follow_up_at: str) -> bool:
@@ -146,6 +152,7 @@ def main():
                 {"range": rowcol_to_a1(lead["_row_idx"], col["notes"] + 1),
                  "values": [[f"phase6_followup_upload_failed:{err[:300]}"]]},
             ], value_input_option="USER_ENTERED")
+            time.sleep(SHEET_WRITE_THROTTLE_SEC)
             failures.append({"school": lead.get("name", ""), "error": err})
             continue
 
@@ -159,6 +166,7 @@ def main():
             {"range": rowcol_to_a1(lead["_row_idx"], col["last_action"] + 1),
              "values": [["phase6_followup_drafted"]]},
         ], value_input_option="USER_ENTERED")
+        time.sleep(SHEET_WRITE_THROTTLE_SEC)
 
         drafts.append({
             "school": lead.get("name", ""),
@@ -210,4 +218,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
