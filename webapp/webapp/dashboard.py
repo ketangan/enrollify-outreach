@@ -92,7 +92,36 @@ def compute_recommendations(stage_counts: dict) -> dict:
 
     # Downstream
     if ds_pending == 0:
-        recs["downstream"] = {"level": "ok", "text": "Nothing to do."}
+        # Branch by what ELSE is going on so user knows the next move.
+        # Downstream only acts on pending_classify and ready_for_owner_lookup.
+        # If those are 0, every lead is past this stage — Downstream literally
+        # has nothing to do, and the fix is upstream (Discovery) or sideways (Review).
+        if rv_pending >= 20:
+            recs["downstream"] = {
+                "level": "ok",
+                "text": (
+                    f"Nothing for downstream to process — all current leads have moved past "
+                    f"dedupe/classify/owner-lookup. To advance more leads, clear the Review "
+                    f"queue ({rv_pending} waiting) so they re-enter downstream as "
+                    f"<code>ready_for_owner_lookup</code>."
+                ),
+            }
+        elif total < 100:
+            recs["downstream"] = {
+                "level": "ok",
+                "text": (
+                    "Nothing for downstream to process. Run Discovery to add new leads, "
+                    "or work the Review queue."
+                ),
+            }
+        else:
+            recs["downstream"] = {
+                "level": "ok",
+                "text": (
+                    "Nothing for downstream to process — every lead has already been through "
+                    "this stage. Run Discovery to add new leads."
+                ),
+            }
     elif ds_pending < 50:
         recs["downstream"] = {
             "level": "ok",
