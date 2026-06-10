@@ -3,6 +3,11 @@ Email template rendering for Phase 5.
 
 Reads templates from the Templates tab of the Google Sheet, fills in
 placeholders per lead, returns rendered subject + HTML body.
+
+Category-aware bullets: leads are bucketed into 'early_ed' (preschool,
+daycare, montessori — formal admissions, Brightwheel) and 'activities'
+(everything else — activity-based programs, generic scheduling tools).
+The template body uses {{feature_bullets}} which is rendered per-bucket.
 """
 
 from __future__ import annotations
@@ -21,6 +26,48 @@ ENROLLMENT_METHOD_TO_TEMPLATE = {
     "pdf_form_qualify": "pdf_form",
     "third_party_form_qualify": "third_party_form",
 }
+
+
+# Category → bucket. Anything not listed defaults to 'activities'.
+# Tuned for Enrollify's two real audiences:
+#   - early_ed: formal-admissions schools (preschool/daycare/montessori).
+#     These care about Brightwheel + applicant scoring.
+#   - activities: activity/lesson-based programs (martial arts, music,
+#     dance, sports, art, language, tutoring, etc.). They want sign-ups,
+#     not "admissions."
+CATEGORY_TO_BUCKET = {
+    "preschool": "early_ed",
+    "daycare": "early_ed",
+    "montessori": "early_ed",
+}
+
+# Category-specific feature bullet lists. Rendered into the template
+# via the {{feature_bullets}} placeholder. HTML <li>...</li> wrapped
+# so the template can just include them inside a <ul>.
+FEATURE_BULLETS = {
+    "early_ed": (
+        "<li>Custom-built enrollment forms tailored to your programs and branding</li>"
+        "<li>A clean dashboard where every submission lands organized and searchable</li>"
+        "<li>Built-in reporting on enrollment trends and application activity</li>"
+        "<li>Lead management so prospective families don't slip through the cracks</li>"
+        "<li>AI-generated summaries of each applicant, scored against your admission criteria</li>"
+        "<li>One-click exports to Brightwheel and other tools you may already use</li>"
+        "<li>Zero setup on your end — no servers, no databases, no maintenance</li>"
+    ),
+    "activities": (
+        "<li>Custom-built sign-up forms tailored to your classes and branding</li>"
+        "<li>A clean dashboard where every new student inquiry lands organized and searchable</li>"
+        "<li>Built-in reporting on enrollment trends and class signups</li>"
+        "<li>Lead management so interested students don't slip through the cracks</li>"
+        "<li>One-click exports to your existing scheduling or billing tools</li>"
+        "<li>Zero setup on your end — no servers, no databases, no maintenance</li>"
+    ),
+}
+
+
+def _bucket_for(category: str) -> str:
+    """Return the audience bucket for a given lead category. Defaults to 'activities'."""
+    return CATEGORY_TO_BUCKET.get(category.strip().lower(), "activities")
 
 
 @dataclass
@@ -101,6 +148,10 @@ def render_email(lead: dict) -> RenderedEmail | None:
     # Category cleanup for natural reading in the template body
     category_display = category.replace("_", " ")
 
+    # Category-specific feature bullets
+    bucket = _bucket_for(category)
+    feature_bullets = FEATURE_BULLETS[bucket]
+
     # Render observation first (contains {{school_name}})
     observation_ctx = {"school_name": school_name}
     observation = _render(tpl["observation"], observation_ctx)
@@ -111,6 +162,7 @@ def render_email(lead: dict) -> RenderedEmail | None:
         "category": category_display,
         "specific_observation": observation,
         "lead_id": lead_id,
+        "feature_bullets": feature_bullets,
     }
     body = _render(tpl["body"], body_ctx)
     subject = _render(tpl["subject"], body_ctx)
