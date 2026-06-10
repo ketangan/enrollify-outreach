@@ -45,6 +45,49 @@ NOISE_TAGS = [
 
 MAX_TEXT_PER_PAGE = 2000  # chars
 
+# Cloudflare email protection — decodes /cdn-cgi/l/email-protection#<hex>
+# The hex string is XOR-encrypted with its own first byte as the key.
+# e.g. "83f4eaefefecf4efe4e6edc3e6ede4e6edeaf6f0efe6e2f1edeaede4ade0ecee"
+#       → key = 0x83, decode remaining bytes XOR 0x83 → "mike@engeniuslearning.com"
+CLOUDFLARE_EMAIL_HEX_RE = re.compile(
+    r"/cdn-cgi/l/email-protection#([0-9a-fA-F]+)"
+)
+
+
+def _decode_cloudflare_email(hex_str: str) -> str:
+    """Decode a Cloudflare-obfuscated email. Returns empty string on failure."""
+    try:
+        if len(hex_str) < 4 or len(hex_str) % 2 != 0:
+            return ""
+        key = int(hex_str[:2], 16)
+        decoded_bytes = bytes(
+            int(hex_str[i:i + 2], 16) ^ key
+            for i in range(2, len(hex_str), 2)
+        )
+        decoded = decoded_bytes.decode("ascii", errors="ignore")
+        # Basic sanity check — must look like an email
+        if "@" in decoded and "." in decoded.split("@")[-1]:
+            return decoded
+    except (ValueError, UnicodeDecodeError):
+        pass
+    return ""
+
+
+def _extract_cloudflare_emails(html: str) -> list[str]:
+    """Find all Cloudflare-obfuscated emails in raw HTML."""
+    emails = []
+    for hex_str in CLOUDFLARE_EMAIL_HEX_RE.findall(html):
+        decoded = _decode_cloudflare_email(hex_str)
+        if decoded and decoded not in emails:
+            emails.append(decoded)
+    # Also handle <a data-cfemail="..."> form (Cloudflare's second pattern)
+    # Example: <a class="__cf_email__" data-cfemail="83f4ea...">
+    for hex_str in re.findall(r'data-cfemail="([0-9a-fA-F]+)"', html):
+        decoded = _decode_cloudflare_email(hex_str)
+        if decoded and decoded not in emails:
+            emails.append(decoded)
+    return emails
+
 
 @dataclass
 class FetchedPage:
@@ -101,6 +144,12 @@ def fetch(url: str) -> FetchedPage:
     # Save a raw snippet for vendor-pattern matching before stripping
     raw_snippet = html[:20000].lower()
 
+    # Decode Cloudflare-obfuscated emails BEFORE BeautifulSoup mangles things.
+    # These appear as either /cdn-cgi/l/email-protection#<hex> or
+    # data-cfemail="<hex>" attributes. The visible link text shows "[email protected]"
+    # which is useless to us; decoding recovers the real address.
+    cf_emails = _extract_cloudflare_emails(html)
+
     soup = BeautifulSoup(html, "html.parser")
 
     # Strip noise tags
@@ -134,6 +183,14 @@ def fetch(url: str) -> FetchedPage:
     text = re.sub(r"\s+", " ", text)
     if len(text) > MAX_TEXT_PER_PAGE:
         text = text[:MAX_TEXT_PER_PAGE]
+
+    # Append decoded Cloudflare emails so the downstream regex picks them up.
+    # We append rather than inject inline because we want them visible to the
+    # email-extraction regex even if the page text would otherwise be truncated
+    # before we reach the email's natural position.
+    if cf_emails:
+        cf_suffix = " " + " ".join(cf_emails)
+        text = (text + cf_suffix)[:MAX_TEXT_PER_PAGE + len(cf_suffix)]
 
     return FetchedPage(
         url=resp.url,
