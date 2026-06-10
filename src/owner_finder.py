@@ -14,6 +14,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from urllib.parse import urljoin, urlparse
 
 from anthropic import Anthropic
 
@@ -73,6 +74,24 @@ OWNER_PAGE_PATTERNS = [
     r"partnership",  
 ]
 
+# Common URL paths that aren't always linked from the homepage's static HTML
+# (e.g. Wix/Squarespace render the top nav via JavaScript, so a fetcher only
+# sees body links). We probe these directly as a fallback when find_owner_pages
+# returns fewer than max_pages candidates from outbound links alone.
+COMMON_OWNER_PATHS = [
+    "/contact",
+    "/contact-us",
+    "/about",
+    "/about-us",
+    "/team",
+    "/staff",
+    "/meet-the-team",
+    "/our-team",
+    "/our-staff",
+    "/faculty",
+    "/instructors",
+]
+
 
 @dataclass
 class OwnerResult:
@@ -109,34 +128,83 @@ def _extract_emails(text: str) -> list[str]:
 
 
 def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 3) -> list[str]:
-    """Identify About/Team/Contact-style links on the homepage."""
-    if not home.outbound_links:
-        return []
+    """
+    Identify About/Team/Contact-style links on the homepage.
+
+    First pass: scan the homepage's outbound_links for URL/text matches.
+    Fallback: if we have fewer than max_pages candidates from the homepage,
+    probe COMMON_OWNER_PATHS against the base domain directly. This catches
+    Wix/Squarespace sites where the nav is JavaScript-rendered and not in
+    the static HTML.
+    """
     pattern = re.compile("|".join(OWNER_PAGE_PATTERNS), re.IGNORECASE)
-    picked = []
-    base_host = ""
+    picked: list[str] = []
+    picked_paths: set[str] = set()  # path-only, used to dedupe across both passes
+
     try:
-        from urllib.parse import urlparse
         base_host = urlparse(home.url).netloc.lower().lstrip("www.")
     except Exception:
-        pass
+        base_host = ""
 
-    for link in home.outbound_links:
-        href = link["href"]
-        text = link["text"]
-        # Same-domain only
-        try:
-            from urllib.parse import urlparse
-            link_host = urlparse(href).netloc.lower().lstrip("www.")
-            if base_host and link_host and base_host != link_host:
+    # --- Pass 1: from homepage outbound links -------------------------------
+    if home.outbound_links:
+        for link in home.outbound_links:
+            href = link.get("href", "")
+            text = link.get("text", "")
+            try:
+                link_host = urlparse(href).netloc.lower().lstrip("www.")
+                if base_host and link_host and base_host != link_host:
+                    continue
+            except Exception:
                 continue
-        except Exception:
-            continue
-        if pattern.search(href) or pattern.search(text):
-            if href not in picked:
+            if pattern.search(href) or pattern.search(text):
+                if href in picked:
+                    continue
+                try:
+                    path = urlparse(href).path.rstrip("/").lower()
+                except Exception:
+                    path = ""
+                if path in picked_paths:
+                    continue
                 picked.append(href)
+                picked_paths.add(path)
                 if len(picked) >= max_pages:
-                    break
+                    return picked
+
+    # --- Pass 2: probe common paths directly --------------------------------
+    # Only runs if we still need more pages. Costs at most one fetch per probe,
+    # but each fetcher call is timeout-protected (~12s) and short-circuits on
+    # 404/non-HTML.
+    if base_host:
+        scheme = "https"
+        try:
+            scheme = urlparse(home.url).scheme or "https"
+        except Exception:
+            pass
+        base_url = f"{scheme}://{base_host}"
+
+        for path in COMMON_OWNER_PATHS:
+            if len(picked) >= max_pages:
+                break
+            if path.rstrip("/").lower() in picked_paths:
+                continue  # already got it from outbound links
+            probe_url = base_url + path
+            probed = fetcher.fetch(probe_url)
+            # Only count it if the fetch actually succeeded and returned HTML
+            if probed.error:
+                continue
+            if probed.status_code != 200:
+                continue
+            # If the probe redirected away from base host, skip
+            try:
+                probed_host = urlparse(probed.url).netloc.lower().lstrip("www.")
+                if probed_host != base_host:
+                    continue
+            except Exception:
+                continue
+            picked.append(probe_url)
+            picked_paths.add(path.rstrip("/").lower())
+
     return picked
 
 
