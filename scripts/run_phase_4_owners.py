@@ -35,6 +35,12 @@ logger = logging.getLogger("phase4")
 
 POLITE_DELAY_SECONDS = 1.5
 
+# Google Sheets allows 60 write requests / minute / user. Each batch_update
+# inside the loop is one write. With POLITE_DELAY_SECONDS=1.5 between leads
+# this is already under-the-limit, but on long runs with parallel workflows
+# (sync, etc.) we want explicit per-write throttling. Conservative cap: 50/min.
+SHEET_WRITE_THROTTLE_SEC = 1.2
+
 # Status used when Phase 4 can't find a usable owner/email.
 # Renamed from "needs_manual_review" so Phase 3 vs Phase 4 fallbacks are distinguishable.
 OWNER_FALLBACK_STATUS = "needs_owner_review"
@@ -152,6 +158,7 @@ def main():
                  "values": [["phase4_owner_found"]]},
             ]
             leads_ws.batch_update(batch_updates, value_input_option="USER_ENTERED")
+            time.sleep(SHEET_WRITE_THROTTLE_SEC)
 
         time.sleep(POLITE_DELAY_SECONDS)
 

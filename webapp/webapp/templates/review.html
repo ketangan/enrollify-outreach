@@ -55,7 +55,6 @@
   </div>
 {% else %}
   <div class="review-card">
-    <h3 class="lead-name">{{ lead.get("name", "") }}</h3>
     <p class="lead-meta">
       <span>{{ lead.get("category", "") }}</span>
       <span>·</span>
@@ -79,6 +78,11 @@
     <form method="POST" action="/review/save" class="review-form">
       <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
       <input type="hidden" name="mode" value="{{ mode }}">
+
+      <label>
+        School name
+        <input type="text" name="name" value="{{ lead.get('name', '') }}" class="lead-name-input">
+      </label>
 
       {% if mode == 'classify' %}
         <label>

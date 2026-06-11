@@ -807,3 +807,8 @@ form.filters button:hover { background: #2d4229; }
   border-color: #d88b7a;
   color: #6b3a00;
 }
+
+.lead-name-input {
+  font-size: 18px;
+  font-weight: 600;
+}

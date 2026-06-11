@@ -305,6 +305,7 @@ def review_view(
 @router.post("/review/save")
 def review_save(
     lead_id: str = Form(...),
+    name: str = Form(""),
     owner_name: str = Form(""),
     best_email: str = Form(""),
     enrollment_method: str = Form(""),
@@ -313,6 +314,7 @@ def review_save(
     review_skipped: str = Cookie(default=None),
 ):
     """Save & next from the top card."""
+    name = name.strip()
     owner_name = owner_name.strip()
     best_email = best_email.strip().lower()
     enrollment_method = enrollment_method.strip()
@@ -344,6 +346,11 @@ def review_save(
                 "owner_name": owner_name,
                 "last_action": "review_partial",
             }
+
+    # School name override — applies to all modes when provided.
+    # We don't promote status based on name alone; just record the edit.
+    if name:
+        updates["name"] = name
 
     if not _update_lead_fields(lead_id, updates):
         logger.warning("review_save: lead %s not found", lead_id)

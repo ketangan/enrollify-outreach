@@ -40,7 +40,7 @@ ENROLLMENT_LINK_PATTERNS = [
 # Tags we strip entirely — pure noise
 NOISE_TAGS = [
     "script", "style", "noscript", "svg", "iframe",
-    "nav", "aside", "form",
+    "aside",
 ]
 
 MAX_TEXT_PER_PAGE = 2000  # chars

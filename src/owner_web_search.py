@@ -32,6 +32,18 @@ logger = logging.getLogger(__name__)
 MODEL = "claude-haiku-4-5"
 MAX_TOKENS = 1024
 
+# Per-request timeout for the web-search-enabled call. The SDK's default
+# is ~10 min which is way too generous when web_search itself can be slow.
+# 60s per attempt × 2 attempts = ~2 min worst case per lead (excluding network
+# blip retries). The SDK has its own internal retry on top, but we override
+# max_retries below to keep total bounded.
+WEB_SEARCH_TIMEOUT_SECONDS = 60
+
+# Total cap for one web_search call, including the SDK's automatic retries.
+# Our outer retry layer adds up to 3 attempts on top of this. Worst-case
+# wall time per lead = ~6 min (was: unbounded, observed 71 min).
+WEB_SEARCH_SDK_RETRIES = 2
+
 # web_search_20250305 is the broadly-compatible version. Requires the org
 # admin to have enabled web search in console.anthropic.com.
 WEB_SEARCH_TOOL = {
@@ -149,11 +161,26 @@ def _domain_from_url(url: str) -> str:
 
 def _run_web_search(prompt: str, client: Anthropic, max_retries: int = 3) -> dict | None:
     """Single web-search-enabled call. Retries on overload/transient errors.
-    Returns parsed JSON or None on failure."""
+
+    Wraps the SDK call with:
+      - per-request timeout (WEB_SEARCH_TIMEOUT_SECONDS)
+      - capped SDK retries (WEB_SEARCH_SDK_RETRIES)
+      - outer retry loop for transient errors
+
+    Returns parsed JSON or None on failure.
+    """
     last_error = None
+    # Build a client variant with a hard per-call timeout + bounded SDK retries.
+    # This is essential — without it, server-side web_search hangs can stall
+    # for an hour+ (one observed: 71 minutes on a single lead).
+    bounded_client = client.with_options(
+        timeout=WEB_SEARCH_TIMEOUT_SECONDS,
+        max_retries=WEB_SEARCH_SDK_RETRIES,
+    )
+
     for attempt in range(max_retries):
         try:
-            response = client.messages.create(
+            response = bounded_client.messages.create(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
                 tools=[WEB_SEARCH_TOOL],
@@ -163,13 +190,19 @@ def _run_web_search(prompt: str, client: Anthropic, max_retries: int = 3) -> dic
         except Exception as e:
             last_error = e
             err_str = str(e).lower()
-            # Retry on overload, rate limit, transient server errors
+            err_type = type(e).__name__.lower()
+            # Retry on overload, rate limit, transient server errors, AND
+            # timeouts (which now actually fire thanks to bounded_client).
             is_transient = (
                 "529" in err_str
                 or "overloaded" in err_str
                 or "rate_limit" in err_str
                 or "503" in err_str
                 or "504" in err_str
+                or "timeout" in err_str
+                or "timeout" in err_type
+                or "connectionerror" in err_type
+                or "apiconnectionerror" in err_type
             )
             if is_transient and attempt < max_retries - 1:
                 wait = 2 ** attempt  # 1s, 2s, 4s
