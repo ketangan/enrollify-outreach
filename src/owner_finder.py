@@ -34,6 +34,7 @@ EMAIL_REGEX = re.compile(
 EMAIL_BLOCKLIST_PATTERNS = [
     r"@sentry\.io",
     r"@wixpress\.com",
+    r"filler@godaddy\.com",
     r"@squarespace\.com",
     r"@example\.com",
     r"@domain\.com",
