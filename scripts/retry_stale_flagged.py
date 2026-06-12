@@ -227,6 +227,9 @@ def main():
                         help="Cap total leads (across both phases)")
     parser.add_argument("--phase", choices=["3", "4", "both"], default="both",
                         help="Which retry pass to run (default: both)")
+    parser.add_argument("--include-retried", action="store_true",
+                        help="Re-process leads we've already retried once "
+                             "(default: skip them — they'd just fail again)")
     args = parser.parse_args()
 
     config.validate()
@@ -244,12 +247,20 @@ def main():
     ]
     col = _build_col_map(headers, required)
 
+    # Skip leads we've already retried — they'd just produce the same failure.
+    # `--include-retried` flag overrides this if you ever want to re-retry
+    # (e.g. after fixing a new bug that might recover more).
+    skip_already_retried = not args.include_retried
+    p3_skipped = 0
+    p4_skipped = 0
+
     p3_todo = []
     p4_todo = []
     for i, row in enumerate(all_rows[1:], start=2):
         if len(row) <= max(col.values()):
             continue
         status = row[col["status"]].strip()
+        last_action = row[col["last_action"]].strip() if col["last_action"] < len(row) else ""
         lead = {
             "row_idx": i,
             "name": row[col["name"]],
@@ -257,11 +268,18 @@ def main():
             "category": row[col["category"]] if col["category"] < len(row) else "",
         }
         if status == STATUS_NEEDS_CLASSIFY:
+            if skip_already_retried and last_action == "retry_p3":
+                p3_skipped += 1
+                continue
             p3_todo.append(lead)
         elif status == STATUS_NEEDS_OWNER:
+            if skip_already_retried and last_action == "retry_p4":
+                p4_skipped += 1
+                continue
             p4_todo.append(lead)
 
-    logger.info("Found %d Phase 3 stuck + %d Phase 4 stuck", len(p3_todo), len(p4_todo))
+    logger.info("Found %d Phase 3 stuck + %d Phase 4 stuck (skipped %d P3 + %d P4 already retried)",
+                len(p3_todo), len(p4_todo), p3_skipped, p4_skipped)
 
     # Apply phase filter
     if args.phase == "3":
