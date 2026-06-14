@@ -148,29 +148,44 @@ def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 3) -> list[str]
         base_host = ""
 
     # --- Pass 1: from homepage outbound links -------------------------------
-    if home.outbound_links:
-        for link in home.outbound_links:
-            href = link.get("href", "")
-            text = link.get("text", "")
-            try:
-                link_host = urlparse(href).netloc.lower().lstrip("www.")
-                if base_host and link_host and base_host != link_host:
-                    continue
-            except Exception:
+    # Score outbound links: contact/team get priority over about/philosophy.
+    # Reason: contact pages have emails; about/philosophy pages have names. We
+    # need both, but if max_pages=3 forces a choice, contact wins.
+    PRIORITY_KEYWORDS = re.compile(r"contact|team|staff|faculty|meet|people", re.IGNORECASE)
+
+    # First pass: high-priority pages (contact/team/staff)
+    priority_matches = []
+    secondary_matches = []
+    for link in home.outbound_links:
+        href = link.get("href", "")
+        text = link.get("text", "")
+        try:
+            link_host = urlparse(href).netloc.lower().lstrip("www.")
+            if base_host and link_host and base_host != link_host:
                 continue
-            if pattern.search(href) or pattern.search(text):
-                if href in picked:
-                    continue
-                try:
-                    path = urlparse(href).path.rstrip("/").lower()
-                except Exception:
-                    path = ""
-                if path in picked_paths:
-                    continue
-                picked.append(href)
-                picked_paths.add(path)
-                if len(picked) >= max_pages:
-                    return picked
+        except Exception:
+            continue
+        if not (pattern.search(href) or pattern.search(text)):
+            continue
+        if PRIORITY_KEYWORDS.search(href) or PRIORITY_KEYWORDS.search(text):
+            priority_matches.append(href)
+        else:
+            secondary_matches.append(href)
+
+    # Combine: priority first, then fill with secondary
+    for href in priority_matches + secondary_matches:
+        if href in picked:
+            continue
+        try:
+            path = urlparse(href).path.rstrip("/").lower()
+        except Exception:
+            path = ""
+        if path in picked_paths:
+            continue
+        picked.append(href)
+        picked_paths.add(path)
+        if len(picked) >= max_pages:
+            return picked
 
     # --- Pass 2: probe common paths directly --------------------------------
     # Only runs if we still need more pages. Costs at most one fetch per probe,
