@@ -89,11 +89,20 @@ After the search, return JSON ONLY (no prose, no markdown fences):
   "reasoning": "<one sentence>"
 }}
 
+CRITICAL — name-collision check (read carefully):
+- School names like "Step By Step", "ABC Academy", "Bright Futures" are EXTREMELY common.
+- Before returning any owner, VERIFY the search result is about THIS specific school by checking:
+  (a) The source URL's domain matches "{website}" OR the source mentions "{city}, {state}".
+  (b) The business category in the source matches "{category}" (e.g. a dance studio result is irrelevant if our lead is a preschool).
+- If the search returns a school with the same name but in a different city/state/category, set found=false. Do NOT return their owner.
+- If the source URL is on a different domain than "{website}" AND the source does NOT mention "{city}, {state}", set found=false.
+- A LinkedIn profile, Yelp page, or news article on a different domain is FINE — but only if it explicitly references the school in {city}, {state}.
+
 Rules:
-- "high": name on the school's own site, LinkedIn profile of that person, or a press release.
-- "medium": name in a review site bio, news mention, or directory listing.
-- "low": name appears but role is ambiguous (could be a teacher, not the owner).
-- If you can't tie someone clearly to ownership, set found=false. Don't guess.
+- "high": name on the school's own site, LinkedIn profile of that person, or a press release — AND location confirmed.
+- "medium": name in a review site bio, news mention, or directory listing — AND location confirmed.
+- "low": name appears but role is ambiguous (could be a teacher, not the owner) — location still must match.
+- If you can't tie someone clearly to ownership of THIS specific school, set found=false. Don't guess.
 - Skip generic non-names ("The Team", "Our Staff", "Admin Office", "Front Desk")."""
 
 
