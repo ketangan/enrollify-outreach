@@ -11,6 +11,13 @@ For each ready_to_send lead (up to daily cap):
 The summary email also reports upstream pipeline state (pending_classify,
 needs_manual_review counts) so Ketan knows when to run downstream next.
 
+Invalid-enrollment-method guard:
+  If a lead has status=ready_to_send but enrollment_method is not in the
+  valid set (drafter.ENROLLMENT_METHOD_TO_TEMPLATE keys), the lead is
+  automatically rerouted to needs_enrollment_system_classification — it'll
+  show up in the Review Classify tab. Prevents the same lead from failing
+  every daily run forever.
+
 Usage:
   python scripts/run_phase_5_drafts.py --dry-run        # render only, don't touch Zoho
   python scripts/run_phase_5_drafts.py --limit 5        # cap at 5 for testing
@@ -49,6 +56,12 @@ PENDING_REFILL_THRESHOLD = 50   # pending_classify above this = worth running do
 # batch_update call. Sleeping 1.2s between calls caps us at ~50/min — safely under
 # the limit and leaves headroom for other workflows hitting the same sheet.
 SHEET_WRITE_THROTTLE_SEC = 1.2
+
+# Valid enrollment_method values that the drafter can map to a template.
+# Any ready_to_send lead with a value outside this set is rerouted to
+# needs_enrollment_system_classification (Review Classify tab) instead of
+# failing forever on every daily run.
+VALID_ENROLLMENT_METHODS = set(drafter.ENROLLMENT_METHOD_TO_TEMPLATE.keys())
 
 
 def _collect_ready_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
@@ -135,6 +148,7 @@ def _build_pipeline_section(status_counts: dict, ready_after_run: int) -> str:
 
 
 def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
+                        rerouted: list[dict],
                         status_counts: dict, ready_after_run: int) -> str:
     """Build the HTML body of the morning approval email."""
     rows = []
@@ -161,6 +175,22 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
         <ul>{fail_rows}</ul>
         """
 
+    rerouted_section = ""
+    if rerouted:
+        rr_rows = "\n".join(
+            f"<li><strong>{r['school']}</strong>: invalid enrollment_method "
+            f"<code>{r['enrollment_method']}</code> — moved to Review Classify tab</li>"
+            for r in rerouted
+        )
+        rerouted_section = f"""
+        <h3 style="color: #c47a18; margin-top: 24px;">Rerouted to review ({len(rerouted)})</h3>
+        <p style="font-size: 13px; color: #54504a;">
+            These leads had a corrupted enrollment_method and would have failed every daily run.
+            They're now in the <a href="https://enrollify-admin.onrender.com/review?mode=classify">Review Classify</a> tab.
+        </p>
+        <ul>{rr_rows}</ul>
+        """
+
     pipeline_section = _build_pipeline_section(status_counts, ready_after_run)
 
     return f"""
@@ -185,6 +215,7 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
             </tbody>
         </table>
         {failure_section}
+        {rerouted_section}
         {pipeline_section}
         <p style="margin-top: 24px; color: #54504a; font-size: 13px;">
             Drafts were created but NOT sent. Open Zoho and click send on the ones you approve.
@@ -222,17 +253,63 @@ def main():
 
     ready = _collect_ready_leads(col, all_rows)
     cap = args.limit if args.limit is not None else config.DEFAULT_DAILY_EMAIL_CAP
-    batch = ready[:cap]
 
-    logger.info("Found %d ready_to_send leads. Processing %d (cap=%d).",
-                len(ready), len(batch), cap)
+    # ── Pre-flight: reroute leads with invalid enrollment_method ───────
+    # Catches the bug where a lead lands in ready_to_send with a corrupted
+    # enrollment_method (e.g. 'needs_enrollment_system_classification' or
+    # 'online_system_exclude'). Without this guard, every daily run would
+    # try and fail forever. With it, the lead goes to Review and gets fixed.
+    rerouted = []
+    eligible = []
+    for lead in ready:
+        em = (lead.get("enrollment_method") or "").strip()
+        if em not in VALID_ENROLLMENT_METHODS:
+            # Reroute now, even in dry-run mode? No — only on real runs, so
+            # dry-run reporting matches what would happen.
+            rerouted.append({
+                "school": lead.get("name", ""),
+                "enrollment_method": em or "(empty)",
+                "_row_idx": lead["_row_idx"],
+            })
+            continue
+        eligible.append(lead)
+
+    if rerouted:
+        logger.warning(
+            "Found %d ready_to_send lead(s) with invalid enrollment_method — rerouting to Review",
+            len(rerouted),
+        )
+        for r in rerouted:
+            logger.warning("  %s: enrollment_method=%r", r["school"][:50], r["enrollment_method"])
+
+    if rerouted and not args.dry_run:
+        for r in rerouted:
+            leads_ws.batch_update(
+                [
+                    {"range": rowcol_to_a1(r["_row_idx"], col["status"] + 1),
+                     "values": [["needs_enrollment_system_classification"]]},
+                    {"range": rowcol_to_a1(r["_row_idx"], col["enrollment_method"] + 1),
+                     "values": [[""]]},
+                    {"range": rowcol_to_a1(r["_row_idx"], col["last_action"] + 1),
+                     "values": [["phase5_invalid_em_reroute"]]},
+                    {"range": rowcol_to_a1(r["_row_idx"], col["notes"] + 1),
+                     "values": [[f"phase5: rerouted, invalid enrollment_method={r['enrollment_method']}"]]},
+                ],
+                value_input_option="USER_ENTERED",
+            )
+            time.sleep(SHEET_WRITE_THROTTLE_SEC)
+
+    batch = eligible[:cap]
+
+    logger.info("Found %d ready_to_send leads (%d eligible after reroute). Processing %d (cap=%d).",
+                len(ready), len(eligible), len(batch), cap)
 
     if not batch:
         logger.info("Nothing to do.")
         # Still send a pipeline status email so Ketan sees the state.
         if not args.dry_run and not args.no_summary:
             status_counts = _compute_pipeline_status(all_rows, col)
-            summary_html = _build_summary_html([], [], status_counts, ready_after_run=0)
+            summary_html = _build_summary_html([], [], rerouted, status_counts, ready_after_run=0)
             summary_msg = zoho.build_message(
                 to_email=config.ZOHO_EMAIL,
                 subject="Enrollify: 0 drafts today — pipeline status inside",
@@ -323,13 +400,14 @@ def main():
         })
 
     # Summary email to Ketan
-    if not args.dry_run and not args.no_summary and (drafts_summary or failures):
+    if not args.dry_run and not args.no_summary and (drafts_summary or failures or rerouted):
         # Recompute pipeline counts AFTER drafts ran (so ready_to_send reflects what's left)
         fresh_rows = leads_ws.get_all_values()
         status_counts = _compute_pipeline_status(fresh_rows, col)
         ready_after_run = status_counts.get("ready_to_send", 0)
 
-        summary_html = _build_summary_html(drafts_summary, failures, status_counts, ready_after_run)
+        summary_html = _build_summary_html(drafts_summary, failures, rerouted,
+                                           status_counts, ready_after_run)
         summary_msg = zoho.build_message(
             to_email=config.ZOHO_EMAIL,
             subject=f"Enrollify: {len(drafts_summary)} draft(s) ready for approval",
@@ -343,8 +421,8 @@ def main():
 
     logger.info("")
     logger.info("=" * 50)
-    logger.info("Phase 5 complete. Drafts: %d. Failures: %d.",
-                len(drafts_summary), len(failures))
+    logger.info("Phase 5 complete. Drafts: %d. Failures: %d. Rerouted: %d.",
+                len(drafts_summary), len(failures), len(rerouted))
 
 
 if __name__ == "__main__":
