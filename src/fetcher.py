@@ -43,7 +43,7 @@ NOISE_TAGS = [
     "aside",
 ]
 
-MAX_TEXT_PER_PAGE = 2000  # chars
+MAX_TEXT_PER_PAGE = 8000  # chars
 
 # Cloudflare email protection — decodes /cdn-cgi/l/email-protection#<hex>
 # The hex string is XOR-encrypted with its own first byte as the key.

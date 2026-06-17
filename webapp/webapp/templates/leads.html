@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+  <a href="/leads/add" class="btn-add-lead">+ Add lead</a>
+
 <h2>Leads</h2>
+
 <p class="muted">Showing {{ rows|length }} of {{ total }} matching leads ({{ all_total }} total in sheet)</p>
 
 <form method="GET" action="/leads" class="filters">

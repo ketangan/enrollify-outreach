@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Add lead</h2>
+
+<p class="muted" style="max-width: 720px;">
+  Add a school manually. Choose whether you want the pipeline to classify and
+  find an owner, or skip straight to drafting (only if you already have a
+  verified email + enrollment method).
+</p>
+
+{% if error %}
+<div class="pipeline-alert pipeline-alert-warning">
+  <strong>⚠</strong>
+  {% if error == 'name_and_website_required' %}
+    Name and website are required.
+  {% elif error == 'duplicate_in_leads' %}
+    A lead with this website already exists in the Leads tab.
+    <a href="/leads?q={{ form.website }}" style="margin-left: 6px;">Find it →</a>
+  {% elif error == 'duplicate_in_archive' %}
+    A lead with this website is in the Archive (previously processed).
+    Pick a different lead or restore it manually.
+  {% elif error.startswith('skip_requires_') %}
+    "Skip pipeline" needs all of: owner name, email, enrollment method.
+    Missing: <code>{{ error.replace('skip_requires_', '').replace('_', ', ') }}</code>
+  {% elif error == 'sheet_write_failed' %}
+    Sheet write failed — try again in a moment.
+  {% else %}
+    Error: {{ error }}
+  {% endif %}
+</div>
+{% endif %}
+
+<form method="POST" action="/leads/add" class="add-lead-form">
+  <fieldset>
+    <legend>School info</legend>
+
+    <label>
+      School name <span class="required">*</span>
+      <input type="text" name="name" value="{{ form.name }}" required>
+    </label>
+
+    <label>
+      Website <span class="required">*</span>
+      <input type="url" name="website" value="{{ form.website }}" required
+             placeholder="https://example.com">
+    </label>
+
+    <label>
+      Category <span class="required">*</span>
+      <select name="category" required>
+        <option value="">— pick one —</option>
+        {% for cat in categories %}
+          <option value="{{ cat }}" {% if cat == form.category %}selected{% endif %}>{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div class="form-row">
+      <label>
+        City
+        <input type="text" name="city" value="{{ form.city }}">
+      </label>
+      <label>
+        State
+        <input type="text" name="state" value="{{ form.state }}" maxlength="2">
+      </label>
+      <label>
+        Zip
+        <input type="text" name="zip" value="{{ form.zip }}">
+      </label>
+    </div>
+
+    <label>
+      Phone
+      <input type="tel" name="phone" value="{{ form.phone }}">
+    </label>
+
+    <label>
+      Address
+      <input type="text" name="address" value="{{ form.address }}">
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Owner info (optional for pipeline, required for skip-pipeline)</legend>
+
+    <label>
+      Owner name
+      <input type="text" name="owner_name" value="{{ form.owner_name }}">
+    </label>
+
+    <label>
+      Owner title
+      <input type="text" name="owner_title" value="{{ form.owner_title }}"
+             placeholder="e.g. Owner, Director, Founder">
+    </label>
+
+    <label>
+      Best email
+      <input type="email" name="best_email" value="{{ form.best_email }}">
+    </label>
+
+    <label>
+      Enrollment method
+      <select name="enrollment_method">
+        <option value="">— leave for Phase 3 —</option>
+        {% for em in enrollment_methods %}
+          <option value="{{ em }}" {% if em == form.enrollment_method %}selected{% endif %}>{{ em }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Notes</legend>
+    <label>
+      Notes (optional)
+      <textarea name="notes" rows="3">{{ form.notes }}</textarea>
+    </label>
+  </fieldset>
+
+  <div class="add-lead-actions">
+    <button type="submit" name="mode" value="pipeline" class="btn-primary">
+      Add → run through pipeline
+    </button>
+    <button type="submit" name="mode" value="skip" class="btn-secondary">
+      Add → skip pipeline (send tomorrow)
+    </button>
+    <a href="/leads" class="muted-link" style="margin-left: 16px;">Cancel</a>
+  </div>
+
+  <p class="muted" style="font-size: 13px; max-width: 720px; margin-top: 8px;">
+    <strong>Pipeline:</strong> downstream classifies + finds owner if missing.
+    <br>
+    <strong>Skip pipeline:</strong> goes straight to <code>ready_to_send</code>.
+    Requires owner name, email, and enrollment method up front. Daily run will draft it tomorrow.
+  </p>
+</form>
+
+{% endblock %}

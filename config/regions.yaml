@@ -76,11 +76,5 @@ Orange_County:
   radius_miles: 20
 
 South_Bay:
-  - 90277  # Redondo Beach
-  - 90278  # Redondo Beach (north)
-  - 90254  # Hermosa Beach
-  - 90266  # Manhattan Beach
-  - 90245  # El Segundo (close to LAX, you live near here)
-  - 90501  # Torrance (central)
-  - 90503  # Torrance (west)
-  - 90505  # Torrance (south)
+  center_zip: 90505  # Torrance (south)
+  radius_miles: 10

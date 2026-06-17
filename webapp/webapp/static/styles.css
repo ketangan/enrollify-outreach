@@ -812,3 +812,128 @@ form.filters button:hover { background: #2d4229; }
   font-size: 18px;
   font-weight: 600;
 }
+
+/* ─── Add lead form ──────────────────────────────────────── */
+
+.add-lead-form {
+  max-width: 720px;
+  margin: 20px 0;
+}
+
+.add-lead-form fieldset {
+  border: 1px solid #d4cdb8;
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  background: #fbf8f3;
+}
+
+.add-lead-form legend {
+  font-weight: 600;
+  font-size: 14px;
+  color: #3d5a3a;
+  padding: 0 8px;
+}
+
+.add-lead-form label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #54504a;
+  font-weight: 500;
+}
+
+.add-lead-form input[type="text"],
+.add-lead-form input[type="url"],
+.add-lead-form input[type="email"],
+.add-lead-form input[type="tel"],
+.add-lead-form select,
+.add-lead-form textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 10px;
+  border: 1px solid #d4cdb8;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  color: #1a1915;
+  background: #fff;
+}
+
+.add-lead-form input:focus,
+.add-lead-form select:focus,
+.add-lead-form textarea:focus {
+  outline: none;
+  border-color: #3d5a3a;
+  box-shadow: 0 0 0 2px rgba(61, 90, 58, 0.15);
+}
+
+.add-lead-form .form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.add-lead-form .form-row label {
+  flex: 1;
+}
+
+.add-lead-form .required {
+  color: #9a2a1d;
+  font-weight: normal;
+}
+
+.add-lead-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.add-lead-actions .btn-primary,
+.add-lead-actions .btn-secondary {
+  padding: 9px 18px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+
+.add-lead-actions .btn-primary {
+  background: #3d5a3a;
+  color: #fbf8f3;
+}
+
+.add-lead-actions .btn-primary:hover {
+  background: #2d4229;
+}
+
+.add-lead-actions .btn-secondary {
+  background: #f3ede1;
+  color: #3d5a3a;
+  border: 1px solid #d4cdb8;
+}
+
+.add-lead-actions .btn-secondary:hover {
+  background: #ede6d6;
+  border-color: #3d5a3a;
+}
+
+.btn-add-lead {
+  display: inline-block;
+  background: #3d5a3a;
+  color: #fbf8f3;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  float: right;
+}
+
+.btn-add-lead:hover {
+  background: #2d4229;
+}
