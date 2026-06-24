@@ -263,40 +263,64 @@ def main():
     eligible = []
     for lead in ready:
         em = (lead.get("enrollment_method") or "").strip()
+        owner_name = (lead.get("owner_name") or "").strip()
+
+        # Junk owner name check (LLM hallucinations like "Unnamed female founder")
+        if drafter.is_junk_owner_name(owner_name):
+            rerouted.append({
+                "school": lead.get("name", ""),
+                "enrollment_method": f"junk_owner_name:{owner_name}",
+                "_row_idx": lead["_row_idx"],
+                "reroute_status": "needs_owner_review",
+                "wipe_owner": True,
+            })
+            continue
+
+        # Invalid enrollment_method check
         if em not in VALID_ENROLLMENT_METHODS:
-            # Reroute now, even in dry-run mode? No — only on real runs, so
-            # dry-run reporting matches what would happen.
             rerouted.append({
                 "school": lead.get("name", ""),
                 "enrollment_method": em or "(empty)",
                 "_row_idx": lead["_row_idx"],
+                "reroute_status": "needs_enrollment_system_classification",
+                "wipe_owner": False,
             })
             continue
+
         eligible.append(lead)
 
     if rerouted:
         logger.warning(
-            "Found %d ready_to_send lead(s) with invalid enrollment_method — rerouting to Review",
+            "Found %d ready_to_send lead(s) with problems — rerouting to Review",
             len(rerouted),
         )
         for r in rerouted:
-            logger.warning("  %s: enrollment_method=%r", r["school"][:50], r["enrollment_method"])
+            logger.warning("  %s: reason=%r → %s",
+                           r["school"][:50], r["enrollment_method"], r["reroute_status"])
 
     if rerouted and not args.dry_run:
         for r in rerouted:
-            leads_ws.batch_update(
-                [
-                    {"range": rowcol_to_a1(r["_row_idx"], col["status"] + 1),
-                     "values": [["needs_enrollment_system_classification"]]},
-                    {"range": rowcol_to_a1(r["_row_idx"], col["enrollment_method"] + 1),
-                     "values": [[""]]},
-                    {"range": rowcol_to_a1(r["_row_idx"], col["last_action"] + 1),
-                     "values": [["phase5_invalid_em_reroute"]]},
-                    {"range": rowcol_to_a1(r["_row_idx"], col["notes"] + 1),
-                     "values": [[f"phase5: rerouted, invalid enrollment_method={r['enrollment_method']}"]]},
-                ],
-                value_input_option="USER_ENTERED",
-            )
+            updates = [
+                {"range": rowcol_to_a1(r["_row_idx"], col["status"] + 1),
+                 "values": [[r["reroute_status"]]]},
+                {"range": rowcol_to_a1(r["_row_idx"], col["last_action"] + 1),
+                 "values": [["phase5_reroute"]]},
+                {"range": rowcol_to_a1(r["_row_idx"], col["notes"] + 1),
+                 "values": [[f"phase5: rerouted, {r['enrollment_method']}"]]},
+            ]
+            if r["wipe_owner"]:
+                # Clear owner_name so Phase 4 retry or manual review starts fresh.
+                updates.append({
+                    "range": rowcol_to_a1(r["_row_idx"], col["owner_name"] + 1),
+                    "values": [[""]],
+                })
+            else:
+                # Clear enrollment_method (the corrupted value).
+                updates.append({
+                    "range": rowcol_to_a1(r["_row_idx"], col["enrollment_method"] + 1),
+                    "values": [[""]],
+                })
+            leads_ws.batch_update(updates, value_input_option="USER_ENTERED")
             time.sleep(SHEET_WRITE_THROTTLE_SEC)
 
     batch = eligible[:cap]

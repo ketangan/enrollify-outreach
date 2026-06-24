@@ -8,11 +8,23 @@ Category-aware bullets: leads are bucketed into 'early_ed' (preschool,
 daycare, montessori — formal admissions, Brightwheel) and 'activities'
 (everything else — activity-based programs, generic scheduling tools).
 The template body uses {{feature_bullets}} which is rendered per-bucket.
+
+Greeting logic (_greeting_name):
+  - Normal:                "John Smith"             → "John"
+  - Stripped honorific:    "Dr. Sarah Lee"          → "Sarah"
+  - Kept honorific (rank): "Grandmaster Kim Jong"   → "Grandmaster Kim"
+  - Junk name (rejected):  "Unnamed female founder" → "" (renders as 'there')
+
+Junk-name detection:
+  Phase 5 also rejects leads whose owner_name is junk and reroutes them
+  back to needs_owner_review (see run_phase_5_drafts.py). The drafter
+  exposes is_junk_owner_name() so Phase 5 can call the same logic.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
 from src import config, sheets
@@ -29,21 +41,12 @@ ENROLLMENT_METHOD_TO_TEMPLATE = {
 
 
 # Category → bucket. Anything not listed defaults to 'activities'.
-# Tuned for Enrollify's two real audiences:
-#   - early_ed: formal-admissions schools (preschool/daycare/montessori).
-#     These care about Brightwheel + applicant scoring.
-#   - activities: activity/lesson-based programs (martial arts, music,
-#     dance, sports, art, language, tutoring, etc.). They want sign-ups,
-#     not "admissions."
 CATEGORY_TO_BUCKET = {
     "preschool": "early_ed",
     "daycare": "early_ed",
     "montessori": "early_ed",
 }
 
-# Category-specific feature bullet lists. Rendered into the template
-# via the {{feature_bullets}} placeholder. HTML <li>...</li> wrapped
-# so the template can just include them inside a <ul>.
 FEATURE_BULLETS = {
     "early_ed": (
         "<li>Custom-built enrollment forms tailored to your programs and branding</li>"
@@ -66,7 +69,6 @@ FEATURE_BULLETS = {
 
 
 def _bucket_for(category: str) -> str:
-    """Return the audience bucket for a given lead category. Defaults to 'activities'."""
     return CATEGORY_TO_BUCKET.get(category.strip().lower(), "activities")
 
 
@@ -79,20 +81,145 @@ class RenderedEmail:
 
 _template_cache: dict[str, dict] | None = None
 
-HONORIFICS = {"mr", "mr.", "mrs", "mrs.", "ms", "ms.", "miss", "dr", "dr.", "prof", "prof.", "rev", "rev."}
+# Honorifics that are STRIPPED from the greeting (generic titles).
+# "Dr. Sarah Lee" → "Sarah"
+STRIPPED_HONORIFICS = {
+    "mr", "mrs", "ms", "miss", "dr", "prof", "rev", "fr", "sr",
+}
+
+# Honorifics that are KEPT in the greeting (titles that ARE the form of address).
+# "Grandmaster Kim Jong Un" → "Grandmaster Kim"
+# These are titles people use as the actual greeting, especially in martial arts,
+# music, and religious schools.
+KEPT_HONORIFICS = {
+    "master", "grandmaster", "sensei", "sifu", "sabum", "sabumnim",
+    "kyoshi", "shihan", "hanshi", "renshi", "soke",
+    "guru", "swami", "rabbi", "imam", "pastor", "father",
+    "maestro", "maestra", "madame", "madam",
+    "coach", "principal", "director", "chef",
+}
+
+# Suffixes/qualifiers that follow names but aren't part of the greeting.
+NAME_SUFFIXES = {
+    "jr", "sr", "ii", "iii", "iv", "v", "phd", "esq", "md", "dds",
+}
 
 
-def _first_name(full_name: str) -> str:
+def _normalize_token(tok: str) -> str:
+    """Lowercase, strip punctuation, for matching honorific/suffix sets."""
+    return tok.lower().rstrip(".,;:")
+
+
+def is_junk_owner_name(owner_name: str) -> bool:
+    """
+    Detect LLM-hallucinated junk names like 'Unnamed female founder',
+    'Anonymous owner', 'The owner', 'Founder', 'Director', etc.
+
+    Returns True if the name is unusable for greeting purposes.
+    Phase 5 uses this to kick leads back to needs_owner_review instead
+    of sending 'Hi Unnamed,' emails.
+    """
+    if not owner_name:
+        return False  # empty handled separately by fallback to 'there'
+
+    name = owner_name.strip()
+    if not name:
+        return False
+
+    low = name.lower()
+
+    # Starts with a placeholder word
+    if re.match(r"^(unnamed|anonymous|unknown|n/?a|no\s+name|not\s+available)\b", low):
+        return True
+
+    # Pure role title with no proper noun: "the owner", "the director", "owner",
+    # "founder", "director", "principal", "head of school"
+    role_only_patterns = [
+        r"^the\s+(owner|founder|director|principal|head|admin|administrator|teacher|coach|instructor)s?$",
+        r"^(owner|founder|director|principal|admin|administrator|head\s+of\s+school)s?$",
+    ]
+    for pat in role_only_patterns:
+        if re.match(pat, low):
+            return True
+
+    # Descriptive phrase masquerading as a name (no proper nouns, just adjectives + role)
+    # e.g. "Unnamed female founder", "Female owner", "Husband-wife duo"
+    if re.search(r"\b(unnamed|anonymous|unknown|female|male|husband|wife|duo|couple|team|family)\b.*\b(owner|founder|director|principal|teacher|coach|instructor)s?\b", low):
+        return True
+
+    # No letters at all (e.g. "---", "???", "12345"). Use Unicode-aware
+    # check so non-Latin scripts (Japanese, Chinese, Korean, Cyrillic, etc.)
+    # are not flagged as junk.
+    if not any(c.isalpha() for c in name):
+        return True
+
+    return False
+
+
+def _greeting_name(full_name: str) -> str:
+    """
+    Build the first-name (or rank-title-name) used in 'Hi {name},'.
+
+    Examples:
+      "John Smith"                          → "John"
+      "Dr. Sarah Lee"                       → "Sarah"
+      "Mr. Kim Jong Un"                     → "Kim"
+      "Grandmaster Kim Jong Un"             → "Grandmaster Kim"
+      "Master Shifu"                        → "Master Shifu"
+      "Grandmaster Kim Jong Un James III"   → "Grandmaster Kim"
+      ""                                     → ""
+      "Unnamed female founder"               → ""  (junk → empty so caller falls back)
+    """
     if not full_name:
         return ""
+
+    if is_junk_owner_name(full_name):
+        return ""
+
     parts = full_name.strip().split()
-    while parts and parts[0].lower().rstrip(".") in {h.rstrip(".") for h in HONORIFICS}:
+    if not parts:
+        return ""
+
+    # Strip leading STRIPPED_HONORIFICS (Mr, Dr, etc.)
+    while parts and _normalize_token(parts[0]) in STRIPPED_HONORIFICS:
         parts = parts[1:]
-    return parts[0] if parts else ""
+
+    if not parts:
+        return ""
+
+    # If the next token is a KEPT_HONORIFIC (Master, Grandmaster, Sensei, etc.),
+    # keep it and grab the next name token.
+    if _normalize_token(parts[0]) in KEPT_HONORIFICS:
+        title = parts[0]
+        if len(parts) == 1:
+            # Just "Grandmaster" with no name following — fall back to nothing
+            return ""
+        # Skip any further honorifics stacked together ("Grand Master Kim")
+        rest = parts[1:]
+        while rest and _normalize_token(rest[0]) in KEPT_HONORIFICS | STRIPPED_HONORIFICS:
+            rest = rest[1:]
+        if not rest:
+            return ""
+        first_name_token = rest[0]
+        # Drop trailing suffixes from the first name token (rare but possible)
+        if _normalize_token(first_name_token) in NAME_SUFFIXES:
+            return ""
+        return f"{title} {first_name_token}"
+
+    # Normal case: take just the first remaining token as the first name
+    first_name_token = parts[0]
+    if _normalize_token(first_name_token) in NAME_SUFFIXES:
+        # Edge case: "Jr. Smith" — fall back to nothing
+        return ""
+    return first_name_token
+
+
+# Back-compat alias — some other code may import _first_name.
+def _first_name(full_name: str) -> str:
+    return _greeting_name(full_name)
 
 
 def _load_templates() -> dict[str, dict]:
-    """Load + cache templates from the Templates tab. Keyed by template_id."""
     global _template_cache
     if _template_cache is not None:
         return _template_cache
@@ -137,27 +264,23 @@ def render_email(lead: dict) -> RenderedEmail | None:
         logger.error("Template %r not found in Templates tab", template_id)
         return None
 
-    # Build context
     owner_name = str(lead.get("owner_name", "")).strip()
     school_name = str(lead.get("name", "")).strip()
     category = str(lead.get("category", "")).strip() or "school"
     lead_id = str(lead.get("id", "")).strip()
 
-    # Fallbacks
-    first_name = _first_name(owner_name) or "there"
-    # Category cleanup for natural reading in the template body
+    # Greeting name (handles honorifics + junk-name detection)
+    greeting = _greeting_name(owner_name) or "there"
     category_display = category.replace("_", " ")
 
-    # Category-specific feature bullets
     bucket = _bucket_for(category)
     feature_bullets = FEATURE_BULLETS[bucket]
 
-    # Render observation first (contains {{school_name}})
     observation_ctx = {"school_name": school_name}
     observation = _render(tpl["observation"], observation_ctx)
 
     body_ctx = {
-        "owner_first_name": first_name,
+        "owner_first_name": greeting,
         "school_name": school_name,
         "category": category_display,
         "specific_observation": observation,
@@ -175,11 +298,7 @@ def render_email(lead: dict) -> RenderedEmail | None:
 
 
 def render_follow_up(lead: dict, greeting_override: str | None = None) -> RenderedEmail | None:
-    """Render the follow-up template for a lead.
-    
-    If greeting_override is provided (e.g. fetched from the original sent email),
-    it replaces the rendered first line of the body.
-    """
+    """Render the follow-up template for a lead."""
     templates = _load_templates()
     tpl = templates.get("follow_up")
     if not tpl:
@@ -188,21 +307,17 @@ def render_follow_up(lead: dict, greeting_override: str | None = None) -> Render
 
     owner_name = str(lead.get("owner_name", "")).strip()
     school_name = str(lead.get("name", "")).strip()
-    first_name = _first_name(owner_name) or "there"
+    greeting = _greeting_name(owner_name) or "there"
     lead_id = str(lead.get("id", "")).strip()
 
     ctx = {
-        "owner_first_name": first_name,
+        "owner_first_name": greeting,
         "school_name": school_name,
         "lead_id": lead_id,
     }
     body = _render(tpl["body"], ctx)
-    
-    # Override the first line of the body if we have a real greeting from the original
+
     if greeting_override:
-        # Body starts with "Hi {{owner_first_name}},<br><br>" — replace up to first <br><br> or first \n\n
-        import re
-        # Replace from start of body through the first blank line (covers HTML <br><br> and plain \n\n)
         body = re.sub(
             r"^.*?(?=<br\s*/?>\s*<br\s*/?>|\n\n)",
             greeting_override,
