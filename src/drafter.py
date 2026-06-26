@@ -49,21 +49,18 @@ CATEGORY_TO_BUCKET = {
 
 FEATURE_BULLETS = {
     "early_ed": (
-        "<li>Custom-built enrollment forms tailored to your programs and branding</li>"
-        "<li>A clean dashboard where every submission lands organized and searchable</li>"
-        "<li>Built-in reporting on enrollment trends and application activity</li>"
-        "<li>Lead management so prospective families don't slip through the cracks</li>"
-        "<li>AI-generated summaries of each applicant, scored against your admission criteria</li>"
+        "<li>Custom enrollment forms that match your branding and programs</li>"
+        "<li>Every inquiry and application organized in one searchable dashboard</li>"
+        "<li>Built-in follow-up so prospective families don't slip through the cracks</li>"
         "<li>One-click exports to Brightwheel and other tools you may already use</li>"
-        "<li>Zero setup on your end — no servers, no databases, no maintenance</li>"
+        "<li>No servers, software, or technical setup required</li>"
     ),
     "activities": (
-        "<li>Custom-built sign-up forms tailored to your classes and branding</li>"
-        "<li>A clean dashboard where every new student inquiry lands organized and searchable</li>"
-        "<li>Built-in reporting on enrollment trends and class signups</li>"
-        "<li>Lead management so interested students don't slip through the cracks</li>"
+        "<li>Custom sign-up forms that match your branding and classes</li>"
+        "<li>Every inquiry and application organized in one searchable dashboard</li>"
+        "<li>Built-in follow-up so interested students don't slip through the cracks</li>"
         "<li>One-click exports to your existing scheduling or billing tools</li>"
-        "<li>Zero setup on your end — no servers, no databases, no maintenance</li>"
+        "<li>No servers, software, or technical setup required</li>"
     ),
 }
 
