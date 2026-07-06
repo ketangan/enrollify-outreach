@@ -287,10 +287,10 @@ for r in sheets.read_all_rows(config.TAB_TEMPLATES):
 
     <div class="task">
       <h4>I'm getting low replies &mdash; should I rework the pitch?</h4>
-      <p>Not until ~80&ndash;100 sends with confirmed clean deliverability. Below that volume, 0 replies is noise, not signal.</p>
+      <p>Yes. As of 2026-07-06, outreach has reached 575 unique recipients, so low replies are signal, not noise.</p>
       <p><strong>Step 1: Confirm send volume.</strong></p>
       <pre><code>python scripts/sent_email_count.py</code></pre>
-      <p>You want at least 80 unique recipients before declaring the pitch broken.</p>
+      <p>The old threshold was 80&ndash;100 unique recipients. You are past it. Do not keep scaling the same message and pretend volume is still the blocker.</p>
       <p><strong>Step 2: Confirm deliverability isn't the problem.</strong></p>
       <ul>
         <li><strong>mail-tester.com</strong> &mdash; visit the site, get a temp address (e.g. <code>test-xxxxx@srv1.mail-tester.com</code>), send a real outreach email to it from Zoho, click "Check your score." Anything below 9/10 means the score itself is the problem. 10/10 = deliverability clean.</li>
@@ -298,7 +298,7 @@ for r in sheets.read_all_rows(config.TAB_TEMPLATES):
         <li><strong>MX Toolbox blacklist check</strong> &mdash; <a href="https://mxtoolbox.com/blacklists.aspx" target="_blank">mxtoolbox.com/blacklists.aspx</a>. Enter <code>enrollifyapp.com</code> and check Zoho's outbound IP <code>136.143.188.16</code>. Anything on a major RBL (SpamCop, Spamhaus, Barracuda) needs to be cleared via Zoho support before sending more.</li>
         <li><strong>Verify DNS records still pass.</strong> Use <a href="https://mxtoolbox.com" target="_blank">mxtoolbox.com</a> SPF / DKIM / DMARC checks against enrollifyapp.com. SPF must include <code>zoho.com</code>; DKIM record at <code>zoho._domainkey</code> must verify; DMARC should be at <code>p=quarantine</code> or stronger.</li>
       </ul>
-      <p><strong>Step 3: Only after all of the above clears, look at the pitch.</strong> Real-world signal beats email at this scale &mdash; in-person events (festivals, community days, parent meet-and-greets) have given way better conversion than cold email so far.</p>
+      <p><strong>Step 3: After deliverability clears, change the experiment.</strong> Test offer, target segment, proof, CTA, and channel. Real-world follow-up with clickers is worth trying, but Brent and Carmen are no longer valid conversion evidence.</p>
     </div>
 
   </div>

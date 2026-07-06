@@ -3,7 +3,7 @@
 > **⚠️ READ THIS FIRST if you're Claude in a new session.**
 > This document IS the memory. Ketan pastes it at the start of every session. Before closing any session, output an updated version in a code block for Ketan to commit. Every decision, schema change, or tool swap must be reflected here. If ambiguous, ask — don't guess.
 
-**Last updated:** 2026-05-26
+**Last updated:** 2026-07-06
 **Status:** MVP shipped (Phases 0–6). Phases 7–9 done. Phase 8 webapp live at https://enrollify-admin.onrender.com. Auth still pending.
 **Repo:** private GitHub repo `enrollify-outreach`
 
@@ -227,7 +227,12 @@ enrollifyapp.com
 - DKIM: `zoho._domainkey` verified ✓
 - Zoho outbound IP `136.143.188.16` was on SpamCop; cleared after 48hrs + Zoho support ticket
 - Currently listed on s5h.net only (low impact)
-- **0 replies from ~43 sends remains unexplained.** Likely deliverability was eating a meaningful fraction during early sends. Wait for ~80-100 sends with clean auth before declaring pitch broken.
+- **Cold email response problem is now real signal, not sample-size noise.** As of 2026-07-06:
+  - Initial sends: 595
+  - Follow-up sends: 445
+  - Unique recipients: 575
+  - Brent and Carmen are no longer valid leads; no usable response came from them.
+  - Stop treating volume as the bottleneck. Keep checking deliverability, but the likely failure is offer, targeting, channel, trust surface, or copy.
 
 ---
 
@@ -258,8 +263,8 @@ enrollifyapp.com
 
 ## Working priorities (most recent → oldest)
 
-1. **Send 20 emails/day, every weekday.** Click tracking is live; the funnel-improvement loop now depends on volume.
-2. **Mondays: review click data, visit top clickers in person.** This is the new highest-leverage activity — in-person is the only channel with proven conversion (Brent + Carmen via festival).
+1. **Fix the response problem before scaling more unchanged cold email.** 575 unique recipients is enough to reject the "not enough data" explanation. Run controlled experiments on offer, target segment, CTA, proof, and channel.
+2. **Mondays: review click data, visit top clickers in person.** Treat in-person follow-up as an experiment, not a proven channel yet. Brent and Carmen are no longer valid conversion evidence.
 3. **Cloudflare consolidation (Path A).** `round-bread-580b` (static-assets Worker) + `enrollify-website` (orphan Worker connected to GitHub repo) → one Cloudflare Pages project hooked to ketangan/enrollify-website. Result: `git push` deploys instead of drag-and-drop. Do on a weekend when uninterrupted. Until then, every site update requires re-upload via Cloudflare dashboard.
 4. **Auth on webapp.** Still the biggest tech gap.
 5. **Field a real customer before any new tier/pricing changes.**
