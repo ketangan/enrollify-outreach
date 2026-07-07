@@ -28,6 +28,7 @@ import re
 from dataclasses import dataclass
 
 from src import config, sheets
+from src.name_cleaner import clean_school_name
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +263,7 @@ def render_email(lead: dict) -> RenderedEmail | None:
         return None
 
     owner_name = str(lead.get("owner_name", "")).strip()
-    school_name = str(lead.get("name", "")).strip()
+    school_name = clean_school_name(str(lead.get("name", "")).strip())
     category = str(lead.get("category", "")).strip() or "school"
     lead_id = str(lead.get("id", "")).strip()
 
@@ -303,7 +304,7 @@ def render_follow_up(lead: dict, greeting_override: str | None = None) -> Render
         return None
 
     owner_name = str(lead.get("owner_name", "")).strip()
-    school_name = str(lead.get("name", "")).strip()
+    school_name = clean_school_name(str(lead.get("name", "")).strip())
     greeting = _greeting_name(owner_name) or "there"
     lead_id = str(lead.get("id", "")).strip()
 

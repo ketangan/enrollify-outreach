@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 import requests
 
 from src import config, skip_lists, regions
+from src.name_cleaner import clean_school_name
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ def _extract_components(addr_components: list[dict]) -> tuple[str, str, str]:
 
 
 def _parse_place(raw: dict, category: str, fallback_zip: str) -> DiscoveredPlace:
-    name = raw.get("displayName", {}).get("text", "")
+    name = clean_school_name(raw.get("displayName", {}).get("text", ""))
     place_id = raw.get("id", "")
     address = raw.get("formattedAddress", "")
     website = raw.get("websiteUri", "")

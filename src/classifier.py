@@ -151,6 +151,7 @@ Respond with ONLY a JSON object (no markdown, no prose):
 Classification rules (apply in order — pick the first that fits):
 
 1. online_system_exclude — if ANY of these are present:
+   - Large national/regional organizations, city/county programs, gyms, pro-sports organizations, universities, libraries, parks/recreation departments, or public agencies rather than an independent school/studio/academy
    - Parent/student login portal, "My Account", member area
    - Third-party enrollment, registration, payment, billing, or parent-portal vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, GoStudioPro, iClassPro, Opus1, etc.) referenced anywhere in content or outbound links
    - /cart, /checkout, /shop URLs on their own domain suggesting an e-commerce enrollment flow

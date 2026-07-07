@@ -4,6 +4,8 @@ Rationale: many Places API results are known franchises, large institutions,
 or hosted on enrollment vendor platforms. Cheap to skip without LLM calls.
 """
 
+import re
+
 # Big-box / known franchises that definitely have online enrollment already.
 # Match is case-insensitive substring on the place name.
 KNOWN_CHAIN_NAMES = {
@@ -34,6 +36,42 @@ KNOWN_CHAIN_NAMES = {
     "soccer shots",
     "i9 sports",
     "dance 101",  # generic franchise-y
+}
+
+# Large/non-target organizations that commonly leak into broad Places searches.
+# Keep this intentionally conservative: these are not independent schools and
+# should never receive the small-school outreach.
+NON_TARGET_EXACT_NAMES = {
+    "los angeles",
+    "la county",
+    "city of la",
+}
+
+NON_TARGET_NAME_PATTERNS = {
+    "equinox",
+    "national basketball association",
+    "los angeles lakers",
+    "la lakers",
+    "los angeles clippers",
+    "la clippers",
+    "major league soccer",
+    "la fitness",
+    "24 hour fitness",
+    "planet fitness",
+    "city of los angeles",
+    "county of los angeles",
+    "los angeles county",
+    "department of recreation",
+    "parks and recreation",
+    "recreation center",
+    "community center",
+    "public library",
+}
+
+NON_TARGET_WORD_PATTERNS = {
+    "nba",
+    "mls",
+    "ymca",
 }
 
 # If the school's "website" field points to any of these domains, they're already
@@ -75,6 +113,15 @@ def is_skipped_by_name(name: str) -> tuple[bool, str]:
     if not name:
         return False, ""
     name_lower = name.lower()
+    normalized_name = " ".join(name_lower.split()).strip(".,;:! ")
+    if normalized_name in NON_TARGET_EXACT_NAMES:
+        return True, f"non_target_org:{normalized_name}"
+    for pattern in NON_TARGET_WORD_PATTERNS:
+        if re.search(rf"\b{re.escape(pattern)}\b", name_lower):
+            return True, f"non_target_org:{pattern}"
+    for pattern in NON_TARGET_NAME_PATTERNS:
+        if pattern in name_lower:
+            return True, f"non_target_org:{pattern}"
     for chain in KNOWN_CHAIN_NAMES:
         if chain in name_lower:
             return True, f"known_chain:{chain}"

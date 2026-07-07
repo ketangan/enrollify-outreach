@@ -281,6 +281,7 @@ Deferred (do not build without explicit request):
 
 ## Recently shipped (this week)
 
+- **Lead-name cleanup + non-target filtering** — Google Places names are now cleaned before entering Leads and again at draft render time: alternate-language suffixes, parenthetical SEO stuffing, legal suffixes like Inc/LLC, unit markers like #2, and all-caps names are normalized. `scripts/cleanup_school_names.py` can dry-run/commit cleanup for existing Sheet rows. Phase 1 also skips obvious non-target orgs such as Equinox, NBA/pro sports, YMCA, city/county recreation, community centers, and libraries without skipping legitimate names like "Los Angeles Dance Academy".
 - **Anthropic prompt + routing hardening** — Phase 3 now keeps `needs_enrollment_system_classification` in review instead of advancing to owner lookup; classifier no longer excludes pure scheduling/tour-booking links like Calendly unless they are the actual enrollment/payment flow; Stage 2 owner search can use up to 2 web-search calls and tries harder to find named owners while still rejecting weak identity matches; email search now requires source-backed identity linkage.
 - **Click tracking via Apps Script** — gesture-filtered, written to Click_Log tab, schema matches `show_clicks.py` reader. `{{lead_id}}` substitution in drafter.
 - **Webapp common tasks cheat sheet** on home page — 17 collapsible tasks with code blocks, dry-run guidance, deliverability checks.
