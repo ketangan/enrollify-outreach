@@ -80,10 +80,14 @@ Website: {website}
 Category: {category}
 Location: {city}, {state}
 
+Known profile/review links found on the school's own website:
+{profile_links}
+
 Use the web_search tool carefully to find a real named owner/director/founder/principal. You may use up to TWO searches.
 Try hard before giving up:
 - First search: "{name}" "{city}" owner OR director OR founder OR principal
-- If that is weak, search: "{name}" "{city}" staff OR team OR about OR leadership OR LinkedIn OR Facebook
+- If known profile/review links are listed above, inspect or search those exact Yelp/Facebook/LinkedIn/Instagram URLs first because the school itself linked them.
+- If that is weak, search: "{name}" "{city}" staff OR team OR about OR leadership OR Yelp OR "business owner" OR LinkedIn OR Facebook
 
 After the search, return JSON ONLY (no prose, no markdown fences):
 
@@ -104,6 +108,7 @@ CRITICAL — name-collision check (read carefully):
 - If the search returns a school with the same name but in a different city/state/category, set found=false. Do NOT return their owner.
 - If the source URL is on a different domain than "{website}" AND the source does NOT mention "{city}, {state}", set found=false.
 - A LinkedIn profile, Yelp page, or news article on a different domain is FINE — but only if it explicitly references the school in {city}, {state}.
+- For Yelp, only use names from business-owner/business-info/staff/owner-like sections or clearly owner-authored responses. Do not treat a reviewer name as the owner.
 
 Rules:
 - "high": name on the school's own site, LinkedIn profile of that person, or a press release — AND location confirmed.
@@ -260,6 +265,7 @@ def find_owner_via_web(
     city: str,
     state: str,
     client: Anthropic,
+    known_profile_urls: list[str] | None = None,
 ) -> Stage2Result:
     """
     Run only when Stage 1 found no owner name.
@@ -281,6 +287,10 @@ def find_owner_via_web(
         category=category or "",
         city=city or "",
         state=state or "",
+        profile_links=(
+            "\n".join(f"- {url}" for url in (known_profile_urls or [])[:8])
+            or "(none provided)"
+        ),
     )
     parsed = _run_web_search(prompt_a, client, tool=OWNER_WEB_SEARCH_TOOL)
 

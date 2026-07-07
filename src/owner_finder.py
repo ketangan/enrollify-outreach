@@ -175,6 +175,12 @@ GENERIC_EMAIL_PREFIXES = (
     "admin",
     "school",
 )
+PROFILE_LINK_HOSTS = (
+    "yelp.com",
+    "facebook.com",
+    "instagram.com",
+    "linkedin.com",
+)
 
 
 def _extract_emails(text: str) -> list[str]:
@@ -384,6 +390,31 @@ def _page_excerpt_for_llm(text: str, max_chars: int = 4500) -> str:
     return "\n...\n".join(combined)
 
 
+def _extract_profile_links(pages: list[fetcher.FetchedPage]) -> list[str]:
+    """Collect review/social links that the school's own site points to."""
+    profile_links: list[str] = []
+    seen: set[str] = set()
+    for page in pages:
+        for link in page.outbound_links:
+            href = (link.get("href") or "").strip()
+            if not href:
+                continue
+            try:
+                host = urlparse(href).netloc.lower().lstrip("www.")
+            except Exception:
+                continue
+            if not any(
+                host == profile_host or host.endswith("." + profile_host)
+                for profile_host in PROFILE_LINK_HOSTS
+            ):
+                continue
+            if href in seen:
+                continue
+            seen.add(href)
+            profile_links.append(href)
+    return profile_links
+
+
 def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 3) -> list[str]:
     """
     Identify About/Team/Contact-style links on the homepage.
@@ -565,6 +596,7 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
         fetched = fetcher.fetch(sub)
         if not fetched.error:
             pages.append(fetched)
+    known_profile_urls = _extract_profile_links(pages)
 
     # Extract emails from all pages (text + raw HTML + mailto links)
     all_emails = []
@@ -599,6 +631,7 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
                 city=city,
                 state=state,
                 client=client,
+                known_profile_urls=known_profile_urls,
             )
             if s2.owner_name:
                 logger.info(
@@ -656,19 +689,32 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
                 city=city,
                 state=state,
                 client=client,
+                known_profile_urls=known_profile_urls,
             )
             if s2.owner_name:
+                fallback_email = s2.best_email or _pick_best_email(
+                    unique_emails, owner_name=s2.owner_name
+                )
+                if s2.best_email:
+                    fallback_confidence = s2.email_confidence
+                elif fallback_email:
+                    fallback_confidence = "medium"
+                else:
+                    fallback_confidence = "low"
                 logger.info(
                     "    Stage 2 found: %s (conf=%s, email=%s)",
-                    s2.owner_name, s2.email_confidence, s2.best_email or "(none)",
+                    s2.owner_name, fallback_confidence, fallback_email or "(none)",
                 )
                 return OwnerResult(
                     owner_name=s2.owner_name,
                     owner_title=s2.owner_title,
                     owner_source_url=s2.owner_source_url,
-                    best_email=s2.best_email,
-                    email_confidence=s2.email_confidence,
-                    reason=f"stage2_llm_error:{s2.reason}",
+                    best_email=fallback_email,
+                    email_confidence=fallback_confidence,
+                    reason=(
+                        f"stage2_llm_error:{s2.reason}"
+                        + ("|kept_stage1_email" if fallback_email and not s2.best_email else "")
+                    ),
                     pages_fetched=len(pages),
                     used_llm=True,
                     all_emails_found=s2.all_emails_found or unique_emails,
@@ -761,19 +807,27 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
             city=city,
             state=state,
             client=client,
+            known_profile_urls=known_profile_urls,
         )
         if s2.owner_name:
+            merged_email = s2.best_email or stage1.best_email
+            merged_confidence = (
+                s2.email_confidence if s2.best_email else stage1.email_confidence
+            )
+            merged_reason = f"stage2:{s2.reason}"
+            if merged_email and not s2.best_email:
+                merged_reason += "|kept_stage1_email"
             logger.info(
                 "    Stage 2 found: %s (conf=%s, email=%s)",
-                s2.owner_name, s2.email_confidence, s2.best_email or "(none)",
+                s2.owner_name, merged_confidence, merged_email or "(none)",
             )
             return OwnerResult(
                 owner_name=s2.owner_name,
                 owner_title=s2.owner_title,
                 owner_source_url=s2.owner_source_url or stage1.owner_source_url,
-                best_email=s2.best_email,
-                email_confidence=s2.email_confidence,
-                reason=f"stage2:{s2.reason}",
+                best_email=merged_email,
+                email_confidence=merged_confidence,
+                reason=merged_reason,
                 pages_fetched=stage1.pages_fetched,
                 used_llm=True,
                 all_emails_found=s2.all_emails_found or stage1.all_emails_found,
