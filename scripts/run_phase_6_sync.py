@@ -463,8 +463,17 @@ def main():
             message_id_to_lead[mid] = lead
 
     logger.info("Fetching inbox replies from Zoho (last %d days)...", args.since_days)
-    replies = zoho_sync.fetch_inbox_replies(since_days=args.since_days)
+    replies = zoho_sync.fetch_inbox_replies(since_days=args.since_days, include_all=True)
     logger.info("  %d threaded messages found in inbox", len(replies))
+    # Build fallback index: active sent leads keyed by their best_email.
+    # Used when a reply arrives without thread headers — we match on sender.
+    # Narrow surface (only status=sent leads) keeps false-positive risk low.
+    active_sent_by_email = {}
+    for lead in fresh_rows:
+        if str(lead.get("status", "")).strip() == "sent":
+            em = str(lead.get("best_email", "")).strip().lower()
+            if em:
+                active_sent_by_email[em] = lead
 
     reply_updates = 0
     bounce_updates = 0
@@ -479,6 +488,10 @@ def main():
                 if ref in message_id_to_lead:
                     matched_lead = message_id_to_lead[ref]
                     break
+        # Fallback: sender-email match against active-sent leads.
+        # Catches replies with broken thread headers.
+        if not matched_lead:
+            matched_lead = active_sent_by_email.get(reply.from_email.lower())
         if not matched_lead:
             continue
 
