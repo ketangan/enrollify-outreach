@@ -38,8 +38,8 @@ def _map_classification_to_status(cls_status: str) -> str:
     """Map classifier output to the Leads `status` enum transition."""
     if cls_status == "online_system_exclude":
         return "online_system_exclude"
-    if cls_status == "needs_manual_review":
-        return "needs_manual_review"
+    if cls_status in {"needs_enrollment_system_classification", "needs_manual_review"}:
+        return "needs_enrollment_system_classification"
     # qualified statuses advance to the next pipeline stage
     return "ready_for_owner_lookup"
 

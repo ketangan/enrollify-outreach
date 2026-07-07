@@ -9,7 +9,8 @@ No SMTP verification (the project doesn't have email_guesser/SMTP code).
 Confidence is set based on what Claude reports + whether email matches
 the school's domain.
 
-Cost ceiling: max 2 web search calls per lead (1 for owner, 1 for email).
+Cost ceiling: max 3 web search tool uses per lead (up to 2 for owner,
+1 for email).
 Caller is responsible for idempotency (don't re-call on the same lead).
 """
 
@@ -52,6 +53,11 @@ WEB_SEARCH_TOOL = {
     "max_uses": 1,
 }
 
+OWNER_WEB_SEARCH_TOOL = {
+    **WEB_SEARCH_TOOL,
+    "max_uses": 2,
+}
+
 
 @dataclass
 class Stage2Result:
@@ -74,9 +80,10 @@ Website: {website}
 Category: {category}
 Location: {city}, {state}
 
-Use the web_search tool ONCE to find the owner. Useful query patterns:
-- "{name}" owner OR director OR founder
-- "{name}" "{city}" leadership
+Use the web_search tool carefully to find a real named owner/director/founder/principal. You may use up to TWO searches.
+Try hard before giving up:
+- First search: "{name}" "{city}" owner OR director OR founder OR principal
+- If that is weak, search: "{name}" "{city}" staff OR team OR about OR leadership OR LinkedIn OR Facebook
 
 After the search, return JSON ONLY (no prose, no markdown fences):
 
@@ -103,7 +110,9 @@ Rules:
 - "medium": name in a review site bio, news mention, or directory listing — AND location confirmed.
 - "low": name appears but role is ambiguous (could be a teacher, not the owner) — location still must match.
 - If you can't tie someone clearly to ownership of THIS specific school, set found=false. Don't guess.
-- Skip generic non-names ("The Team", "Our Staff", "Admin Office", "Front Desk")."""
+- Skip generic non-names ("The Team", "Our Staff", "Admin Office", "Front Desk").
+- Do not stop at the first generic result if another result/snippet clearly identifies a director, founder, principal, head of school, owner, administrator, or executive director.
+- Try harder to find a named person, but being wrong is worse than returning found=false."""
 
 
 EMAIL_SEARCH_PROMPT = """You are helping find the email address of a specific person at a small school.
@@ -112,6 +121,7 @@ Person: {owner_name}
 Title: {owner_title}
 School: {name}
 School domain: {domain}
+Owner source URL: {owner_source_url}
 Location: {city}, {state}
 
 Use the web_search tool ONCE to find this person's email. Useful queries:
@@ -130,6 +140,9 @@ Return JSON ONLY:
 
 Rules:
 - Only return an email you actually SEE in search results. Don't synthesize firstname@domain.
+- Only return the email if the source clearly ties this person/email to THIS specific school, using at least one of: matching school domain, exact school name plus city/state, or the same owner source URL above.
+- If the email belongs to someone with the same name at another school, another city/state, or an unrelated business, set found=false.
+- If you see an email but the source does not connect it to both the person and this school, set found=false.
 - "high": email is on the school's site or this person's LinkedIn.
 - "medium": email is in a directory, press release, or third-party listing.
 - "low": you're uncertain the email belongs to this person.
@@ -168,7 +181,12 @@ def _domain_from_url(url: str) -> str:
 
 
 
-def _run_web_search(prompt: str, client: Anthropic, max_retries: int = 3) -> dict | None:
+def _run_web_search(
+    prompt: str,
+    client: Anthropic,
+    max_retries: int = 3,
+    tool: dict | None = None,
+) -> dict | None:
     """Single web-search-enabled call. Retries on overload/transient errors.
 
     Wraps the SDK call with:
@@ -192,7 +210,7 @@ def _run_web_search(prompt: str, client: Anthropic, max_retries: int = 3) -> dic
             response = bounded_client.messages.create(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                tools=[WEB_SEARCH_TOOL],
+                tools=[tool or WEB_SEARCH_TOOL],
                 messages=[{"role": "user", "content": prompt}],
             )
             break
@@ -264,7 +282,7 @@ def find_owner_via_web(
         city=city or "",
         state=state or "",
     )
-    parsed = _run_web_search(prompt_a, client)
+    parsed = _run_web_search(prompt_a, client, tool=OWNER_WEB_SEARCH_TOOL)
 
     if not parsed:
         result.reason = "stage2a_no_json"
@@ -302,6 +320,7 @@ def find_owner_via_web(
         owner_title=result.owner_title or "owner",
         name=name,
         domain=domain,
+        owner_source_url=result.owner_source_url or "",
         city=city or "",
         state=state or "",
     )
@@ -318,6 +337,13 @@ def find_owner_via_web(
         result.reason = "web_search:invalid_email_returned"
         result.email_confidence = "low"
         result.stage += "|2B_invalid"
+        return result
+
+    email_source_url = (parsed_b.get("source_url") or "").strip()
+    if not email_source_url:
+        result.reason = "web_search:email_found_without_source"
+        result.email_confidence = "low"
+        result.stage += "|2B_no_source"
         return result
 
     result.best_email = found_email

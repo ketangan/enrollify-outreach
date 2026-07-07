@@ -3,7 +3,7 @@
 > **⚠️ READ THIS FIRST if you're Claude in a new session.**
 > This document IS the memory. Ketan pastes it at the start of every session. Before closing any session, output an updated version in a code block for Ketan to commit. Every decision, schema change, or tool swap must be reflected here. If ambiguous, ask — don't guess.
 
-**Last updated:** 2026-07-06
+**Last updated:** 2026-07-07
 **Status:** MVP shipped (Phases 0–6). Phases 7–9 done. Phase 8 webapp live at https://enrollify-admin.onrender.com. Auth still pending.
 **Repo:** private GitHub repo `enrollify-outreach`
 
@@ -281,6 +281,7 @@ Deferred (do not build without explicit request):
 
 ## Recently shipped (this week)
 
+- **Anthropic prompt + routing hardening** — Phase 3 now keeps `needs_enrollment_system_classification` in review instead of advancing to owner lookup; classifier no longer excludes pure scheduling/tour-booking links like Calendly unless they are the actual enrollment/payment flow; Stage 2 owner search can use up to 2 web-search calls and tries harder to find named owners while still rejecting weak identity matches; email search now requires source-backed identity linkage.
 - **Click tracking via Apps Script** — gesture-filtered, written to Click_Log tab, schema matches `show_clicks.py` reader. `{{lead_id}}` substitution in drafter.
 - **Webapp common tasks cheat sheet** on home page — 17 collapsible tasks with code blocks, dry-run guidance, deliverability checks.
 - **Phase 6 sync** — unthreaded bounce detection + 4xx code matching. Caught 6 new bounces on first run.

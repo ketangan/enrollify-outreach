@@ -152,9 +152,12 @@ Classification rules (apply in order — pick the first that fits):
 
 1. online_system_exclude — if ANY of these are present:
    - Parent/student login portal, "My Account", member area
-   - Third-party enrollment/booking vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, Calendly, GoStudioPro, iClassPro, Opus1, etc.) referenced anywhere in content or outbound links
+   - Third-party enrollment, registration, payment, billing, or parent-portal vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, GoStudioPro, iClassPro, Opus1, etc.) referenced anywhere in content or outbound links
    - /cart, /checkout, /shop URLs on their own domain suggesting an e-commerce enrollment flow
    - An /apply or /enroll page that contains form fields AND payment processing
+
+   Do NOT exclude a school just because it uses a pure scheduling tool such as Calendly, Acuity, or a "book a tour" link.
+   Scheduling/tour-booking only counts as online_system_exclude when it is clearly the actual class enrollment, registration, or payment flow.
 
 2. third_party_form_qualify — if enrollment goes through a hosted form service:
    - "Apply" / "Enroll" / "Register" / "Join Waitlist" button links to:
