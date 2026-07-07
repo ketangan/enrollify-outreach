@@ -66,6 +66,9 @@ NON_TARGET_NAME_PATTERNS = {
     "recreation center",
     "community center",
     "public library",
+    "early head start",
+    "head start",
+    "family services",
 }
 
 NON_TARGET_WORD_PATTERNS = {
@@ -102,6 +105,7 @@ ENROLLMENT_VENDOR_DOMAINS = {
     "gostudiopro.com",
     "app.gostudiopro.com",
     "opus1.io",
+    "childplus.net",
 }
 
 # Domains that indicate the school is too large / already digital

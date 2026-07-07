@@ -60,7 +60,18 @@ VENDOR_MARKERS = [
     "studiodirector", "mindbodyonline", "brightwheel", "procareconnect",
     "kindertales", "classdojo", "sawyer", "hi-sawyer", "regpacks",
     "activenetwork", "amilia", "perfectmind", "swimschoolsoftware",
-    "gostudiopro", "opus1",
+    "gostudiopro", "opus1", "childplus", "childplus.net",
+]
+
+# Non-target organizations that can look like schools at the page level.
+NON_TARGET_ORG_KEYWORDS = [
+    "early head start",
+    "head start",
+    "family services",
+    "housing programs",
+    "mental health services",
+    "workforce development",
+    "community-based programs",
 ]
 
 # Signals a PDF form enrollment process
@@ -90,8 +101,11 @@ class Classification:
 
 
 def _check_vendor_markers(snippet: str) -> tuple[bool, str]:
+    snippet_lower = snippet.lower()
     for marker in VENDOR_MARKERS:
-        if marker in snippet:
+        # Avoid false positives like "amilia" inside "familia"/"families".
+        pattern = rf"(?<![a-z0-9]){re.escape(marker)}(?![a-z0-9])"
+        if re.search(pattern, snippet_lower):
             return True, f"vendor:{marker}"
     return False, ""
 
@@ -116,6 +130,15 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
         return Classification(
             status="online_system_exclude",
             reason=f"local:{reason}",
+            used_llm=False,
+            pages_fetched=len(pages),
+        )
+
+    hit, reason = _check_keywords(combined_text, NON_TARGET_ORG_KEYWORDS)
+    if hit:
+        return Classification(
+            status="online_system_exclude",
+            reason=f"local:non_target_org:{reason}",
             used_llm=False,
             pages_fetched=len(pages),
         )
@@ -152,8 +175,9 @@ Classification rules (apply in order — pick the first that fits):
 
 1. online_system_exclude — if ANY of these are present:
    - Large national/regional organizations, city/county programs, gyms, pro-sports organizations, universities, libraries, parks/recreation departments, or public agencies rather than an independent school/studio/academy
+   - Head Start / Early Head Start programs, social-service nonprofits, family-services agencies, or organizations whose site primarily offers housing, mental health, workforce, donation, or public-benefit programs rather than a standalone independent school/studio/academy
    - Parent/student login portal, "My Account", member area
-   - Third-party enrollment, registration, payment, billing, or parent-portal vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, GoStudioPro, iClassPro, Opus1, etc.) referenced anywhere in content or outbound links
+   - Third-party enrollment, registration, payment, billing, or parent-portal vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, GoStudioPro, iClassPro, Opus1, ChildPlus, etc.) referenced anywhere in content or outbound links
    - /cart, /checkout, /shop URLs on their own domain suggesting an e-commerce enrollment flow
    - An /apply or /enroll page that contains form fields AND payment processing
 

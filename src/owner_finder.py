@@ -107,6 +107,76 @@ class OwnerResult:
     all_emails_found: list[str] = field(default_factory=list)
 
 
+@dataclass
+class OwnerCandidate:
+    name: str = ""
+    title: str = ""
+    source_url: str = ""
+    reason: str = ""
+
+
+PERSON_NAME = r"([A-Z][a-zA-Z'’.-]+(?:\s+[A-Z][a-zA-Z'’.-]+){1,3})"
+OWNER_TITLES = (
+    "Owner",
+    "Director",
+    "Founder",
+    "Principal",
+    "Head of School",
+    "Executive Director",
+)
+OWNER_CONTEXT_RE = re.compile(
+    r"\b("
+    r"about me|teacher|educator|director|owner|founder|principal|"
+    r"head of school|opened|opening|started|founded|licensed child care|"
+    r"licensed childcare|preschool|school|studio|academy|program"
+    r")\b",
+    re.IGNORECASE,
+)
+OWNER_EXCERPT_RE = re.compile(
+    r"\b("
+    r"about me|meet|owner|director|founder|principal|head of school|"
+    r"executive director|my name is|i am|i'm|i’m|contact|email"
+    r")\b",
+    re.IGNORECASE,
+)
+NON_PERSON_NAME_WORDS = {
+    "about",
+    "academy",
+    "apply",
+    "child",
+    "children",
+    "class",
+    "contact",
+    "early",
+    "education",
+    "email",
+    "enroll",
+    "family",
+    "head",
+    "learn",
+    "preschool",
+    "program",
+    "school",
+    "services",
+    "staff",
+    "start",
+    "team",
+    "today",
+}
+GENERIC_EMAIL_PREFIXES = (
+    "info",
+    "hello",
+    "contact",
+    "admissions",
+    "admission",
+    "enroll",
+    "enrollment",
+    "office",
+    "admin",
+    "school",
+)
+
+
 def _extract_emails(text: str) -> list[str]:
     """Regex-extract emails, filter blocklist, dedupe (case-insensitive), lowercase."""
     if not text:
@@ -126,6 +196,192 @@ def _extract_emails(text: str) -> list[str]:
         seen.add(email_lower)
         cleaned.append(email_lower)
     return cleaned
+
+
+def _clean_owner_name(raw_name: str) -> str:
+    """Normalize a likely person name and reject obvious school/org phrases."""
+    name = re.sub(r"\s+", " ", (raw_name or "").strip(" ,.;:!?\n\t"))
+    if not name:
+        return ""
+    words = name.split()
+    if len(words) < 2 or len(words) > 4:
+        return ""
+    lowered = {re.sub(r"[^a-z]", "", w.lower()) for w in words}
+    if lowered & NON_PERSON_NAME_WORDS:
+        return ""
+    return name
+
+
+def _infer_owner_title(context: str) -> str:
+    context_lower = context.lower()
+    title_order = [
+        ("owner", "Owner"),
+        ("founder", "Founder"),
+        ("executive director", "Executive Director"),
+        ("head of school", "Head of School"),
+        ("principal", "Principal"),
+        ("director", "Director"),
+    ]
+    for needle, title in title_order:
+        if needle in context_lower:
+            return title
+    if (
+        "home" in context_lower
+        and ("preschool" in context_lower or "child care" in context_lower)
+    ) or "licensed child care" in context_lower:
+        return "Owner/Director"
+    return "Director"
+
+
+def _normalize_owner_title(title: str) -> str:
+    for known_title in OWNER_TITLES:
+        if title.lower() == known_title.lower():
+            return known_title
+    return title.title()
+
+
+def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate:
+    """
+    Deterministic safety net for simple owner bios.
+
+    Claude should still choose among ambiguous staff pages, but pages saying
+    "About Me" / "My name is Jane Doe" should not need a model to succeed.
+    """
+    title_pattern = "|".join(re.escape(title) for title in OWNER_TITLES)
+    explicit_patterns = [
+        re.compile(
+            rf"\b({title_pattern})\s*[:\-]\s*{PERSON_NAME}",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"{PERSON_NAME}\s*,?\s+(?:is\s+)?(?:the\s+)?({title_pattern})\b",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"\bmeet\s+{PERSON_NAME}\s*,?\s+(?:our\s+)?({title_pattern})\b",
+            re.IGNORECASE,
+        ),
+    ]
+    first_person_pattern = re.compile(
+        rf"\b(?:my name is|i am|i'm|i’m)\s+{PERSON_NAME}\b",
+        re.IGNORECASE,
+    )
+
+    for page in pages:
+        text = page.text or ""
+        if not text:
+            continue
+
+        for pattern in explicit_patterns:
+            for match in pattern.finditer(text):
+                groups = match.groups()
+                if len(groups) < 2:
+                    continue
+                if groups[0].lower() in {t.lower() for t in OWNER_TITLES}:
+                    title = _normalize_owner_title(groups[0])
+                    name = _clean_owner_name(groups[1])
+                else:
+                    name = _clean_owner_name(groups[0])
+                    title = _normalize_owner_title(groups[1])
+                if name:
+                    return OwnerCandidate(
+                        name=name,
+                        title=title,
+                        source_url=page.url,
+                        reason="explicit_owner_title_pattern",
+                    )
+
+        for match in first_person_pattern.finditer(text):
+            name = _clean_owner_name(match.group(1))
+            if not name:
+                continue
+            window = text[max(0, match.start() - 250):match.end() + 450]
+            if not OWNER_CONTEXT_RE.search(window):
+                continue
+            return OwnerCandidate(
+                name=name,
+                title=_infer_owner_title(window),
+                source_url=page.url,
+                reason="first_person_owner_bio",
+            )
+
+    return OwnerCandidate()
+
+
+def _normalize_for_email(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def _pick_best_email(emails: list[str], owner_name: str = "") -> str:
+    """Choose a usable email deterministically when the LLM returns blank."""
+    if not emails:
+        return ""
+
+    owner_parts = [
+        _normalize_for_email(part)
+        for part in owner_name.split()
+        if len(_normalize_for_email(part)) > 1
+    ]
+    first = owner_parts[0] if owner_parts else ""
+    last = owner_parts[-1] if len(owner_parts) > 1 else ""
+
+    def score(email: str) -> tuple[int, int]:
+        local = email.split("@", 1)[0].lower()
+        local_norm = _normalize_for_email(local)
+
+        if first and last:
+            if (
+                first + last in local_norm
+                or first[0] + last in local_norm
+                or (first in local_norm and last in local_norm)
+            ):
+                return (0, len(email))
+        if first and first in local_norm:
+            return (5, len(email))
+
+        for idx, prefix in enumerate(GENERIC_EMAIL_PREFIXES):
+            if (
+                local == prefix
+                or local.startswith(prefix + ".")
+                or local.startswith(prefix + "-")
+            ):
+                return (20 + idx, len(email))
+
+        return (50, len(email))
+
+    return min(emails, key=score)
+
+
+def _page_excerpt_for_llm(text: str, max_chars: int = 4500) -> str:
+    """Keep owner/contact-rich page text instead of blindly chopping the top."""
+    if not text or len(text) <= max_chars:
+        return text
+
+    windows = [text[:1200], text[-1200:]]
+    for match in OWNER_EXCERPT_RE.finditer(text):
+        start = max(0, match.start() - 600)
+        end = min(len(text), match.end() + 1000)
+        windows.append(text[start:end])
+
+    combined = []
+    seen = set()
+    total = 0
+    for window in windows:
+        chunk = re.sub(r"\s+", " ", window).strip()
+        if not chunk or chunk in seen:
+            continue
+        seen.add(chunk)
+        if total + len(chunk) + 6 > max_chars:
+            remaining = max_chars - total - 6
+            if remaining <= 200:
+                break
+            chunk = chunk[:remaining]
+        combined.append(chunk)
+        total += len(chunk) + 6
+        if total >= max_chars:
+            break
+
+    return "\n...\n".join(combined)
 
 
 def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 3) -> list[str]:
@@ -242,6 +498,7 @@ Return a JSON object with this exact shape:
 IMPORTANT — owner name extraction:
 - Extract the owner name WHENEVER it appears in the text, even if no matching email exists.
 - Look for patterns like "[Name], Director", "[Name], Owner", "[Name], Founder", "[Name], Principal", "[Name] joined us in YYYY as director", "Meet [Name], our..."
+- For small home-based preschools, treat first-person bios as owner/operator evidence. Examples: "About Me ... My name is Jane Doe", "I opened this home preschool", "I am a licensed child care provider".
 - Extract the most senior person (Director > Owner > Founder > Principal > Head of School > Lead Teacher)
 - If multiple people are listed, pick the most senior one (usually listed first, or with "Director"/"Owner"/"Founder" title)
 - Do NOT leave owner_name empty just because there's no matching email — the name is useful on its own
@@ -368,7 +625,7 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
 
     # Build LLM input
     combined_text = "\n\n".join(
-        f"--- {p.url} ---\n{p.text[:1500]}" for p in pages if p.text
+        f"--- {p.url} ---\n{_page_excerpt_for_llm(p.text)}" for p in pages if p.text
     )
     email_list_str = "\n".join(f"- {e}" for e in unique_emails) or "(none found)"
 
@@ -452,21 +709,45 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
         best_email = ""
         confidence = "low"
 
+    owner_candidate = _extract_owner_candidate(pages)
+    owner_name = (parsed.get("owner_name") or "").strip()
+    owner_title = (parsed.get("owner_title") or "").strip()
+    reason = (parsed.get("reason") or "").strip()
+
+    if not owner_name and owner_candidate.name:
+        owner_name = owner_candidate.name
+        owner_title = owner_title or owner_candidate.title
+        reason = (
+            f"{reason}|deterministic_owner:{owner_candidate.reason}"
+            if reason else f"deterministic_owner:{owner_candidate.reason}"
+        )
+    elif owner_name and not owner_title and owner_candidate.name == owner_name:
+        owner_title = owner_candidate.title
+
+    if not best_email and unique_emails:
+        best_email = _pick_best_email(unique_emails, owner_name=owner_name)
+        if best_email:
+            confidence = "medium"
+            reason = (
+                f"{reason}|deterministic_email_fallback"
+                if reason else "deterministic_email_fallback"
+            )
+
     # Pick source URL — where we found the owner. Use the first sub-page fetched,
     # fall back to homepage.
-    source_url = pages[1].url if len(pages) > 1 else pages[0].url
+    source_url = owner_candidate.source_url or (pages[1].url if len(pages) > 1 else pages[0].url)
 
     stage1 = OwnerResult(
-    owner_name=(parsed.get("owner_name") or "").strip(),
-    owner_title=(parsed.get("owner_title") or "").strip(),
-    owner_source_url=source_url,
-    best_email=best_email,
-    email_confidence=confidence,
-    reason=(parsed.get("reason") or "").strip(),
-    pages_fetched=len(pages),
-    used_llm=True,
-    all_emails_found=unique_emails,
-)
+        owner_name=owner_name,
+        owner_title=owner_title,
+        owner_source_url=source_url,
+        best_email=best_email,
+        email_confidence=confidence,
+        reason=reason,
+        pages_fetched=len(pages),
+        used_llm=True,
+        all_emails_found=unique_emails,
+    )
 
     # Stage 2 fallback: web search ONLY when Stage 1 found no owner name.
     # If Stage 1 found a name but no email, we leave it for manual review —

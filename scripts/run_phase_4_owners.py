@@ -63,7 +63,7 @@ def main():
 
     col = {h: headers.index(h) for h in headers}
     required = [
-        "status", "website", "name", "zip",
+        "status", "website", "name", "category", "city", "state", "zip",
         "owner_name", "owner_title", "owner_source_url",
         "best_email", "email_confidence", "notes", "last_action",
     ]
@@ -84,6 +84,9 @@ def main():
             "row_idx": i,
             "name": row[col["name"]],
             "website": row[col["website"]],
+            "category": row[col["category"]],
+            "city": row[col["city"]],
+            "state": row[col["state"]],
         })
 
     if args.limit:

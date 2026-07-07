@@ -240,7 +240,7 @@ def main():
     headers = all_rows[0]
 
     required = [
-        "id", "status", "website", "name", "zip", "category",
+        "id", "status", "website", "name", "zip", "category", "city", "state",
         "owner_name", "owner_title", "owner_source_url",
         "best_email", "email_confidence",
         "enrollment_method", "notes", "last_action",
@@ -266,6 +266,8 @@ def main():
             "name": row[col["name"]],
             "website": row[col["website"]],
             "category": row[col["category"]] if col["category"] < len(row) else "",
+            "city": row[col["city"]] if col["city"] < len(row) else "",
+            "state": row[col["state"]] if col["state"] < len(row) else "",
         }
         if status == STATUS_NEEDS_CLASSIFY:
             if skip_already_retried and last_action == "retry_p3":
