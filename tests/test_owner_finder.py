@@ -75,6 +75,13 @@ def test_pick_best_email_prefers_owner_named_email():
     )
 
 
+def test_clean_owner_name_rejects_sentence_fragments():
+    assert owner_finder._clean_owner_name("just finishing my second") == ""
+    assert owner_finder._clean_owner_name("will be sent to") == ""
+    assert owner_finder._clean_owner_name("Mihoko Tanabe") == "Mihoko Tanabe"
+    assert owner_finder._clean_owner_name("Jung K.") == "Jung K"
+
+
 def test_stage2_owner_keeps_stage1_email_and_receives_profile_links(monkeypatch):
     contact_text = (
         "Olive Tree Learning Academy Contact Visit Us "

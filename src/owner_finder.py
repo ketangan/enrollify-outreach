@@ -152,16 +152,23 @@ NON_PERSON_NAME_WORDS = {
     "email",
     "enroll",
     "family",
+    "finishing",
     "head",
+    "just",
     "learn",
+    "my",
     "preschool",
     "program",
     "school",
+    "second",
+    "sent",
     "services",
     "staff",
     "start",
     "team",
     "today",
+    "will",
+    "your",
 }
 GENERIC_EMAIL_PREFIXES = (
     "info",
@@ -212,6 +219,13 @@ def _clean_owner_name(raw_name: str) -> str:
     words = name.split()
     if len(words) < 2 or len(words) > 4:
         return ""
+    allowed_particles = {"de", "del", "de la", "la", "van", "von"}
+    for word in words:
+        cleaned_word = word.strip(".,'’")
+        if cleaned_word.lower() in allowed_particles:
+            continue
+        if not cleaned_word or not cleaned_word[0].isupper():
+            return ""
     lowered = {re.sub(r"[^a-z]", "", w.lower()) for w in words}
     if lowered & NON_PERSON_NAME_WORDS:
         return ""
@@ -756,9 +770,15 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
         confidence = "low"
 
     owner_candidate = _extract_owner_candidate(pages)
-    owner_name = (parsed.get("owner_name") or "").strip()
+    raw_owner_name = (parsed.get("owner_name") or "").strip()
+    owner_name = _clean_owner_name(raw_owner_name)
     owner_title = (parsed.get("owner_title") or "").strip()
     reason = (parsed.get("reason") or "").strip()
+    if raw_owner_name and not owner_name:
+        reason = (
+            f"{reason}|rejected_llm_owner_name:{raw_owner_name[:60]}"
+            if reason else f"rejected_llm_owner_name:{raw_owner_name[:60]}"
+        )
 
     if not owner_name and owner_candidate.name:
         owner_name = owner_candidate.name
