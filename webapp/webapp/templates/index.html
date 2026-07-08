@@ -165,6 +165,13 @@ python scripts/show_clicks.py --campaign initial --since-days 30</code></pre>
     </div>
 
     <div class="task">
+      <h4>Update school names or websites for click tracking</h4>
+      <p><strong>Prefer fixing the source lead first.</strong> Go to <a href="/leads">/leads</a>, search by school name, website, email, or <code>lead_id</code>, click <strong>Edit &uarr;</strong>, and update <code>name</code> / <code>website</code> on the lead. <code>show_clicks.py</code> joins <code>Click_Log</code> back to <code>Leads</code> / <code>Archive</code> by <code>lead_id</code>, so source-row fixes show up in the click report.</p>
+      <p>If you only need to clean the Google Sheet display, open the Google Sheet &rarr; <code>Click_Log</code> tab, filter by <code>lead_id</code> or current school name, and update only the display columns such as <code>school_name</code> and <code>website</code>.</p>
+      <p class="task-warn">⚠ Do not edit <code>lead_id</code>, <code>timestamp</code>, <code>utm_source</code>, <code>utm_campaign</code>, <code>utm_content</code>, <code>user_agent</code>, <code>referer</code>, or <code>path</code>. Those are event-log fields; changing them breaks attribution.</p>
+    </div>
+
+    <div class="task">
       <h4>Mark a lead as do-not-contact</h4>
       <p>Three paths, fastest first:</p>
       <ol>
