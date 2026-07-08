@@ -17,6 +17,7 @@ KNOWN_CHAIN_NAMES = {
     "code ninjas",
     "idtech",
     "the little gym",
+    "the tutoring center",
     "my gym",
     "kidstrong",
     "gymboree",
@@ -35,6 +36,7 @@ KNOWN_CHAIN_NAMES = {
     "challenger sports",
     "soccer shots",
     "i9 sports",
+    "kaplan",
     "dance 101",  # generic franchise-y
 }
 
@@ -65,7 +67,17 @@ NON_TARGET_NAME_PATTERNS = {
     "parks and recreation",
     "recreation center",
     "community center",
+    "family center",
+    "aquatic center",
+    "swim stadium",
     "public library",
+    "public school",
+    "elementary school",
+    "middle school",
+    "high school",
+    "adult school",
+    "community adult school",
+    "museum",
     "early head start",
     "head start",
     "family services",

@@ -49,3 +49,21 @@ def test_vendor_marker_does_not_match_inside_regular_words():
 def test_skip_lists_exclude_childplus_and_family_services():
     assert skip_lists.is_skipped_by_domain("https://www.childplus.net/apply")[0]
     assert skip_lists.is_skipped_by_name("St. Anne's Family Services")[0]
+
+
+def test_name_prefilter_excludes_public_schools_and_large_chains():
+    for name in [
+        "Roosevelt Elementary School",
+        "Benjamin O. Davis Middle School",
+        "Downey High School Aquatic Center",
+        "Evans Community Adult School",
+        "Kaplan",
+        "The Tutoring Center",
+    ]:
+        result = classifier.classify_lead(
+            "https://example.com",
+            client=None,
+            name=name,
+        )
+        assert result.status == "online_system_exclude"
+        assert result.reason.startswith("prefilter:")

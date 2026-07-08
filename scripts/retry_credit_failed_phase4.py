@@ -15,6 +15,7 @@ Use --commit to actually re-run owner lookup and update the matched rows.
 Usage:
   python scripts/retry_credit_failed_phase4.py
   python scripts/retry_credit_failed_phase4.py --min-row 3294 --include-fetch-failures
+  python scripts/retry_credit_failed_phase4.py --min-row 3294 --include-fetch-failures --reclassify-first --commit
   python scripts/retry_credit_failed_phase4.py --limit 20
   python scripts/retry_credit_failed_phase4.py --commit
 """
@@ -32,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from anthropic import Anthropic
 from gspread.utils import rowcol_to_a1
 
-from src import config, owner_finder, sheets
+from src import classifier, config, owner_finder, sheets
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,6 +46,7 @@ STATUS_NEEDS_OWNER = "needs_owner_review"
 STATUS_READY_TO_SEND = "ready_to_send"
 LAST_ACTION_PHASE4 = "phase4_owner_found"
 LAST_ACTION_RETRY_CREDIT = "retry_credit_p4"
+LAST_ACTION_RECLASSIFIED = "retry_credit_p4_reclassified"
 
 SHEET_WRITE_THROTTLE_SEC = 1.2
 POLITE_DELAY_SECONDS = 1.5
@@ -168,6 +170,14 @@ def _status_for_result(result: owner_finder.OwnerResult) -> str:
     return STATUS_NEEDS_OWNER
 
 
+def _map_classification_to_status(cls_status: str) -> str:
+    if cls_status == "online_system_exclude":
+        return "online_system_exclude"
+    if cls_status in {"needs_enrollment_system_classification", "needs_manual_review"}:
+        return "needs_enrollment_system_classification"
+    return "ready_for_owner_lookup"
+
+
 def _collect_candidates(
     all_rows: list[list[str]],
     col: dict[str, int],
@@ -198,7 +208,36 @@ def _collect_candidates(
     return candidates
 
 
-def _write_result(leads_ws, col: dict[str, int], record: dict[str, str | int], result: owner_finder.OwnerResult) -> str:
+def _write_classification_result(
+    leads_ws,
+    col: dict[str, int],
+    record: dict[str, str | int],
+    verdict: classifier.Classification,
+) -> str:
+    row_idx = int(record["row_idx"])
+    new_status = _map_classification_to_status(verdict.status)
+    updates = [
+        {"range": rowcol_to_a1(row_idx, col["status"] + 1),
+         "values": [[new_status]]},
+        {"range": rowcol_to_a1(row_idx, col["enrollment_method"] + 1),
+         "values": [[verdict.status]]},
+        {"range": rowcol_to_a1(row_idx, col["notes"] + 1),
+         "values": [[f"{LAST_ACTION_RECLASSIFIED}:{verdict.reason[:470]}"]]},
+        {"range": rowcol_to_a1(row_idx, col["last_action"] + 1),
+         "values": [[LAST_ACTION_RECLASSIFIED]]},
+    ]
+    leads_ws.batch_update(updates, value_input_option="USER_ENTERED")
+    return new_status
+
+
+def _write_result(
+    leads_ws,
+    col: dict[str, int],
+    record: dict[str, str | int],
+    result: owner_finder.OwnerResult,
+    *,
+    enrollment_method: str | None = None,
+) -> str:
     row_idx = int(record["row_idx"])
     new_status = _status_for_result(result)
     updates = [
@@ -219,6 +258,11 @@ def _write_result(leads_ws, col: dict[str, int], record: dict[str, str | int], r
         {"range": rowcol_to_a1(row_idx, col["last_action"] + 1),
          "values": [[LAST_ACTION_RETRY_CREDIT]]},
     ]
+    if enrollment_method is not None:
+        updates.append(
+            {"range": rowcol_to_a1(row_idx, col["enrollment_method"] + 1),
+             "values": [[enrollment_method]]}
+        )
     leads_ws.batch_update(updates, value_input_option="USER_ENTERED")
     return new_status
 
@@ -237,6 +281,8 @@ def main() -> None:
                         help="Include rows already processed by this recovery script")
     parser.add_argument("--include-fetch-failures", action="store_true",
                         help="Also include blank http_403/http_429 fetch failures")
+    parser.add_argument("--reclassify-first", action="store_true",
+                        help="Run Phase 3 classification first; only retry owner lookup if still qualified")
     args = parser.parse_args()
 
     _validate_config(require_anthropic=args.commit)
@@ -247,7 +293,7 @@ def main() -> None:
 
     required = [
         "status", "website", "name", "category", "city", "state", "zip",
-        "owner_name", "owner_title", "owner_source_url",
+        "owner_name", "owner_title", "owner_source_url", "enrollment_method",
         "best_email", "email_confidence", "notes", "last_action",
     ]
     col = _build_col_map(headers, required)
@@ -284,14 +330,55 @@ def main() -> None:
     if not args.commit:
         logger.info("Dry run only: no Anthropic calls and no Google Sheets writes.")
         logger.info("Run again with --commit to retry these rows.")
+        if args.reclassify_first:
+            logger.info("--reclassify-first will run Phase 3 before owner lookup when committed.")
         return
 
     anthropic_client = Anthropic(max_retries=5)
     recovered = 0
+    excluded = 0
+    reclassified_for_review = 0
     still_stuck = 0
 
     for idx, record in enumerate(candidates, start=1):
         logger.info("[%d/%d] %s", idx, len(candidates), str(record["name"])[:60])
+        enrollment_method = None
+        if args.reclassify_first:
+            try:
+                verdict = classifier.classify_lead(
+                    str(record["website"]),
+                    anthropic_client,
+                    name=str(record["name"]),
+                )
+            except Exception as e:
+                logger.exception("  classification error: %s", e)
+                verdict = classifier.Classification(
+                    status=classifier.CLASSIFY_FALLBACK_STATUS,
+                    reason=f"exception:{type(e).__name__}",
+                    used_llm=False,
+                    pages_fetched=0,
+                )
+
+            classified_status = _map_classification_to_status(verdict.status)
+            logger.info(
+                "  classified -> %s | method=%s | %s",
+                classified_status,
+                verdict.status,
+                verdict.reason[:80],
+            )
+
+            if classified_status != "ready_for_owner_lookup":
+                _write_classification_result(leads_ws, col, record, verdict)
+                if classified_status == "online_system_exclude":
+                    excluded += 1
+                else:
+                    reclassified_for_review += 1
+                time.sleep(SHEET_WRITE_THROTTLE_SEC)
+                time.sleep(POLITE_DELAY_SECONDS)
+                continue
+
+            enrollment_method = verdict.status
+
         try:
             result = owner_finder.find_owner(
                 str(record["website"]),
@@ -308,7 +395,13 @@ def main() -> None:
                 reason=f"exception:{type(e).__name__}",
             )
 
-        new_status = _write_result(leads_ws, col, record, result)
+        new_status = _write_result(
+            leads_ws,
+            col,
+            record,
+            result,
+            enrollment_method=enrollment_method,
+        )
         if new_status == STATUS_READY_TO_SEND:
             recovered += 1
         else:
@@ -325,7 +418,13 @@ def main() -> None:
         time.sleep(POLITE_DELAY_SECONDS)
 
     logger.info("")
-    logger.info("Recovery complete: %d recovered, %d still stuck", recovered, still_stuck)
+    logger.info(
+        "Recovery complete: %d recovered, %d excluded, %d reclassified for review, %d still stuck",
+        recovered,
+        excluded,
+        reclassified_for_review,
+        still_stuck,
+    )
 
 
 if __name__ == "__main__":

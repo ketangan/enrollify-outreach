@@ -369,8 +369,17 @@ def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classif
     )
 
 
-def classify_lead(website: str, client: Anthropic) -> Classification:
+def classify_lead(website: str, client: Anthropic, *, name: str = "") -> Classification:
     """Full Phase 3 classification pipeline for one lead."""
+    skip, reason = skip_lists.is_skipped_by_name(name)
+    if skip:
+        return Classification(
+            status="online_system_exclude",
+            reason=f"prefilter:{reason}",
+            used_llm=False,
+            pages_fetched=0,
+        )
+
     skip, reason = skip_lists.is_skipped_by_domain(website)
     if skip:
         return Classification(

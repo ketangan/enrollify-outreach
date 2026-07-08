@@ -87,7 +87,11 @@ def _retry_phase_3(
         logger.info("[P3 %d/%d] %s", idx, len(todo), lead["name"][:60])
 
         try:
-            verdict = classifier.classify_lead(lead["website"], anthropic_client)
+            verdict = classifier.classify_lead(
+                lead["website"],
+                anthropic_client,
+                name=lead.get("name", ""),
+            )
         except Exception as e:
             logger.exception("  unexpected error: %s", e)
             verdict = classifier.Classification(

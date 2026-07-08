@@ -99,7 +99,11 @@ def main():
         logger.info("[%d/%d] %s", idx, len(todo), lead["name"][:60])
 
         try:
-            result = classifier.classify_lead(lead["website"], anthropic_client)
+            result = classifier.classify_lead(
+                lead["website"],
+                anthropic_client,
+                name=lead["name"],
+            )
         except Exception as e:
             logger.exception("Unexpected error classifying %s: %s", lead["name"], e)
             result = classifier.Classification(

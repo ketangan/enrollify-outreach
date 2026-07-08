@@ -98,6 +98,18 @@ def test_status_for_result_forces_empty_email_to_low_review():
     assert result.email_confidence == "low"
 
 
+def test_map_classification_excludes_non_targets():
+    assert retry_credit._map_classification_to_status("online_system_exclude") == (
+        "online_system_exclude"
+    )
+    assert retry_credit._map_classification_to_status("contact_form_qualify") == (
+        "ready_for_owner_lookup"
+    )
+    assert retry_credit._map_classification_to_status(
+        "needs_enrollment_system_classification"
+    ) == "needs_enrollment_system_classification"
+
+
 def test_dry_run_config_validation_does_not_require_anthropic_or_places(monkeypatch, tmp_path):
     creds = tmp_path / "service-account.json"
     creds.write_text("{}")
@@ -122,6 +134,7 @@ def test_collect_candidates_respects_row_range():
         "state",
         "zip",
         "owner_name",
+        "enrollment_method",
         "best_email",
         "email_confidence",
         "notes",
@@ -137,6 +150,7 @@ def test_collect_candidates_respects_row_range():
         "CA",
         "90220",
         "",
+        "contact_form_qualify",
         "",
         "unverified",
         "llm_error:BadRequestError",
