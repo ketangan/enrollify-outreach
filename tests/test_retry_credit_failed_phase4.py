@@ -31,9 +31,16 @@ def test_matches_llm_badrequest_owner_review_row():
     assert retry_credit.is_credit_failure_candidate(_record())
 
 
-def test_matches_blank_fetch_403_because_stage2_needed_anthropic():
-    assert retry_credit.is_credit_failure_candidate(
+def test_does_not_match_blank_fetch_403_by_default():
+    assert not retry_credit.is_credit_failure_candidate(
         _record(notes="fetch_failed:http_403")
+    )
+
+
+def test_can_include_blank_fetch_403_when_stage2_needed_anthropic():
+    assert retry_credit.is_credit_failure_candidate(
+        _record(notes="fetch_failed:http_403"),
+        include_fetch_failures=True,
     )
 
 
@@ -103,3 +110,48 @@ def test_dry_run_config_validation_does_not_require_anthropic_or_places(monkeypa
 
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
         retry_credit._validate_config(require_anthropic=True)
+
+
+def test_collect_candidates_respects_row_range():
+    headers = [
+        "status",
+        "website",
+        "name",
+        "category",
+        "city",
+        "state",
+        "zip",
+        "owner_name",
+        "best_email",
+        "email_confidence",
+        "notes",
+        "last_action",
+    ]
+    col = {header: idx for idx, header in enumerate(headers)}
+    candidate = [
+        "needs_owner_review",
+        "https://example.com",
+        "Example School",
+        "preschool",
+        "Los Angeles",
+        "CA",
+        "90220",
+        "",
+        "",
+        "unverified",
+        "llm_error:BadRequestError",
+        "phase4_owner_found",
+    ]
+    rows = [headers, candidate, candidate, candidate]
+
+    matches = retry_credit._collect_candidates(
+        rows,
+        col,
+        zip_filter=None,
+        min_row=4,
+        max_row=None,
+        include_retried=False,
+        include_fetch_failures=False,
+    )
+
+    assert [match["row_idx"] for match in matches] == [4]

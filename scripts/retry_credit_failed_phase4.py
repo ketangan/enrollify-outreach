@@ -6,13 +6,15 @@ This is intentionally narrower than scripts/retry_stale_flagged.py:
 - only Phase 4 owner-review rows
 - only blank owner/email rows
 - only outage-shaped reasons such as llm_error:BadRequestError, stage2a_no_json,
-  or fetch_failed:http_403/http_429 where Stage 2 would have needed Anthropic
+- optionally, fetch_failed:http_403/http_429 where Stage 2 would have needed
+  Anthropic, but only when you explicitly pass --include-fetch-failures
 
 Dry-run is the default and does not call Anthropic or write to Google Sheets.
 Use --commit to actually re-run owner lookup and update the matched rows.
 
 Usage:
   python scripts/retry_credit_failed_phase4.py
+  python scripts/retry_credit_failed_phase4.py --min-row 3294 --include-fetch-failures
   python scripts/retry_credit_failed_phase4.py --limit 20
   python scripts/retry_credit_failed_phase4.py --commit
 """
@@ -119,7 +121,7 @@ def is_credit_failure_candidate(
     record: dict[str, str | int],
     *,
     include_retried: bool = False,
-    include_fetch_failures: bool = True,
+    include_fetch_failures: bool = False,
 ) -> bool:
     """
     Return True for rows that look like Anthropic-credit outage fallout.
@@ -171,11 +173,17 @@ def _collect_candidates(
     col: dict[str, int],
     *,
     zip_filter: str | None,
+    min_row: int | None,
+    max_row: int | None,
     include_retried: bool,
     include_fetch_failures: bool,
 ) -> list[dict[str, str | int]]:
     candidates: list[dict[str, str | int]] = []
     for row_idx, row in enumerate(all_rows[1:], start=2):
+        if min_row is not None and row_idx < min_row:
+            continue
+        if max_row is not None and row_idx > max_row:
+            continue
         if len(row) <= max(col.values()):
             continue
         record = _record_from_row(row_idx, row, col)
@@ -220,11 +228,15 @@ def main() -> None:
     parser.add_argument("--commit", action="store_true",
                         help="Actually call Anthropic and write recovered results to the sheet")
     parser.add_argument("--limit", type=int, help="Max matched rows to retry")
+    parser.add_argument("--min-row", type=int,
+                        help="Only process sheet rows at or after this row number")
+    parser.add_argument("--max-row", type=int,
+                        help="Only process sheet rows at or before this row number")
     parser.add_argument("--zip", dest="zip_filter", help="Only process leads in this zip")
     parser.add_argument("--include-retried", action="store_true",
                         help="Include rows already processed by this recovery script")
-    parser.add_argument("--exclude-fetch-failures", action="store_true",
-                        help="Do not include blank http_403/http_429 fetch failures")
+    parser.add_argument("--include-fetch-failures", action="store_true",
+                        help="Also include blank http_403/http_429 fetch failures")
     args = parser.parse_args()
 
     _validate_config(require_anthropic=args.commit)
@@ -244,8 +256,10 @@ def main() -> None:
         all_rows,
         col,
         zip_filter=args.zip_filter,
+        min_row=args.min_row,
+        max_row=args.max_row,
         include_retried=args.include_retried,
-        include_fetch_failures=not args.exclude_fetch_failures,
+        include_fetch_failures=args.include_fetch_failures,
     )
     if args.limit is not None:
         candidates = candidates[:args.limit]
