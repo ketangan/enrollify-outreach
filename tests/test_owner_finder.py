@@ -65,6 +65,124 @@ def test_find_owner_recovers_hidden_garden_first_person_bio(monkeypatch):
     assert "deterministic_email_fallback" in result.reason
 
 
+def test_find_owner_recovers_signed_owner_from_parents_page(monkeypatch):
+    parent_text = (
+        "Welcome to our Parents' Corner Dear Prospective Family. "
+        "Thank you for showing interest in Mack Family Daycare. "
+        "I look forward to meeting you. Sincerely, LaKeisha Mack Owner "
+        "Call Us: 323-331-5995 / mackdaycare@gmail.com"
+    )
+
+    def fake_fetch(url):
+        if url.rstrip("/") == "https://www.mackdaycare.com":
+            return FetchedPage(
+                url="https://www.mackdaycare.com/",
+                status_code=200,
+                text="Mack Family Daycare",
+                outbound_links=[
+                    {
+                        "href": "https://www.mackdaycare.com/parents",
+                        "text": "PARENTS",
+                    }
+                ],
+            )
+        if url.rstrip("/") == "https://www.mackdaycare.com/parents":
+            return FetchedPage(
+                url="https://www.mackdaycare.com/parents",
+                status_code=200,
+                text=parent_text,
+                raw_html_snippet=parent_text.lower(),
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+
+    result = owner_finder.find_owner(
+        "https://www.mackdaycare.com/",
+        _FakeClient(),
+        name="Mack Family Daycare",
+        category="daycare",
+        city="Los Angeles",
+        state="CA",
+    )
+
+    assert result.owner_name == "LaKeisha Mack"
+    assert result.owner_title == "Owner"
+    assert result.owner_source_url == "https://www.mackdaycare.com/parents"
+    assert result.best_email == "mackdaycare@gmail.com"
+    assert result.email_confidence == "medium"
+
+
+def test_find_owner_recovers_director_from_teachers_page(monkeypatch):
+    teachers_text = (
+        "Teachers Ms. Abgaryan Assistant Director "
+        "Ms. Yi Teacher/Director "
+        "Ms. Hasmik Teacher Contact info@mahamontessori.com"
+    )
+
+    def fake_fetch(url):
+        if url.rstrip("/") == "https://mahamontessori.com":
+            return FetchedPage(
+                url="https://mahamontessori.com/",
+                status_code=200,
+                text="Maha Montessori",
+                outbound_links=[
+                    {
+                        "href": "https://mahamontessori.com/teachers-2/",
+                        "text": "Teachers",
+                    }
+                ],
+            )
+        if url.rstrip("/") == "https://mahamontessori.com/teachers-2":
+            return FetchedPage(
+                url="https://mahamontessori.com/teachers-2/",
+                status_code=200,
+                text=teachers_text,
+                raw_html_snippet=teachers_text.lower(),
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+
+    result = owner_finder.find_owner(
+        "https://mahamontessori.com/",
+        _FakeClient(),
+        name="Maha Montessori",
+        category="preschool",
+        city="Sherman Oaks",
+        state="CA",
+    )
+
+    assert result.owner_name == "Ms. Yi"
+    assert result.owner_title == "Director"
+    assert result.owner_source_url == "https://mahamontessori.com/teachers-2/"
+    assert result.best_email == "info@mahamontessori.com"
+    assert result.email_confidence == "medium"
+    assert "compound_director_title_pattern" in result.reason
+
+
+def test_find_owner_pages_treats_parents_and_teachers_as_owner_pages():
+    home = FetchedPage(
+        url="https://example-school.test/",
+        status_code=200,
+        outbound_links=[
+            {
+                "href": "https://example-school.test/parents",
+                "text": "Parents",
+            },
+            {
+                "href": "https://example-school.test/teachers-2/",
+                "text": "Teachers",
+            },
+        ],
+    )
+
+    assert owner_finder.find_owner_pages(home, max_pages=3) == [
+        "https://example-school.test/parents",
+        "https://example-school.test/teachers-2/",
+    ]
+
+
 def test_pick_best_email_prefers_owner_named_email():
     assert (
         owner_finder._pick_best_email(

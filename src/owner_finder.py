@@ -59,6 +59,13 @@ OWNER_PAGE_PATTERNS = [
     r"team",
     r"staff",
     r"faculty",
+    r"teacher",
+    r"teachers",
+    r"parent",
+    r"parents",
+    r"famil(?:y|ies)",
+    r"prospective[-_\s]?famil(?:y|ies)",
+    r"welcome",
     r"contact",
     r"our[-_\s]?story",
     r"who[-_\s]?we[-_\s]?are",
@@ -90,6 +97,13 @@ COMMON_OWNER_PATHS = [
     "/our-team",
     "/our-staff",
     "/faculty",
+    "/teachers",
+    "/parents",
+    "/parent-corner",
+    "/families",
+    "/prospective-families",
+    "/prospective-family",
+    "/welcome",
     "/instructors",
 ]
 
@@ -135,7 +149,8 @@ OWNER_CONTEXT_RE = re.compile(
 OWNER_EXCERPT_RE = re.compile(
     r"\b("
     r"about me|meet|owner|director|founder|principal|head of school|"
-    r"executive director|my name is|i am|i'm|i’m|contact|email"
+    r"executive director|teacher|parents|families|prospective family|"
+    r"sincerely|welcome|my name is|i am|i'm|i’m|contact|email"
     r")\b",
     re.IGNORECASE,
 )
@@ -143,6 +158,7 @@ NON_PERSON_NAME_WORDS = {
     "about",
     "academy",
     "apply",
+    "assistant",
     "child",
     "children",
     "class",
@@ -166,6 +182,7 @@ NON_PERSON_NAME_WORDS = {
     "staff",
     "start",
     "team",
+    "teacher",
     "today",
     "will",
     "your",
@@ -240,6 +257,8 @@ def _infer_owner_title(context: str) -> str:
         ("executive director", "Executive Director"),
         ("head of school", "Head of School"),
         ("principal", "Principal"),
+        ("teacher/director", "Director"),
+        ("director/teacher", "Director"),
         ("director", "Director"),
     ]
     for needle, title in title_order:
@@ -268,6 +287,17 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
     "About Me" / "My name is Jane Doe" should not need a model to succeed.
     """
     title_pattern = "|".join(re.escape(title) for title in OWNER_TITLES)
+    short_or_full_name = (
+        r"((?:Mr|Mrs|Ms|Miss|Dr)\.?\s+[A-Z][a-zA-Z'’.-]+|"
+        r"[A-Z][a-zA-Z'’.-]+\s+[A-Z][a-zA-Z'’.-]+)"
+    )
+    compound_director_patterns = [
+        re.compile(
+            rf"{short_or_full_name}\s+"
+            rf"(?:teacher\s*/\s*director|director\s*/\s*teacher)\b",
+            re.IGNORECASE,
+        ),
+    ]
     explicit_patterns = [
         re.compile(
             rf"\b({title_pattern})\s*[:\-]\s*{PERSON_NAME}",
@@ -291,6 +321,17 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
         text = page.text or ""
         if not text:
             continue
+
+        for pattern in compound_director_patterns:
+            for match in pattern.finditer(text):
+                name = _clean_owner_name(match.group(1))
+                if name:
+                    return OwnerCandidate(
+                        name=name,
+                        title="Director",
+                        source_url=page.url,
+                        reason="compound_director_title_pattern",
+                    )
 
         for pattern in explicit_patterns:
             for match in pattern.finditer(text):
@@ -449,12 +490,15 @@ def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 3) -> list[str]
         base_host = ""
 
     # --- Pass 1: from homepage outbound links -------------------------------
-    # Score outbound links: contact/team get priority over about/philosophy.
+    # Score outbound links: contact/team/teachers/parents get priority over about/philosophy.
     # Reason: contact pages have emails; about/philosophy pages have names. We
     # need both, but if max_pages=3 forces a choice, contact wins.
-    PRIORITY_KEYWORDS = re.compile(r"contact|team|staff|faculty|meet|people", re.IGNORECASE)
+    PRIORITY_KEYWORDS = re.compile(
+        r"contact|team|staff|faculty|teacher|parent|famil(?:y|ies)|meet|people",
+        re.IGNORECASE,
+    )
 
-    # First pass: high-priority pages (contact/team/staff)
+    # First pass: high-priority pages (contact/team/staff/teachers/parents)
     priority_matches = []
     secondary_matches = []
     for link in home.outbound_links:
@@ -528,7 +572,7 @@ def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 3) -> list[str]
 SYSTEM_PROMPT = """You are helping identify the owner/director of a small activity-based school (dance studio, preschool, music academy, etc.) and find their best contact email.
 
 You will receive:
-- Text content from the school's website (About, Team, Staff, Contact pages)
+- Text content from the school's website (About, Team, Staff, Teachers, Parents/Families, Contact pages)
 - A list of all email addresses found on those pages
 
 Return a JSON object with this exact shape:
@@ -543,6 +587,8 @@ Return a JSON object with this exact shape:
 IMPORTANT — owner name extraction:
 - Extract the owner name WHENEVER it appears in the text, even if no matching email exists.
 - Look for patterns like "[Name], Director", "[Name], Owner", "[Name], Founder", "[Name], Principal", "[Name] joined us in YYYY as director", "Meet [Name], our..."
+- Parents/Families pages sometimes include signed welcome notes. Treat "Sincerely, [Name], Owner/Director" as strong owner evidence.
+- Teachers/Staff pages sometimes list roles under names. Treat "Teacher/Director" as Director, and prefer it over Assistant Director.
 - For small home-based preschools, treat first-person bios as owner/operator evidence. Examples: "About Me ... My name is Jane Doe", "I opened this home preschool", "I am a licensed child care provider".
 - Extract the most senior person (Director > Owner > Founder > Principal > Head of School > Lead Teacher)
 - If multiple people are listed, pick the most senior one (usually listed first, or with "Director"/"Owner"/"Founder" title)
