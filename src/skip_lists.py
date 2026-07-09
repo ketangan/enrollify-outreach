@@ -37,6 +37,10 @@ KNOWN_CHAIN_NAMES = {
     "soccer shots",
     "i9 sports",
     "kaplan",
+    "ec english",
+    "eye level",
+    "geos languages plus",
+    "sprachcaffe",
     "dance 101",  # generic franchise-y
 }
 
@@ -44,6 +48,7 @@ KNOWN_CHAIN_NAMES = {
 # Keep this intentionally conservative: these are not independent schools and
 # should never receive the small-school outreach.
 NON_TARGET_EXACT_NAMES = {
+    "gateway towne center",
     "los angeles",
     "la county",
     "city of la",
@@ -68,8 +73,17 @@ NON_TARGET_NAME_PATTERNS = {
     "recreation center",
     "community center",
     "family center",
+    "senior center",
+    "senior services",
     "aquatic center",
+    "swimming pool",
+    "public pool",
     "swim stadium",
+    "sports massage",
+    "personal trainer",
+    "personal training",
+    "shopping center",
+    "shopping mall",
     "public library",
     "public school",
     "elementary school",
@@ -123,6 +137,18 @@ ENROLLMENT_VENDOR_DOMAINS = {
 # Domains that indicate the school is too large / already digital
 EXCLUDED_TLDS = (".edu", ".gov")
 
+EXCLUDED_DOMAINS = {
+    "comptoncity.org",
+    "lacountypools.com",
+    "lausd.org",
+    "myeyelevel.com",
+    "pacela.org",
+    "schoolloop.com",
+    "shopgatewaytownecenter.com",
+    "sprachcaffe.com",
+    "ymca.org",
+}
+
 
 def is_skipped_by_name(name: str) -> tuple[bool, str]:
     """Returns (skip, reason). True if name matches a known chain."""
@@ -158,5 +184,9 @@ def is_skipped_by_domain(website: str) -> tuple[bool, str]:
     for vendor in ENROLLMENT_VENDOR_DOMAINS:
         if vendor in website_lower:
             return True, f"enrollment_vendor:{vendor}"
+
+    for domain in EXCLUDED_DOMAINS:
+        if domain in website_lower:
+            return True, f"excluded_domain:{domain}"
 
     return False, ""

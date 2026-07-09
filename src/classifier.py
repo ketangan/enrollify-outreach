@@ -72,6 +72,30 @@ NON_TARGET_ORG_KEYWORDS = [
     "mental health services",
     "workforce development",
     "community-based programs",
+    "adult school",
+    "city's recreation department",
+    "la unified",
+    "lap swim",
+    "language trips",
+    "los angeles unified",
+    "parks and recreation",
+    "personal trainer",
+    "professional development services",
+    "rec swim",
+    "returning education",
+    "senior citizen",
+    "senior services",
+    "sports massage therapist",
+    "study abroad",
+    "swimming pool",
+]
+
+BROKEN_SITE_KEYWORDS = [
+    "connectyourdomain",
+    "error connectyourdomain occurred",
+    "this domain is not connected",
+    "site not found",
+    "website expired",
 ]
 
 # Signals a PDF form enrollment process
@@ -118,6 +142,26 @@ def _check_keywords(text: str, keyword_list: list[str]) -> tuple[bool, str]:
     return False, ""
 
 
+def _check_non_target_org(text: str) -> tuple[bool, str]:
+    hit, reason = _check_keywords(text, NON_TARGET_ORG_KEYWORDS)
+    if hit:
+        return True, reason
+
+    text_lower = text.lower()
+    shopping_directory_markers = [
+        "store listings",
+        "restaurant listings",
+        "directory map",
+        "leasing",
+    ]
+    if "shopping center" in text_lower and any(
+        marker in text_lower for marker in shopping_directory_markers
+    ):
+        return True, "keyword:shopping center directory"
+
+    return False, ""
+
+
 def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
     """
     Fast, free keyword/pattern check. Returns None if no confident verdict.
@@ -134,7 +178,17 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
             pages_fetched=len(pages),
         )
 
-    hit, reason = _check_keywords(combined_text, NON_TARGET_ORG_KEYWORDS)
+    broken_site_text = f"{combined_text} {combined_snippet}"
+    hit, reason = _check_keywords(broken_site_text, BROKEN_SITE_KEYWORDS)
+    if hit:
+        return Classification(
+            status=CLASSIFY_FALLBACK_STATUS,
+            reason=f"local:broken_site:{reason}",
+            used_llm=False,
+            pages_fetched=len(pages),
+        )
+
+    hit, reason = _check_non_target_org(combined_text)
     if hit:
         return Classification(
             status="online_system_exclude",
@@ -176,6 +230,8 @@ Classification rules (apply in order — pick the first that fits):
 1. online_system_exclude — if ANY of these are present:
    - Large national/regional organizations, city/county programs, gyms, pro-sports organizations, universities, libraries, parks/recreation departments, or public agencies rather than an independent school/studio/academy
    - Head Start / Early Head Start programs, social-service nonprofits, family-services agencies, or organizations whose site primarily offers housing, mental health, workforce, donation, or public-benefit programs rather than a standalone independent school/studio/academy
+   - Shopping centers, malls, senior centers, community centers, public pools/aquatic facilities, adult schools, language-travel agencies, or professional-development businesses
+   - Solo personal services such as sports massage, personal training, physical therapy, or coaching pages that do not present themselves as a school/studio/academy with student enrollment
    - Parent/student login portal, "My Account", member area
    - Third-party enrollment, registration, payment, billing, or parent-portal vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, GoStudioPro, iClassPro, Opus1, ChildPlus, etc.) referenced anywhere in content or outbound links
    - /cart, /checkout, /shop URLs on their own domain suggesting an e-commerce enrollment flow
@@ -201,7 +257,7 @@ Classification rules (apply in order — pick the first that fits):
 5. email_qualify — if the only path is emailing the school directly (no form, no online system, no PDF)
 
 6. needs_enrollment_system_classification — ONLY if:
-   - The site couldn't be classified because content is missing/broken/cookie-wall
+   - The site couldn't be classified because content is missing/broken/cookie-wall/domain-not-connected
    - No enrollment mechanism of any kind is mentioned anywhere
 
 IMPORTANT: Pick the first category whose evidence you see. Don't flag for manual review just to be cautious."""
