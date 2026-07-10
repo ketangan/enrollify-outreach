@@ -117,18 +117,18 @@ high, medium, low, unverified, manual
 | Phase | Script(s) | Purpose |
 |---|---|---|
 | 1 — Discovery | `scripts/run_phase_1_discovery.py` | Google Places → `Leads` (pending_classify). Auto-runs `dedupe_within_leads` after each zip. |
-| 1.5 — Internal dedupe | `src/dedupe_within_leads.py` | Demotes same-school-different-zip duplicates to `do_not_contact` |
-| 2 — Contact dedupe | `scripts/run_phase_2_dedupe.py` | Dedupes against Already_Contacted + Archive. Marks matches `already_contacted`. |
+| 1.5 — Internal duplicate check | `src/dedupe_within_leads.py` | Demotes only strong internal duplicates: same email, address, phone, or exact non-root URL path. Root-domain-only matches stay eligible. |
+| 2 — Contact duplicate check | `scripts/run_phase_2_dedupe.py` | Checks against Already_Contacted + Archive using strong evidence. Root-domain-only and name-only matches do not auto-suppress multi-location leads. |
 | 3 — Classify | `scripts/run_phase_3_classify.py` | URL prefilter → keyword scan → Haiku. Sets enrollment_method or escalates to `needs_enrollment_system_classification`. |
 | 4 — Owner lookup | `scripts/run_phase_4_owners.py` | Fetch about/team pages → regex emails → Haiku picks owner+email. Stage-2 web-search fallback if Stage 1 finds no name. Failures → `needs_owner_review`. |
-| 5 — Draft | `scripts/run_phase_5_drafts.py` | Renders template → IMAP-appends to Zoho Drafts → emails Ketan a daily summary with pipeline state. |
+| 5 — Draft | `scripts/run_phase_5_drafts.py` | Runs audit preflight → renders template → IMAP-appends safe drafts to Zoho → emails Ketan a daily summary with pipeline state. |
 | 6 — Sync | `scripts/run_phase_6_sync.py` | Reads Zoho Sent (marks `sent`) + Inbox (replies → `replied` + 🚨 alert; bounces → `bounced` + 📭 alert). |
-| 6b — Follow-up draft | `scripts/run_phase_6_followup.py` | Threaded follow-up drafts after 7 days. |
+| 6b — Follow-up draft | `scripts/run_phase_6_followup.py` | Audit-gated threaded follow-up drafts after 7 days; skips leads with an existing unsent follow-up draft marker. |
 | Lifecycle | `scripts/run_close_stale.py` | Sent + no reply ≥ 7 days post-follow-up → `closed_no_reply`. |
 | Cleanup | `scripts/run_cleanup.py` | Move archivable statuses from `Leads` → `Archive`. Idempotent (dedupes by id). Rate-limited at 30 writes/min. |
 | Migration (one-off) | `scripts/migrate_manual_review.py` | Already run. Split legacy `needs_manual_review` into the two new statuses. |
 | Daily orchestrator | `scripts/run_daily.py` | sync → followup → owners → drafts. GitHub Actions runs at 14:30 UTC Mon–Fri. |
-| Admin one-offs | `scripts/audit_drafts.py`, `scripts/list_drafts_with_leads.py` | Audit Zoho Drafts against Leads+Archive (flags duplicates before send). |
+| Admin one-offs | `scripts/audit_drafts.py`, `scripts/list_drafts_with_leads.py` | Audit Zoho Drafts against Leads+Archive and existing drafts. Phase 5/6 also use audit rules as pre-upload guards. |
 
 ---
 
@@ -254,7 +254,7 @@ enrollifyapp.com
 - **When pending_classify > 100 and ready_to_send < 10:** banner appears on `/`. Click Run Downstream.
 - **When new zip needed:** webapp Phase 1 buttons or CLI `python scripts/run_phase_1_discovery.py --next --region LA_City` / `--auto --region X --max-zips N --max-api-calls 500`.
 - **Weekly cadence:** run `close_stale.py --commit` then `run_cleanup.py --commit` to age out dead leads and archive disqualified ones.
-- **Pipeline order in daily run:** sync → followup → owners → drafts.
+- **Pipeline order in daily run:** sync → audit-gated followup drafts → owners → audit-gated initial drafts.
 - **Sheet rate-limit:** if you see APIError 429, the script needs batched updates (`worksheet.batch_update` with 50-cell chunks + sleep), not `update_cell` in a loop. Affects close_stale, cleanup, dedupe, phase_2, phase_4. All current scripts are batched.
 - **Click tracking review (Mondays):** `python scripts/show_clicks.py --since-days 7` — surfaces schools that clicked the demo link in follow-ups but didn't reply. These are in-person visit candidates.
 - **Click tracking infra:** Apps Script web app receives POSTs from demo.html on real user gestures (mouse/scroll/key/touch within 8s of page load). Writes to `Click_Log` tab. `{{lead_id}}` placeholder in follow_up template renders `?utm_content=<lead_id>` in URL. Apps Script URL is hardcoded in demo.html and committed to ketangan/enrollify-website repo. If abused, redeploy Apps Script → update URL → re-upload demo.html → commit. Drafter's `_first_name()` now strips honorifics ("Dr. Sarah" → "Sarah").
@@ -286,7 +286,7 @@ Deferred (do not build without explicit request):
 - **Click tracking via Apps Script** — gesture-filtered, written to Click_Log tab, schema matches `show_clicks.py` reader. `{{lead_id}}` substitution in drafter.
 - **Webapp common tasks cheat sheet** on home page — 17 collapsible tasks with code blocks, dry-run guidance, deliverability checks.
 - **Phase 6 sync** — unthreaded bounce detection + 4xx code matching. Caught 6 new bounces on first run.
-- **audit_drafts.py** — follow-up-aware duplicate detection (don't flag legitimate Re: follow-ups).
+- **audit_drafts.py preflight** — follow-up-aware duplicate detection now also flags same-recipient/same-kind drafts already sitting in Zoho. Phase 5 and Phase 6 call these rules before uploading drafts, so known-bad drafts are skipped instead of created and cleaned up later.
 - **/leads search** + Edit↗ button to /review with auto-mode-pick.
 - **Grid DNC button** on /review bottom grid.
 - **Mail-tester 10/10 deliverability confirmed.** Pitch is the bottleneck now, not delivery.

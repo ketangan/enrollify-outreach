@@ -72,7 +72,7 @@ Row 1:
 school_name | email | contacted_date | outcome | notes
 ```
 
-Paste your existing "already emailed" list here. Our dedupe script matches by email address (case-insensitive) and school name fuzzy-match.
+Paste your existing "already emailed" list here. The duplicate-check script matches on strong evidence such as email address, phone, address, exact non-root URL path, or fuzzy school name only when the location also matches.
 
 ## Tab 3: `Coverage`
 

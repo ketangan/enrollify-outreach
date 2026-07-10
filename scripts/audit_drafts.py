@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Audit Zoho Drafts folder: identify drafts that would send to an email
-address already used in prior outreach, OR would re-send a follow-up
-that was already sent.
+address already used in prior outreach, would duplicate an existing draft,
+OR would re-send a follow-up that was already sent.
 
 Reads all Drafts via IMAP, then for each draft:
 
@@ -13,6 +13,7 @@ Reads all Drafts via IMAP, then for each draft:
        - Leads (different criteria for initial vs follow-up)
        - Already_Contacted tab
        - Archive tab (any status, except internal_duplicate casualties)
+       - Other drafts already sitting in Zoho
 
 For INITIAL drafts:
   A duplicate is a draft to an address whose lead is already at a "used"
@@ -24,6 +25,10 @@ For FOLLOW-UP drafts:
   is ALREADY populated, OR the lead is already terminal (replied / bounced /
   closed_no_reply). status=sent without follow_up_sent_at is EXPECTED —
   that's the normal state of a lead awaiting its first follow-up.
+
+For prevention:
+  Phase 5 and Phase 6 call this module before uploading drafts. The CLI report
+  and the pre-upload guard use the same duplicate rules.
 
 Output: tabular report. Does NOT delete or modify anything.
 
@@ -81,6 +86,13 @@ class DraftInfo:
     @property
     def is_followup(self) -> bool:
         return self.subject.lower().lstrip().startswith("re:")
+
+
+@dataclass
+class AuditContext:
+    leads_by_email: dict[str, list[dict]]
+    archive_by_email: dict[str, list[dict]]
+    already_contacted_by_email: dict[str, list[dict]]
 
 
 # ─── IMAP draft fetcher ────────────────────────────────────────────────
@@ -165,6 +177,15 @@ def build_already_contacted_by_email() -> dict[str, list[dict]]:
     return index
 
 
+def build_audit_context() -> AuditContext:
+    """Build all Sheet indices needed for draft audit/preflight checks."""
+    return AuditContext(
+        leads_by_email=build_leads_by_email(),
+        archive_by_email=build_archive_by_email(),
+        already_contacted_by_email=build_already_contacted_by_email(),
+    )
+
+
 # ─── Duplicate decisions ───────────────────────────────────────────────
 
 def _format_lead_source(r: dict, tab: str) -> str:
@@ -175,11 +196,41 @@ def _format_lead_source(r: dict, tab: str) -> str:
     return f"{tab}[name={name}]"
 
 
+def _format_draft_source(draft: DraftInfo) -> str:
+    kind = "follow-up" if draft.is_followup else "initial"
+    return (
+        f"Drafts[{kind} draft already exists,"
+        f"uid={draft.uid},date={draft.date_str[:25]}]"
+    )
+
+
+def find_existing_draft_conflicts(
+    draft: DraftInfo,
+    existing_drafts: list[DraftInfo],
+    *,
+    exclude_uid: str = "",
+) -> list[str]:
+    """Flag same-recipient + same-kind drafts already in Zoho Drafts."""
+    sources: list[str] = []
+    for existing in existing_drafts:
+        if exclude_uid and existing.uid == exclude_uid:
+            continue
+        if existing.to_email != draft.to_email:
+            continue
+        if existing.is_followup != draft.is_followup:
+            continue
+        sources.append(_format_draft_source(existing))
+    return sources
+
+
 def classify_initial(
     draft: DraftInfo,
     leads_by_email: dict[str, list[dict]],
     archive_by_email: dict[str, list[dict]],
     already_contacted_by_email: dict[str, list[dict]],
+    existing_drafts: list[DraftInfo] | None = None,
+    *,
+    exclude_uid: str = "",
 ) -> list[str]:
     """
     For an INITIAL draft, return list of "duplicate reasons". Empty list = safe.
@@ -201,6 +252,15 @@ def classify_initial(
     for r in already_contacted_by_email.get(draft.to_email, []):
         sources.append(_format_lead_source(r, "Already_Contacted"))
 
+    if existing_drafts:
+        sources.extend(
+            find_existing_draft_conflicts(
+                draft,
+                existing_drafts,
+                exclude_uid=exclude_uid,
+            )
+        )
+
     return sources
 
 
@@ -209,6 +269,9 @@ def classify_followup(
     leads_by_email: dict[str, list[dict]],
     archive_by_email: dict[str, list[dict]],
     already_contacted_by_email: dict[str, list[dict]],
+    existing_drafts: list[DraftInfo] | None = None,
+    *,
+    exclude_uid: str = "",
 ) -> list[str]:
     """
     For a FOLLOW-UP draft, return list of "duplicate reasons". Empty list = safe.
@@ -243,7 +306,63 @@ def classify_followup(
     for r in already_contacted_by_email.get(draft.to_email, []):
         sources.append(_format_lead_source(r, "Already_Contacted"))
 
+    if existing_drafts:
+        sources.extend(
+            find_existing_draft_conflicts(
+                draft,
+                existing_drafts,
+                exclude_uid=exclude_uid,
+            )
+        )
+
     return sources
+
+
+def classify_draft(
+    draft: DraftInfo,
+    context: AuditContext,
+    existing_drafts: list[DraftInfo] | None = None,
+    *,
+    exclude_uid: str = "",
+) -> list[str]:
+    """Classify one existing or candidate draft. Empty list means safe."""
+    if draft.is_followup:
+        return classify_followup(
+            draft,
+            context.leads_by_email,
+            context.archive_by_email,
+            context.already_contacted_by_email,
+            existing_drafts,
+            exclude_uid=exclude_uid,
+        )
+    return classify_initial(
+        draft,
+        context.leads_by_email,
+        context.archive_by_email,
+        context.already_contacted_by_email,
+        existing_drafts,
+        exclude_uid=exclude_uid,
+    )
+
+
+def candidate_draft(to_email: str, subject: str) -> DraftInfo:
+    """Build a DraftInfo for a draft we are about to create."""
+    return DraftInfo(
+        to_email=to_email.lower().strip(),
+        subject=subject.strip(),
+        date_str="candidate",
+        uid="candidate",
+    )
+
+
+def format_sources(sources: list[str], *, limit: int = 3) -> str:
+    """Compact duplicate reasons for logs/sheet notes."""
+    if not sources:
+        return ""
+    shown = "; ".join(sources[:limit])
+    if len(sources) > limit:
+        return f"{shown}; and {len(sources) - limit} more"
+    return shown
 
 
 # ─── Main ──────────────────────────────────────────────────────────────
@@ -259,12 +378,12 @@ def main():
         return
 
     logger.info("Building lead/archive/contacted indices from sheets...")
-    leads_by_email = build_leads_by_email()
-    archive_by_email = build_archive_by_email()
-    already_contacted_by_email = build_already_contacted_by_email()
+    context = build_audit_context()
     logger.info(
         "  %d leads / %d archive / %d already_contacted addresses indexed",
-        len(leads_by_email), len(archive_by_email), len(already_contacted_by_email),
+        len(context.leads_by_email),
+        len(context.archive_by_email),
+        len(context.already_contacted_by_email),
     )
 
     initial_safe: list[DraftInfo] = []
@@ -273,18 +392,18 @@ def main():
     followup_dupes: list[tuple[DraftInfo, list[str]]] = []
 
     for d in drafts:
+        sources = classify_draft(
+            d,
+            context,
+            existing_drafts=drafts,
+            exclude_uid=d.uid,
+        )
         if d.is_followup:
-            sources = classify_followup(
-                d, leads_by_email, archive_by_email, already_contacted_by_email
-            )
             if sources:
                 followup_dupes.append((d, sources))
             else:
                 followup_safe.append(d)
         else:
-            sources = classify_initial(
-                d, leads_by_email, archive_by_email, already_contacted_by_email
-            )
             if sources:
                 initial_dupes.append((d, sources))
             else:

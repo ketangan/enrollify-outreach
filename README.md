@@ -25,7 +25,7 @@ Runs automatically via GitHub Actions Mon–Fri at 14:30 UTC. Manual trigger:
 
     python scripts/run_daily.py
 
-Pipeline order: sync replies → followups → owner lookup → drafts. Drafts land in Zoho. Ketan reviews and clicks send.
+Pipeline order: sync replies → audit-gated followups → owner lookup → audit-gated initial drafts. Drafts land in Zoho. Ketan reviews and clicks send.
 
 ## Lead discovery — when current zips are running low
 

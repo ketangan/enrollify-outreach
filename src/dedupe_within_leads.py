@@ -1,6 +1,6 @@
 """
-In-leads dedupe — find duplicate rows in the Leads tab (same school discovered
-by multiple zips) and mark the lower-priority ones as do_not_contact.
+In-leads duplicate check — find clear duplicate rows in the Leads tab and mark
+the lower-priority ones as do_not_contact.
 
 Why this exists:
   Phase 1 (Google Places) discovers schools by zip. Schools near zip borders
@@ -9,13 +9,24 @@ Why this exists:
   same school can have multiple rows, each progressing through the pipeline
   independently and getting emailed twice.
 
+Important guardrail:
+  Multi-location schools often share one root domain. A shared domain or similar
+  name is not enough evidence to suppress a lead. Keep distinct locations or
+  distinct verified emails eligible unless we have stronger duplicate evidence.
+
 Status priority ladder (highest survives, others get demoted):
   replied > sent > awaiting_approval > ready_to_send >
-  ready_for_owner_lookup > needs_manual_review > pending_classify >
+  ready_for_owner_lookup > needs_owner_review > needs_enrollment_system_classification >
+  needs_manual_review > pending_classify >
   online_system_exclude > do_not_contact > closed_no_reply
 
-Key: normalized domain (strip protocol, www, path, query). Phone fallback
-when website is blank.
+Duplicate evidence:
+  - same best_email
+  - same normalized street address
+  - same phone
+  - same exact non-root URL path
+
+Root-domain-only matches are intentionally ignored.
 
 Demoted rows get:
   status            = do_not_contact
@@ -45,6 +56,8 @@ STATUS_PRIORITY = [
     "awaiting_approval",
     "ready_to_send",
     "ready_for_owner_lookup",
+    "needs_owner_review",
+    "needs_enrollment_system_classification",
     "needs_manual_review",
     "pending_classify",
     "online_system_exclude",
@@ -62,14 +75,20 @@ def _status_rank(status: str) -> int:
 
 
 def _normalize_url(url: str) -> str:
-    """Strip protocol, www., path, query, lowercase. Same logic as Phase 2."""
+    """Strip protocol, www., query/fragment, trailing slash, lowercase."""
     if not url:
         return ""
     url = url.strip().lower()
     url = re.sub(r"^https?://", "", url)
     url = re.sub(r"^www\.", "", url)
-    url = url.split("/")[0]  # drop path/query/anchor
+    url = url.split("#", 1)[0]
+    url = url.split("?", 1)[0]
+    url = url.rstrip("/")
     return url
+
+
+def _url_has_path(normalized_url: str) -> bool:
+    return "/" in normalized_url
 
 
 def _normalize_phone(phone: str) -> str:
@@ -79,15 +98,51 @@ def _normalize_phone(phone: str) -> str:
     return re.sub(r"\D", "", phone)
 
 
-def _dedupe_key(lead_row: dict) -> str:
-    """Domain if present, else phone, else empty (won't dedupe)."""
-    domain = _normalize_url(str(lead_row.get("website", "")))
-    if domain:
-        return f"web:{domain}"
+def _normalize_email(email: str) -> str:
+    if not email:
+        return ""
+    email = email.strip().lower()
+    return email if "@" in email else ""
+
+
+def _normalize_address(address: str) -> str:
+    """Normalize enough for Google Places formatted addresses."""
+    if not address:
+        return ""
+    address = address.strip().lower()
+    address = re.sub(r"\b(usa|united states)\b", " ", address)
+    address = re.sub(r"[^a-z0-9]+", " ", address)
+    return re.sub(r"\s+", " ", address).strip()
+
+
+def _dedupe_keys(lead_row: dict) -> list[str]:
+    """Return strong duplicate keys. A root domain by itself is not strong."""
+    keys: list[str] = []
+
+    email = _normalize_email(str(lead_row.get("best_email", "")))
+    if email:
+        keys.append(f"email:{email}")
+
+    address = _normalize_address(str(lead_row.get("address", "")))
+    if address:
+        keys.append(f"addr:{address}")
+
     phone = _normalize_phone(str(lead_row.get("phone", "")))
     if phone:
-        return f"tel:{phone}"
-    return ""
+        keys.append(f"tel:{phone}")
+
+    url = _normalize_url(str(lead_row.get("website", "")))
+    if url and _url_has_path(url):
+        keys.append(f"url:{url}")
+
+    return keys
+
+
+def _known_emails_conflict(left: dict, right: dict) -> bool:
+    """Different known emails are a reason to keep both outreach options."""
+    left_email = _normalize_email(str(left.get("best_email", "")))
+    right_email = _normalize_email(str(right.get("best_email", "")))
+    return bool(left_email and right_email and left_email != right_email)
 
 
 def find_internal_duplicates(leads_rows: list[dict]) -> list[tuple[dict, dict]]:
@@ -98,12 +153,11 @@ def find_internal_duplicates(leads_rows: list[dict]) -> list[tuple[dict, dict]]:
     """
     by_key: dict[str, list[dict]] = defaultdict(list)
     for lead in leads_rows:
-        key = _dedupe_key(lead)
-        if not key:
-            continue
-        by_key[key].append(lead)
+        for key in _dedupe_keys(lead):
+            by_key[key].append(lead)
 
     pairs = []
+    demoted_row_ids: set[int] = set()
     for key, group in by_key.items():
         if len(group) < 2:
             continue
@@ -115,11 +169,22 @@ def find_internal_duplicates(leads_rows: list[dict]) -> list[tuple[dict, dict]]:
         ))
         kept = group[0]
         for demoted in group[1:]:
+            row_marker = demoted.get("_row_idx") or id(demoted)
+            if row_marker in demoted_row_ids:
+                continue
             # Skip rows that are already in a terminal state — no point demoting
             demoted_status = str(demoted.get("status", "")).strip()
             if demoted_status in ("do_not_contact", "closed_no_reply"):
                 continue
+            if _known_emails_conflict(kept, demoted):
+                logger.info(
+                    "  keep possible duplicate %s and %s: different known emails",
+                    kept.get("id", "")[:14],
+                    demoted.get("id", "")[:14],
+                )
+                continue
             pairs.append((kept, demoted))
+            demoted_row_ids.add(row_marker)
     return pairs
 
 

@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gspread.utils import rowcol_to_a1
 
+from scripts import audit_drafts
 from src import config, sheets, drafter, zoho, zoho_sync
 
 logging.basicConfig(
@@ -67,6 +68,8 @@ def _collect_due_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
             continue
         if row[col["follow_up_sent_at"]].strip():
             continue  # follow-up already sent
+        if row[col["last_action"]].strip() == "phase6_followup_drafted":
+            continue  # follow-up draft already exists; wait for send/sync
         if not _due_today(row[col["follow_up_at"]]):
             continue
         lead = {h: row[idx] for h, idx in col.items() if idx < len(row)}
@@ -108,6 +111,21 @@ def main():
     if not batch:
         return
 
+    audit_context = None
+    existing_drafts: list[audit_drafts.DraftInfo] = []
+    if not args.dry_run:
+        logger.info("Loading draft audit preflight data...")
+        try:
+            audit_context = audit_drafts.build_audit_context()
+            existing_drafts = audit_drafts.fetch_drafts()
+        except Exception as e:
+            logger.exception("Draft audit preflight failed; refusing to create follow-ups: %s", e)
+            sys.exit(1)
+        logger.info(
+            "Draft audit preflight loaded: %d existing Zoho draft(s)",
+            len(existing_drafts),
+        )
+
     drafts = []
     failures = []
 
@@ -126,6 +144,37 @@ def main():
             continue
 
         logger.info("  -> %s", rendered.subject[:80])
+
+        if audit_context is not None:
+            candidate = audit_drafts.candidate_draft(
+                lead.get("best_email", ""),
+                rendered.subject,
+            )
+            sources = audit_drafts.classify_draft(
+                candidate,
+                audit_context,
+                existing_drafts=existing_drafts,
+            )
+            if sources:
+                reason = audit_drafts.format_sources(sources)
+                logger.warning("  skipping — audit preflight blocked follow-up: %s", reason)
+                last_action = (
+                    "phase6_followup_drafted"
+                    if any(s.startswith("Drafts[") for s in sources)
+                    else "phase6_followup_preflight_blocked"
+                )
+                leads_ws.batch_update([
+                    {"range": rowcol_to_a1(lead["_row_idx"], col["last_action"] + 1),
+                     "values": [[last_action]]},
+                    {"range": rowcol_to_a1(lead["_row_idx"], col["notes"] + 1),
+                     "values": [[f"phase6_followup_audit_preflight_blocked:{reason[:300]}"]]},
+                ], value_input_option="USER_ENTERED")
+                time.sleep(SHEET_WRITE_THROTTLE_SEC)
+                failures.append({
+                    "school": lead.get("name", ""),
+                    "error": f"audit preflight blocked follow-up: {reason}",
+                })
+                continue
 
         if args.dry_run:
             drafts.append({
@@ -173,6 +222,12 @@ def main():
             "email": lead.get("best_email", ""),
             "subject": rendered.subject,
         })
+        existing_drafts.append(
+            audit_drafts.candidate_draft(
+                lead.get("best_email", ""),
+                rendered.subject,
+            )
+        )
 
     # Summary email to Ketan
     if not args.dry_run and (drafts or failures):

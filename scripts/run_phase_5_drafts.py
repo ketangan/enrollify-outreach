@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gspread.utils import rowcol_to_a1
 
+from scripts import audit_drafts
 from src import config, sheets, drafter, zoho
 
 logging.basicConfig(
@@ -62,6 +63,16 @@ SHEET_WRITE_THROTTLE_SEC = 1.2
 # needs_enrollment_system_classification (Review Classify tab) instead of
 # failing forever on every daily run.
 VALID_ENROLLMENT_METHODS = set(drafter.ENROLLMENT_METHOD_TO_TEMPLATE.keys())
+
+
+def _status_for_initial_preflight_block(sources: list[str]) -> str:
+    """
+    Prior-contact conflicts are dead leads. Existing-draft conflicts need human
+    contact review because another draft is already waiting for that address.
+    """
+    if sources and all(s.startswith("Drafts[") for s in sources):
+        return "needs_owner_review"
+    return "already_contacted"
 
 
 def _collect_ready_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
@@ -343,6 +354,21 @@ def main():
             logger.info("Pipeline-status email sent.")
         return
 
+    audit_context = None
+    existing_drafts: list[audit_drafts.DraftInfo] = []
+    if not args.dry_run:
+        logger.info("Loading draft audit preflight data...")
+        try:
+            audit_context = audit_drafts.build_audit_context()
+            existing_drafts = audit_drafts.fetch_drafts()
+        except Exception as e:
+            logger.exception("Draft audit preflight failed; refusing to create drafts: %s", e)
+            sys.exit(1)
+        logger.info(
+            "Draft audit preflight loaded: %d existing Zoho draft(s)",
+            len(existing_drafts),
+        )
+
     drafts_summary = []
     failures = []
 
@@ -367,6 +393,35 @@ def main():
             continue
 
         logger.info("  -> %s: %s", rendered.template_id, rendered.subject[:80])
+
+        if audit_context is not None:
+            candidate = audit_drafts.candidate_draft(to_email, rendered.subject)
+            sources = audit_drafts.classify_draft(
+                candidate,
+                audit_context,
+                existing_drafts=existing_drafts,
+            )
+            if sources:
+                reason = audit_drafts.format_sources(sources)
+                next_status = _status_for_initial_preflight_block(sources)
+                logger.warning("  skipping — audit preflight blocked draft: %s", reason)
+                leads_ws.batch_update(
+                    [
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["status"] + 1),
+                         "values": [[next_status]]},
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["notes"] + 1),
+                         "values": [[f"phase5_audit_preflight_blocked:{reason[:400]}"]]},
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["last_action"] + 1),
+                         "values": [["phase5_audit_preflight_blocked"]]},
+                    ],
+                    value_input_option="USER_ENTERED",
+                )
+                time.sleep(SHEET_WRITE_THROTTLE_SEC)
+                failures.append({
+                    "school": lead.get("name", ""),
+                    "error": f"audit preflight blocked draft: {reason}",
+                })
+                continue
 
         if args.dry_run:
             drafts_summary.append({
@@ -422,6 +477,7 @@ def main():
             "template_id": rendered.template_id,
             "subject": rendered.subject,
         })
+        existing_drafts.append(audit_drafts.candidate_draft(to_email, rendered.subject))
 
     # Summary email to Ketan
     if not args.dry_run and not args.no_summary and (drafts_summary or failures or rerouted):

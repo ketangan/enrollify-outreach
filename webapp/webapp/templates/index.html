@@ -147,11 +147,11 @@
 
     <div class="task">
       <h4>Check for duplicate drafts in Zoho before sending</h4>
-      <p><strong>Run before every batch send:</strong></p>
+      <p>The daily draft scripts now run an audit preflight before uploading new initial or follow-up drafts. Use this read-only audit before a manual bulk send or whenever you want an independent check of what's already sitting in Zoho:</p>
       <pre><code>python scripts/audit_drafts.py</code></pre>
-      <p>Read-only. Scans Zoho Drafts (last 90 days), cross-references against Leads + Already_Contacted + Archive. Reports flagged initials and flagged follow-ups separately.</p>
+      <p>Scans Zoho Drafts (last 90 days), cross-references against Leads + Already_Contacted + Archive, and also flags duplicate drafts already waiting in Zoho. Reports flagged initials and flagged follow-ups separately.</p>
       <p><strong>Initial flagged</strong> = address was already used in a prior send. Delete in Zoho before sending.<br>
-      <strong>Follow-up flagged</strong> = follow-up was already sent OR lead is terminal (replied/bounced/closed). Delete in Zoho.</p>
+      <strong>Follow-up flagged</strong> = follow-up was already sent, lead is terminal (replied/bounced/closed), or another follow-up draft already exists. Delete in Zoho.</p>
     </div>
 
     <div class="task">
@@ -226,7 +226,7 @@ python scripts/run_cleanup.py --commit</code></pre>
       <h4>Run the daily pipeline manually</h4>
       <p>Normally runs via GitHub Actions at 14:30 UTC Mon&ndash;Fri. To trigger now, click <strong>Run daily now</strong> in the Daily Run card above, or from terminal:</p>
       <pre><code>python scripts/run_daily.py</code></pre>
-      <p>Order: sync (Phase 6) &rarr; followup (6b) &rarr; owners (Phase 4) &rarr; drafts (Phase 5). Skippable steps:</p>
+      <p>Order: sync (Phase 6) &rarr; audit-gated followup drafts (6b) &rarr; owners (Phase 4) &rarr; audit-gated initial drafts (Phase 5). Skippable steps:</p>
       <pre><code>python scripts/run_daily.py --skip-sync
 python scripts/run_daily.py --skip-followup
 python scripts/run_daily.py --skip-owners
@@ -264,13 +264,13 @@ python scripts/run_phase_6_sync.py --since-days 60</code></pre>
     </div>
 
     <div class="task">
-      <h4>Find duplicate Leads (same school across multiple zips)</h4>
-      <p>The auto-dedupe runs after every Phase 1, but if you suspect dupes accumulated (e.g. after a big import or schema change):</p>
+      <h4>Find duplicate Leads with strong duplicate evidence</h4>
+      <p>The auto-check runs after every Phase 1. It only demotes strong duplicates such as same email, same address, same phone, or same exact non-root URL path. Similar names or shared root domains can be separate locations and stay eligible.</p>
       <pre><code>python -c "from src import dedupe_within_leads; print(dedupe_within_leads.dedupe_within_leads(dry_run=True))"</code></pre>
       <p>Reports <code>checked</code>, <code>duplicates_found</code>, <code>rows_demoted</code>. To actually demote them, drop <code>dry_run=True</code>:</p>
       <pre><code>python -c "from src import dedupe_within_leads; print(dedupe_within_leads.dedupe_within_leads())"
 python scripts/run_cleanup.py --commit</code></pre>
-      <p>Lower-priority duplicates get flipped to <code>do_not_contact</code> with reason <code>internal_duplicate:&lt;kept_id&gt;</code>. The kept row is chosen by status priority (replied &gt; sent &gt; awaiting_approval &gt; ready_to_send &gt; &hellip;).</p>
+      <p>Lower-priority true duplicates get flipped to <code>do_not_contact</code> with reason <code>internal_duplicate:&lt;kept_id&gt;</code>. The kept row is chosen by status priority (replied &gt; sent &gt; awaiting_approval &gt; ready_to_send &gt; &hellip;). Rows with different known emails are kept as separate outreach opportunities.</p>
     </div>
 
     <div class="task">

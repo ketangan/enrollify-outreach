@@ -4,9 +4,9 @@ Daily orchestrator.
 
 Runs in order:
 1. Phase 6 sync  — reconcile sent mail + detect replies
-2. Phase 6 follow-up — draft follow-ups for leads due today
+2. Phase 6 follow-up — audit-gated follow-up drafts for leads due today
 3. Phase 4 owners - run owner-lookup on ready_for_owner_lookup rows
-3. Phase 5 drafts — draft initial outreach up to daily cap
+4. Phase 5 drafts — audit-gated initial outreach up to daily cap
 
 All of Ketan's approval actions happen in Zoho Drafts after this runs.
 Each sub-phase sends its own summary email; you'll get 1-3 emails depending
@@ -110,4 +110,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
