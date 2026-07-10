@@ -103,17 +103,20 @@ def main():
             rows_out.append({
                 "lead_id": lead_id,
                 "school": "(NOT FOUND)",
+                "website": "",
                 "status": "?",
                 "clicks": click_rec["count"],
                 "first_click": click_rec["first"][:19],
                 "last_click": click_rec["last"][:19],
                 "campaigns": ", ".join(sorted(click_rec["campaigns"])),
                 "replied": False,
+                "best_email": "",
             })
             continue
         rows_out.append({
             "lead_id": lead_id,
             "school": lead.get("name", "")[:42],
+            "website": lead.get("website", ""),
             "status": lead.get("status", ""),
             "clicks": click_rec["count"],
             "first_click": click_rec["first"][:19],
@@ -129,15 +132,16 @@ def main():
 
     # Print: clicked-but-not-replied is the most interesting bucket
     print()
-    print("=" * 100)
+    print("=" * 130)
     print(f"CLICKED LEADS — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print("=" * 100)
-    print(f"{'School':<44} {'Status':<24} {'Clicks':>6}  {'Last clicked':<20}")
-    print("-" * 100)
+    print("=" * 130)
+    print(f"{'School':<44} {'Website':<42} {'Status':<22} {'Clicks':>6}  {'Last clicked':<20}")
+    print("-" * 130)
     for r in rows_out:
         marker = " 🔥" if r["clicks"] >= 2 else ""
         replied = " ✉" if r["replied"] else ""
-        print(f"{r['school']:<44} {r['status']:<24} {r['clicks']:>6}  {r['last_click']:<20}{marker}{replied}")
+        website = (r["website"] or "")[:40]
+        print(f"{r['school']:<44} {website:<42} {r['status']:<22} {r['clicks']:>6}  {r['last_click']:<20}{marker}{replied}")
 
     # Highlight prime second-follow-up candidates
     candidates = [r for r in rows_out
@@ -146,11 +150,12 @@ def main():
                   and r["clicks"] >= 1]
     if candidates:
         print()
-        print("=" * 100)
+        print("=" * 130)
         print(f"⚡ {len(candidates)} CLICKED BUT NOT REPLIED — candidates for a second follow-up")
-        print("=" * 100)
+        print("=" * 130)
         for r in candidates:
-            print(f"  {r['school']:<44}  email: {r['best_email']}")
+            print(f"  {r['school']:<44}  {r['website']}")
+            print(f"      email: {r['best_email']}")
             print(f"      {r['clicks']} click(s) · last: {r['last_click']} · campaigns: {r['campaigns']}")
         print()
 

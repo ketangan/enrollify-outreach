@@ -120,9 +120,12 @@ def fetch_sent_messages(since_days: int = 30) -> list[SentMessage]:
     return results
 
 
-def fetch_inbox_replies(since_days: int = 30) -> list[InboxReply]:
-    """Pull recent inbox messages, return only ones that look like replies
-    (have In-Reply-To or References header)."""
+def fetch_inbox_replies(since_days: int = 30, include_all: bool = False) -> list[InboxReply]:
+    """Pull recent inbox messages. By default returns only threaded replies
+    (have In-Reply-To or References header). Pass include_all=True to also
+    return messages without thread headers — used for sender-email fallback
+    matching when someone replies with broken threading (e.g. their client
+    stripped headers, or the reply came from a different email client)."""
     conn = _connect()
     results = []
     try:
@@ -131,8 +134,8 @@ def fetch_inbox_replies(since_days: int = 30) -> list[InboxReply]:
             msg = email.message_from_bytes(raw)
             in_reply_to = (msg.get("In-Reply-To") or "").strip()
             references_raw = (msg.get("References") or "").strip()
-            if not in_reply_to and not references_raw:
-                continue  # Not a reply
+            if not include_all and not in_reply_to and not references_raw:
+                continue  # Not a reply (unless caller opts in via include_all)
             references = re.findall(r"<[^>]+>", references_raw)
             from_email = _parse_addr(msg.get("From", ""))
             subject = (msg.get("Subject") or "").strip()
