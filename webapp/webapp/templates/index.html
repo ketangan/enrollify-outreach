@@ -31,14 +31,20 @@
 <div class="pipeline-flow">
 
   {# ─── Phase 1: Discovery ─────────────────────────── #}
+  {% set disc = stage_counts.discovery or {"pending": 0, "breakdown": {}} %}
   <div class="phase-card phase-actionable">
     <div class="phase-header">
       <span class="phase-num">1</span>
       <span class="phase-title">Discovery</span>
     </div>
     <p class="phase-desc">Find new schools in a region (Google Places).</p>
-    <p class="phase-count phase-count-info">
-      <span>{{ stage_counts._total_leads or 0 }}</span> total leads in sheet
+    <p class="phase-count {% if disc.pending > 0 %}phase-count-pending{% else %}phase-count-clear{% endif %}">
+      <span>{{ disc.pending }}</span> new leads waiting
+      <small>{{ disc.breakdown.pending_classify or 0 }} pending_classify rows from Discovery</small>
+    </p>
+    <p class="phase-context">
+      <strong>{{ stage_counts._total_leads or 0 }}</strong> lifetime Leads rows kept for history/dedupe<br>
+      <strong>{{ stage_counts._history_leads or 0 }}</strong> already contacted, closed, excluded, or DNC
     </p>
     {% set rec = recommendations.discovery %}
     <p class="phase-rec rec-{{ rec.level }}">{{ rec.text }}</p>

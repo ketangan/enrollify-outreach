@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 # Map pipeline stages to the lead statuses that indicate "pending work" for that stage.
 # These are the statuses the daily/manual buttons would action.
 STAGE_PENDING_STATUSES = {
-    "discovery": [],  # Discovery doesn't pull from existing leads; it adds new ones
+    # Discovery itself adds rows, but pending_classify is the useful signal:
+    # new leads have already been discovered and are waiting for downstream.
+    "discovery": ["pending_classify"],
     "downstream": ["pending_classify", "ready_for_owner_lookup"],
     "review": [
         "needs_enrollment_system_classification",
@@ -31,10 +33,22 @@ STAGE_PENDING_STATUSES = {
 }
 
 
+HISTORY_STATUSES = {
+    "sent",
+    "follow_up_sent",
+    "replied",
+    "closed_no_reply",
+    "bounced",
+    "already_contacted",
+    "do_not_contact",
+    "online_system_exclude",
+}
+
+
 def compute_stage_counts() -> dict:
     """
     Return a dict of stage_name -> {pending: N, status_breakdown: {status: count}}.
-    For 'discovery' returns total leads in sheet (informational only).
+    For 'discovery', pending means newly discovered leads waiting in pending_classify.
     """
     try:
         rows = sheets.read_all_rows(config.TAB_LEADS)
@@ -59,6 +73,7 @@ def compute_stage_counts() -> dict:
 
     counts["_total_leads"] = len(rows)
     counts["_status_totals"] = status_totals
+    counts["_history_leads"] = sum(status_totals.get(s, 0) for s in HISTORY_STATUSES)
     return counts
 
 
@@ -69,25 +84,39 @@ def compute_recommendations(stage_counts: dict) -> dict:
     """
     recs = {}
     total = stage_counts.get("_total_leads", 0) if stage_counts else 0
+    discovery_pending = stage_counts.get("discovery", {}).get("pending", 0)
     ds_pending = stage_counts.get("downstream", {}).get("pending", 0)
     rv_pending = stage_counts.get("review", {}).get("pending", 0)
     dl_pending = stage_counts.get("daily", {}).get("pending", 0)
 
-    # Discovery: avoid if there's already a big backlog
-    if ds_pending > 500:
+    # Discovery: avoid adding more rows if existing discovery/downstream work is backed up.
+    if discovery_pending > 500:
         recs["discovery"] = {
             "level": "avoid",
-            "text": f"Skip for now. {ds_pending} leads already waiting in downstream. Process those first.",
+            "text": (
+                f"Skip for now. {discovery_pending} newly discovered leads are still "
+                f"waiting for downstream."
+            ),
         }
     elif ds_pending > 100:
         recs["discovery"] = {
             "level": "caution",
             "text": f"Consider waiting. {ds_pending} pending downstream — adding more leads grows the backlog.",
         }
+    elif dl_pending < 10 and discovery_pending == 0 and rv_pending < 20:
+        recs["discovery"] = {
+            "level": "ok",
+            "text": "Good time to discover: draft queue is low and no new leads are waiting.",
+        }
+    elif dl_pending >= 20:
+        recs["discovery"] = {
+            "level": "ok",
+            "text": f"Optional. You already have {dl_pending} ready_to_send; discover when expanding coverage.",
+        }
     else:
         recs["discovery"] = {
             "level": "ok",
-            "text": "OK to run when current zips are exhausted.",
+            "text": "OK to run when current zips are exhausted or you want a new area.",
         }
 
     # Downstream
@@ -103,7 +132,7 @@ def compute_recommendations(stage_counts: dict) -> dict:
                     f"Nothing for downstream to process — all current leads have moved past "
                     f"dedupe/classify/owner-lookup. To advance more leads, clear the Review "
                     f"queue ({rv_pending} waiting) so they re-enter downstream as "
-                    f"<code>ready_for_owner_lookup</code>."
+                    f"ready_for_owner_lookup."
                 ),
             }
         elif total < 100:

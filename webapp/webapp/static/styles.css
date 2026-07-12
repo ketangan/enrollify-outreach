@@ -482,6 +482,17 @@ form.filters button:hover { background: #2d4229; }
 .phase-count-pending { background: #ffe0b2; color: #6b3a00; }
 .phase-count-clear { background: #c8e6c9; color: #1b5e20; }
 
+.phase-context {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #6a6258;
+  margin: -4px 0 12px;
+}
+.phase-context strong {
+  color: #3a332c;
+  font-weight: 600;
+}
+
 .phase-rec {
   font-size: 12px;
   margin: 0 0 10px;
