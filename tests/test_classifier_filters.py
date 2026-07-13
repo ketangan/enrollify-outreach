@@ -53,6 +53,26 @@ def test_shopping_center_page_is_non_target_org():
     assert result.reason.startswith("local:non_target_org:")
 
 
+def test_mission_nonprofit_youth_brand_is_non_target_org():
+    page = FetchedPage(
+        url="https://www.comptoncowboys.com/",
+        status_code=200,
+        text=(
+            "The crew works with horses to provide a positive influence on inner-city youth. "
+            "Compton Junior Equestrians was formed for youth who are at-risk and underserved. "
+            "Their community service efforts include keeping kids on horses and off the streets. "
+            "Donate now, shop merch, and sign up for community news."
+        ),
+        raw_html_snippet="",
+    )
+
+    result = classifier.local_classify([page])
+
+    assert result is not None
+    assert result.status == "online_system_exclude"
+    assert result.reason.startswith("local:non_target_org:mission_nonprofit")
+
+
 def test_shopping_center_location_mention_alone_does_not_exclude():
     page = FetchedPage(
         url="https://example-dance-studio.com/",

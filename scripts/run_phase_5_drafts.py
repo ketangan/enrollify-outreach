@@ -276,6 +276,17 @@ def main():
         em = (lead.get("enrollment_method") or "").strip()
         owner_name = (lead.get("owner_name") or "").strip()
 
+        # Non-Latin owner names need manual Romanization before English outreach.
+        if drafter.has_non_latin_letters(owner_name):
+            rerouted.append({
+                "school": lead.get("name", ""),
+                "enrollment_method": f"non_latin_owner_name:{owner_name}",
+                "_row_idx": lead["_row_idx"],
+                "reroute_status": "needs_owner_review",
+                "wipe_owner": True,
+            })
+            continue
+
         # Junk owner name check (LLM hallucinations like "Unnamed female founder")
         if drafter.is_junk_owner_name(owner_name):
             rerouted.append({

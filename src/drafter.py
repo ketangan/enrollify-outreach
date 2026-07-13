@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from src import config, sheets
@@ -108,6 +109,20 @@ def _normalize_token(tok: str) -> str:
     return tok.lower().rstrip(".,;:")
 
 
+def has_non_latin_letters(text: str) -> bool:
+    """True when a string contains alphabetic characters outside Latin script."""
+    for char in str(text or ""):
+        if not char.isalpha():
+            continue
+        try:
+            char_name = unicodedata.name(char)
+        except ValueError:
+            return True
+        if "LATIN" not in char_name:
+            return True
+    return False
+
+
 def is_junk_owner_name(owner_name: str) -> bool:
     """
     Detect LLM-hallucinated junk names like 'Unnamed female founder',
@@ -172,6 +187,9 @@ def _greeting_name(full_name: str) -> str:
         return ""
 
     if is_junk_owner_name(full_name):
+        return ""
+
+    if has_non_latin_letters(full_name):
         return ""
 
     parts = full_name.strip().split()

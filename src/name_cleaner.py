@@ -14,8 +14,7 @@ import unicodedata
 
 LEGAL_SUFFIX_RE = re.compile(
     r"\s*,?\s+\b("
-    r"inc\.?|incorporated|llc|l\.l\.c\.|ltd\.?|limited|corp\.?|corporation|"
-    r"co\.?|company"
+    r"inc\.?|incorporated|llc|l\.l\.c\.|ltd\.?|limited|corp\.?|corporation"
     r")\b\.?$",
     re.IGNORECASE,
 )
@@ -23,8 +22,10 @@ LEGAL_SUFFIX_RE = re.compile(
 ACRONYMS = {
     "ACT",
     "AP",
+    "BJJ",
     "IB",
     "LA",
+    "MMA",
     "SAT",
     "STEM",
     "UCLA",
@@ -32,6 +33,72 @@ ACRONYMS = {
     "USA",
     "YMCA",
 }
+
+LOWERCASE_WORDS = {
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "but",
+    "by",
+    "for",
+    "from",
+    "in",
+    "nor",
+    "of",
+    "on",
+    "or",
+    "per",
+    "the",
+    "to",
+    "vs",
+    "with",
+}
+
+LOCATION_SUFFIXES = {
+    "downtown la",
+    "downtown los angeles",
+    "east la",
+    "east los angeles",
+    "north la",
+    "north los angeles",
+    "south la",
+    "south los angeles",
+    "west la",
+    "west los angeles",
+}
+
+PUNCT_TRANSLATION = str.maketrans({
+    "’": "'",
+    "‘": "'",
+    "“": '"',
+    "”": '"',
+    "–": "-",
+    "—": "-",
+    "→": " ",
+})
+
+
+def _strip_non_latin_scripts(text: str) -> str:
+    """Keep Latin-script names, including accents; remove other scripts/noisy symbols."""
+    chars: list[str] = []
+    for char in text:
+        if ord(char) < 128:
+            chars.append(char)
+            continue
+
+        if char.isalpha():
+            try:
+                char_name = unicodedata.name(char)
+            except ValueError:
+                chars.append(" ")
+                continue
+            chars.append(char if "LATIN" in char_name else " ")
+            continue
+
+        chars.append(" ")
+    return "".join(chars)
 
 
 def _strip_wrapped_noise(name: str) -> str:
@@ -62,7 +129,26 @@ def _smart_title_token(token: str) -> str:
 
 
 def _smart_title(name: str) -> str:
-    return " ".join(_smart_title_token(token) for token in name.split())
+    tokens = name.split()
+    titled = []
+    for idx, token in enumerate(tokens):
+        low = token.lower()
+        if idx > 0 and low in LOWERCASE_WORDS:
+            titled.append(low)
+        else:
+            titled.append(_smart_title_token(token))
+    return " ".join(titled)
+
+
+def _strip_location_suffix(name: str) -> str:
+    """Remove location-only suffixes that make outreach sound scraped."""
+    parts = re.split(r"\s+[-–—]\s+", name)
+    if len(parts) <= 1:
+        return name
+    suffix = parts[-1].strip().lower().strip(".,;: ")
+    if suffix in LOCATION_SUFFIXES:
+        return " - ".join(parts[:-1]).strip()
+    return name
 
 
 def clean_school_name(raw_name: str) -> str:
@@ -81,28 +167,30 @@ def clean_school_name(raw_name: str) -> str:
         return ""
 
     name = unicodedata.normalize("NFKC", original)
+    name = name.translate(PUNCT_TRANSLATION)
     name = re.sub(r"[\r\n\t]+", " ", name)
 
     # Keep the English/primary name before alternate-name separators.
     name = re.split(r"\s+\|\s+|\s+//\s+", name, maxsplit=1)[0]
     name = _strip_wrapped_noise(name)
 
-    # Drop non-English alternate scripts. This is deliberate for cold outreach:
-    # the email copy is English and the greeting should not include parallel
-    # Korean/Chinese/Japanese/etc. names from Google Places.
-    name = re.sub(r"[^\x00-\x7F]+", " ", name)
+    # Drop non-Latin alternate scripts. This is deliberate for cold outreach:
+    # the email copy is English and should not include parallel Korean/Chinese/
+    # Japanese/etc. names from Google Places. Preserve accented Latin names.
+    name = _strip_non_latin_scripts(name)
 
     # Remove unit/location markers and legal suffixes that make the email feel
     # like a scraped database row.
     name = re.sub(r"\s+#\s*\d+\b", " ", name)
     name = re.sub(r"\s+\b(no\.?|number)\s*\d+\b", " ", name, flags=re.IGNORECASE)
+    name = _strip_location_suffix(name)
     while True:
         cleaned = LEGAL_SUFFIX_RE.sub("", name).strip()
         if cleaned == name.strip():
             break
         name = cleaned
 
-    name = name.strip(" \"'.,;:-")
+    name = name.strip(" \"',;:-")
     name = re.sub(r"\s*/\s*", " ", name)
     name = re.sub(r"\s+", " ", name).strip()
 

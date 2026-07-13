@@ -586,6 +586,10 @@ Return a JSON object with this exact shape:
 
 IMPORTANT — owner name extraction:
 - Extract the owner name WHENEVER it appears in the text, even if no matching email exists.
+- Return owner_name in English/Romanized Latin script. Do NOT return raw Japanese/Chinese/Korean/Cyrillic/etc. characters.
+- If the source shows both a native-script name and an English/Romanized name, use the English/Romanized name.
+- If the source only shows a non-Latin-script name, transliterate/romanize it if you are confident; otherwise leave owner_name empty and explain why in reason.
+- Return owner_title in English too (e.g. "Director" or "Principal"), not raw non-English title text.
 - Look for patterns like "[Name], Director", "[Name], Owner", "[Name], Founder", "[Name], Principal", "[Name] joined us in YYYY as director", "Meet [Name], our..."
 - Parents/Families pages sometimes include signed welcome notes. Treat "Sincerely, [Name], Owner/Director" as strong owner evidence.
 - Teachers/Staff pages sometimes list roles under names. Treat "Teacher/Director" as Director, and prefer it over Assistant Director.

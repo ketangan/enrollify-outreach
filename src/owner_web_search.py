@@ -111,6 +111,10 @@ CRITICAL — name-collision check (read carefully):
 - For Yelp, only use names from business-owner/business-info/staff/owner-like sections or clearly owner-authored responses. Do not treat a reviewer name as the owner.
 
 Rules:
+- Return owner_name in English/Romanized Latin script. Do not return raw Japanese/Chinese/Korean/Cyrillic/etc. characters.
+- If a source shows both native script and English/Romanized name, use the English/Romanized name.
+- If only a non-Latin-script name is available, transliterate/romanize it only if confident; otherwise set found=false.
+- Return owner_title in English, not raw non-English title text.
 - "high": name on the school's own site, LinkedIn profile of that person, or a press release — AND location confirmed.
 - "medium": name in a review site bio, news mention, or directory listing — AND location confirmed.
 - "low": name appears but role is ambiguous (could be a teacher, not the owner) — location still must match.

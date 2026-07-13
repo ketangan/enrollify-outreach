@@ -162,6 +162,35 @@ def _check_non_target_org(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+def _check_mission_nonprofit_profile(text: str) -> tuple[bool, str]:
+    """
+    Catch community/mission sites that support youth but are not parent-facing
+    schools/studios with a clear class enrollment path.
+    """
+    text_lower = text.lower()
+
+    strong_markers = [
+        "community service efforts",
+        "mission in the community",
+        "at-risk and underserved",
+        "underserved youth",
+        "positive influence on inner-city youth",
+        "off the streets",
+    ]
+    for marker in strong_markers:
+        if marker in text_lower:
+            return True, f"mission_nonprofit:{marker}"
+
+    if (
+        "shop merch" in text_lower
+        and "community news" in text_lower
+        and ("donate" in text_lower or "donation" in text_lower)
+    ):
+        return True, "mission_nonprofit:merch_donate_newsletter"
+
+    return False, ""
+
+
 def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
     """
     Fast, free keyword/pattern check. Returns None if no confident verdict.
@@ -189,6 +218,15 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
         )
 
     hit, reason = _check_non_target_org(combined_text)
+    if hit:
+        return Classification(
+            status="online_system_exclude",
+            reason=f"local:non_target_org:{reason}",
+            used_llm=False,
+            pages_fetched=len(pages),
+        )
+
+    hit, reason = _check_mission_nonprofit_profile(combined_text)
     if hit:
         return Classification(
             status="online_system_exclude",
@@ -230,6 +268,7 @@ Classification rules (apply in order — pick the first that fits):
 1. online_system_exclude — if ANY of these are present:
    - Large national/regional organizations, city/county programs, gyms, pro-sports organizations, universities, libraries, parks/recreation departments, or public agencies rather than an independent school/studio/academy
    - Head Start / Early Head Start programs, social-service nonprofits, family-services agencies, or organizations whose site primarily offers housing, mental health, workforce, donation, or public-benefit programs rather than a standalone independent school/studio/academy
+   - Community/mission nonprofits, advocacy/media brands, youth outreach groups, or donation/merch/newsletter sites that support children but do NOT present a parent-facing class, lesson, application, waitlist, registration, or enrollment process
    - Shopping centers, malls, senior centers, community centers, public pools/aquatic facilities, adult schools, language-travel agencies, or professional-development businesses
    - Solo personal services such as sports massage, personal training, physical therapy, or coaching pages that do not present themselves as a school/studio/academy with student enrollment
    - Parent/student login portal, "My Account", member area
