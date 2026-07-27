@@ -112,7 +112,7 @@ template_id | subject | body | last_updated
 
 ## Setup checklist
 
-- [ ] Sheet created and named `Enrollify Outreach`
+- [ ] Sheet created and named `Pontora Outreach`
 - [ ] All 4 tabs exist with exact column headers
 - [ ] Dropdowns configured on the relevant columns (Data → Data validation)
 - [ ] Conditional formatting rules added

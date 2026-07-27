@@ -31,7 +31,7 @@ def _get_client() -> gspread.Client:
 
 
 def get_sheet() -> gspread.Spreadsheet:
-    """Returns the Enrollify Outreach spreadsheet (cached)."""
+    """Returns the Pontora Outreach spreadsheet (cached)."""
     global _sheet
     if _sheet is None:
         _sheet = _get_client().open_by_key(config.GOOGLE_SHEET_ID)
@@ -105,4 +105,3 @@ def upsert_coverage_row(zip_code: str, **fields) -> None:
             if key in headers:
                 col = headers.index(key) + 1
                 ws.update_cell(target_row, col, value)
-                

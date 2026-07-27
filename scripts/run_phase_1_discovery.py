@@ -314,8 +314,8 @@ def main():
     )
     parser.add_argument("--list-regions", action="store_true")
     parser.add_argument(
-        "--admin", default=os.environ.get("ENROLLIFY_ADMIN", ""),
-        help="Tag rows with this admin name (default: $ENROLLIFY_ADMIN)",
+        "--admin", default=os.environ.get("PONTORA_ADMIN", os.environ.get("ENROLLIFY_ADMIN", "")),
+        help="Tag rows with this admin name (default: $PONTORA_ADMIN; legacy $ENROLLIFY_ADMIN also works)",
     )
     args = parser.parse_args()
 

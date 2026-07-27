@@ -6,9 +6,11 @@ Main steps are in `PHASE_0_CHECKLIST.md`. This file has debugging info.
 
 - **Places API** — for finding schools by location
 - **Sheets API** — for reading/writing the data sheet
+- **Gmail API** — for creating drafts and syncing Sent/Inbox
 - **Service account** — lets scripts access Sheets without OAuth
+- **OAuth Desktop client** — lets scripts access `ketan@mypontora.com` via Gmail API
 
-All three go in the same Google Cloud project.
+All of these can live in the same Google Cloud project.
 
 ## Budget reality
 
@@ -24,6 +26,7 @@ All three go in the same Google Cloud project.
 - **Service account JSON is a secret** — never commit it. `.gitignore` already excludes `config/*.json`.
 - **Sharing the sheet** — must share with the `client_email` from the JSON, not your own email. Editor access required.
 - **API key restrictions:** if you accidentally restrict to the wrong API, calls will fail with 403. Go back to Credentials → edit key → fix restrictions.
+- **Gmail OAuth must authorize the Pontora mailbox.** The OAuth client can be created while logged into a personal Google account, but `scripts/setup_gmail_oauth.py` must be completed with `ketan@mypontora.com`.
 
 ## Monitoring usage
 

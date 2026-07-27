@@ -21,7 +21,29 @@ GOOGLE_SHEETS_CREDENTIALS_PATH = os.getenv(
 )
 GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
-# --- Zoho ---
+# --- Brand / outreach mailbox ---
+BRAND_NAME = os.getenv("BRAND_NAME", "Pontora")
+PRODUCT_DOMAIN = os.getenv("PRODUCT_DOMAIN", "mypontora.com")
+PRODUCT_URL = os.getenv("PRODUCT_URL", f"https://{PRODUCT_DOMAIN}")
+DEMO_URL = os.getenv("DEMO_URL", f"{PRODUCT_URL}/demo")
+OUTREACH_EMAIL = os.getenv("OUTREACH_EMAIL", "ketan@mypontora.com")
+OUTREACH_DOMAIN = OUTREACH_EMAIL.split("@")[-1] if "@" in OUTREACH_EMAIL else PRODUCT_DOMAIN
+OUTREACH_ADMIN_URL = os.getenv(
+    "OUTREACH_ADMIN_URL",
+    "https://enrollify-admin.onrender.com",
+)
+
+# --- Gmail OAuth ---
+GMAIL_OAUTH_CLIENT_PATH = os.getenv(
+    "GMAIL_OAUTH_CLIENT_PATH",
+    str(PROJECT_ROOT / "config" / "gmail-oauth-client.json"),
+)
+GMAIL_TOKEN_PATH = os.getenv(
+    "GMAIL_TOKEN_PATH",
+    str(PROJECT_ROOT / "config" / "gmail-token.json"),
+)
+
+# --- Legacy Zoho (kept temporarily until Gmail workflow is verified end-to-end) ---
 ZOHO_EMAIL = os.getenv("ZOHO_EMAIL")
 ZOHO_APP_PASSWORD = os.getenv("ZOHO_APP_PASSWORD")
 ZOHO_IMAP_HOST = os.getenv("ZOHO_IMAP_HOST", "imap.zoho.com")
@@ -101,4 +123,3 @@ def validate():
         raise RuntimeError(
             f"Google service account JSON not found at {GOOGLE_SHEETS_CREDENTIALS_PATH}"
         )
-    

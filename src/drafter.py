@@ -302,6 +302,10 @@ def render_email(lead: dict) -> RenderedEmail | None:
         "specific_observation": observation,
         "lead_id": lead_id,
         "feature_bullets": feature_bullets,
+        "brand_name": config.BRAND_NAME,
+        "product_domain": config.PRODUCT_DOMAIN,
+        "product_url": config.PRODUCT_URL,
+        "demo_url": config.DEMO_URL,
     }
     body = _render(tpl["body"], body_ctx)
     subject = _render(tpl["subject"], body_ctx)
@@ -330,6 +334,10 @@ def render_follow_up(lead: dict, greeting_override: str | None = None) -> Render
         "owner_first_name": greeting,
         "school_name": school_name,
         "lead_id": lead_id,
+        "brand_name": config.BRAND_NAME,
+        "product_domain": config.PRODUCT_DOMAIN,
+        "product_url": config.PRODUCT_URL,
+        "demo_url": config.DEMO_URL,
     }
     body = _render(tpl["body"], ctx)
 

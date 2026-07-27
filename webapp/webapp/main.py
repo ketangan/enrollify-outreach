@@ -1,5 +1,5 @@
 """
-Enrollify Outreach — admin dashboard.
+Pontora Outreach — admin dashboard.
 
 Run locally:
     cd ~/code/enrollify-outreach
@@ -44,7 +44,7 @@ JOBS_DIR = WEBAPP_DIR / "jobs"
 
 JOBS_DIR.mkdir(exist_ok=True)
 
-app = FastAPI(title="Enrollify Outreach Admin")
+app = FastAPI(title="Pontora Outreach Admin")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 

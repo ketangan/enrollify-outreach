@@ -1,5 +1,9 @@
 """
-Zoho Mail client.
+Legacy Zoho Mail client.
+
+Pontora Outreach now uses src.gmail_client for active mail workflows. This
+module is retained only until Gmail draft creation and Gmail sync are verified
+end-to-end, then it should be removed.
 
 Responsibilities (Phase 5):
 - Upload RFC 2822 email messages to Zoho Drafts folder via IMAP APPEND.
@@ -121,4 +125,3 @@ def send_message(msg: EmailMessage) -> tuple[bool, str]:
         return True, ""
     except Exception as e:
         return False, f"smtp_send_failed:{type(e).__name__}:{e}"
-    

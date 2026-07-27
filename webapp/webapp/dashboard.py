@@ -190,7 +190,7 @@ def compute_recommendations(stage_counts: dict) -> dict:
     else:
         recs["daily"] = {
             "level": "ok",
-            "text": f"{dl_pending} ready. Daily run will draft and queue these in Zoho.",
+            "text": f"{dl_pending} ready. Daily run will create Gmail drafts for review.",
         }
 
     return recs

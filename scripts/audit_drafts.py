@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Audit Zoho Drafts folder: identify drafts that would send to an email
+Audit Gmail Drafts: identify drafts that would send to an email
 address already used in prior outreach, would duplicate an existing draft,
 OR would re-send a follow-up that was already sent.
 
-Reads all Drafts via IMAP, then for each draft:
+Reads recent Gmail Drafts, then for each draft:
 
   1. Detects whether it's an INITIAL or a FOLLOW-UP based on the subject
      (follow-up subjects start with "Re:").
@@ -13,7 +13,7 @@ Reads all Drafts via IMAP, then for each draft:
        - Leads (different criteria for initial vs follow-up)
        - Already_Contacted tab
        - Archive tab (any status, except internal_duplicate casualties)
-       - Other drafts already sitting in Zoho
+       - Other drafts already sitting in Gmail
 
 For INITIAL drafts:
   A duplicate is a draft to an address whose lead is already at a "used"
@@ -38,18 +38,15 @@ Usage:
 
 from __future__ import annotations
 
-import email
-import imaplib
 import logging
-import ssl
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import config, sheets
+from src import config, sheets, gmail_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +55,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("audit_drafts")
 
-DRAFTS_FOLDER = "Drafts"
 SCAN_DAYS = 90
 
 # Statuses on Leads tab that indicate the address was ALREADY USED for an
@@ -95,46 +91,19 @@ class AuditContext:
     already_contacted_by_email: dict[str, list[dict]]
 
 
-# ─── IMAP draft fetcher ────────────────────────────────────────────────
+# ─── Gmail draft fetcher ───────────────────────────────────────────────
 
 def fetch_drafts(since_days: int = SCAN_DAYS) -> list[DraftInfo]:
-    """Read all messages from Zoho Drafts folder."""
-    ctx = ssl.create_default_context()
-    conn = imaplib.IMAP4_SSL(
-        host=config.ZOHO_IMAP_HOST,
-        port=config.ZOHO_IMAP_PORT,
-        ssl_context=ctx,
-    )
-    conn.login(config.ZOHO_EMAIL, config.ZOHO_APP_PASSWORD)
-    drafts = []
-    try:
-        conn.select(DRAFTS_FOLDER, readonly=True)
-        since_date = (datetime.now(timezone.utc) - timedelta(days=since_days)).strftime("%d-%b-%Y")
-        status, data = conn.search(None, f'(SINCE "{since_date}")')
-        if status != "OK":
-            return []
-        uids = data[0].split()
-        for uid in uids:
-            status, msg_data = conn.fetch(uid, "(RFC822.HEADER)")
-            if status != "OK":
-                continue
-            msg = email.message_from_bytes(msg_data[0][1])
-            to_raw = msg.get("To", "")
-            _, to_addr = email.utils.parseaddr(to_raw)
-            if not to_addr:
-                continue
-            drafts.append(DraftInfo(
-                to_email=to_addr.lower().strip(),
-                subject=(msg.get("Subject") or "").strip(),
-                date_str=(msg.get("Date") or "").strip(),
-                uid=uid.decode(),
-            ))
-    finally:
-        try:
-            conn.logout()
-        except Exception:
-            pass
-    return drafts
+    """Read recent Gmail Drafts."""
+    return [
+        DraftInfo(
+            to_email=d.to_email,
+            subject=d.subject,
+            date_str=d.date_str,
+            uid=d.uid,
+        )
+        for d in gmail_client.fetch_drafts(since_days=since_days)
+    ]
 
 
 # ─── Sheet indices ─────────────────────────────────────────────────────
@@ -210,7 +179,7 @@ def find_existing_draft_conflicts(
     *,
     exclude_uid: str = "",
 ) -> list[str]:
-    """Flag same-recipient + same-kind drafts already in Zoho Drafts."""
+    """Flag same-recipient + same-kind drafts already in Gmail Drafts."""
     sources: list[str] = []
     for existing in existing_drafts:
         if exclude_uid and existing.uid == exclude_uid:
@@ -370,7 +339,7 @@ def format_sources(sources: list[str], *, limit: int = 3) -> str:
 def main():
     config.validate()
 
-    logger.info("Fetching Zoho drafts (last %d days)...", SCAN_DAYS)
+    logger.info("Fetching Gmail drafts (last %d days)...", SCAN_DAYS)
     drafts = fetch_drafts()
     logger.info("Found %d drafts", len(drafts))
 
@@ -416,7 +385,7 @@ def main():
     print("=" * 80)
     print(f"DRAFT AUDIT REPORT — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print("=" * 80)
-    print(f"Total drafts in Zoho:    {len(drafts)}")
+    print(f"Total drafts in Gmail:   {len(drafts)}")
     print(f"  Initial drafts:        {len(initial_safe) + len(initial_dupes)} "
           f"(safe {len(initial_safe)}, flagged {len(initial_dupes)})")
     print(f"  Follow-up drafts:      {len(followup_safe) + len(followup_dupes)} "
@@ -450,7 +419,7 @@ def main():
     )
 
     if total_dupes:
-        print("RECOMMENDATION: review and delete flagged drafts in Zoho before sending.")
+        print("RECOMMENDATION: review and delete flagged drafts in Gmail before sending.")
         print()
 
     if total_safe:

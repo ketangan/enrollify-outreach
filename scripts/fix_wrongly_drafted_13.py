@@ -17,7 +17,7 @@ This script:
     them up cleanly.
 
 After running this:
-  - Delete the corresponding drafts in Zoho manually (already discussed).
+  - Delete the corresponding stale drafts manually.
   - These leads will be re-eligible for the next daily run.
 
 Usage:
@@ -175,7 +175,7 @@ def main():
     logger.info("")
     logger.info("DONE. %d leads reset to ready_to_send.", len(will_update))
     logger.info("")
-    logger.info("Reminder: delete the corresponding drafts in Zoho manually.")
+    logger.info("Reminder: delete the corresponding stale drafts manually.")
     logger.info("These leads will be eligible for the next daily run.")
 
 

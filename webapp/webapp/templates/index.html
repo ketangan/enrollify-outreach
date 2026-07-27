@@ -119,7 +119,7 @@
       <span class="phase-num">5-6</span>
       <span class="phase-title">Daily Run</span>
     </div>
-    <p class="phase-desc">Draft &amp; send emails, sync replies, follow-ups.</p>
+    <p class="phase-desc">Create Gmail drafts, sync sent mail, replies, follow-ups.</p>
     <p class="phase-count {% if dl.pending > 0 %}phase-count-pending{% else %}phase-count-clear{% endif %}">
       <span>{{ dl.pending }}</span> ready to send
     </p>
@@ -152,12 +152,12 @@
     </div>
 
     <div class="task">
-      <h4>Check for duplicate drafts in Zoho before sending</h4>
-      <p>The daily draft scripts now run an audit preflight before uploading new initial or follow-up drafts. Use this read-only audit before a manual bulk send or whenever you want an independent check of what's already sitting in Zoho:</p>
+      <h4>Check for duplicate Gmail drafts before sending</h4>
+      <p>The daily draft scripts now run an audit preflight before uploading new initial or follow-up drafts. Use this read-only audit before a manual bulk send or whenever you want an independent check of what's already sitting in Gmail:</p>
       <pre><code>python scripts/audit_drafts.py</code></pre>
-      <p>Scans Zoho Drafts (last 90 days), cross-references against Leads + Already_Contacted + Archive, and also flags duplicate drafts already waiting in Zoho. Reports flagged initials and flagged follow-ups separately.</p>
-      <p><strong>Initial flagged</strong> = address was already used in a prior send. Delete in Zoho before sending.<br>
-      <strong>Follow-up flagged</strong> = follow-up was already sent, lead is terminal (replied/bounced/closed), or another follow-up draft already exists. Delete in Zoho.</p>
+      <p>Scans Gmail Drafts (last 90 days), cross-references against Leads + Already_Contacted + Archive, and also flags duplicate drafts already waiting in Gmail. Reports flagged initials and flagged follow-ups separately.</p>
+      <p><strong>Initial flagged</strong> = address was already used in a prior send. Delete in Gmail before sending.<br>
+      <strong>Follow-up flagged</strong> = follow-up was already sent, lead is terminal (replied/bounced/closed), or another follow-up draft already exists. Delete in Gmail.</p>
     </div>
 
     <div class="task">
@@ -219,7 +219,7 @@ python scripts/run_cleanup.py --commit</code></pre>
     <div class="task">
       <h4>Verify how many emails I've actually sent</h4>
       <pre><code>python scripts/sent_email_count.py</code></pre>
-      <p>Read-only. Scans Zoho Sent (last 90 days). Reports:</p>
+      <p>Read-only. Scans Gmail Sent (last 90 days). Reports:</p>
       <ul>
         <li>Total initial sends</li>
         <li>Total follow-up sends</li>
@@ -240,7 +240,7 @@ python scripts/run_daily.py --skip-drafts</code></pre>
     </div>
 
     <div class="task">
-      <h4>Sync sent + replies + bounces from Zoho only</h4>
+      <h4>Sync sent + replies + bounces from Gmail only</h4>
       <pre><code>python scripts/run_phase_6_sync.py
 python scripts/run_phase_6_sync.py --dry-run
 python scripts/run_phase_6_sync.py --since-days 60</code></pre>
@@ -259,14 +259,14 @@ python scripts/run_phase_6_sync.py --since-days 60</code></pre>
 
     <div class="task">
       <h4>A school's email is bouncing &mdash; what happens?</h4>
-      <p>Phase 6 sync auto-detects mailer-daemon notifications (both threaded replies and unthreaded ones from <code>mailer-daemon@mx.zohomail.com</code>) and flips the lead to <code>bounced</code> with the SMTP error code in <code>do_not_contact_reason</code>. You get a &#x1F4ED; alert email per bounce.</p>
+      <p>Phase 6 sync auto-detects mailer-daemon notifications (both threaded replies and unthreaded ones) and flips the lead to <code>bounced</code> with the SMTP error code in <code>do_not_contact_reason</code>. Reply and bounce alerts are logged because outreach workflows are draft-only/manual-review.</p>
       <p>Both 4xx (soft bounces that became permanent after retry) and 5xx codes are caught. Next <code>run_cleanup.py --commit</code> archives the row. No manual action needed.</p>
     </div>
 
     <div class="task">
       <h4>List drafts side-by-side with their Lead data</h4>
       <pre><code>python scripts/list_drafts_with_leads.py</code></pre>
-      <p>Read-only. For every Zoho draft, prints <code>school_name | website | owner_name | best_email</code>. Useful for spot-checking before bulk send when <code>audit_drafts</code> reports all-clear but you still want to eyeball recipients.</p>
+      <p>Read-only. For every Gmail draft, prints <code>school_name | website | owner_name | best_email</code>. Useful for spot-checking before bulk send when <code>audit_drafts</code> reports all-clear but you still want to eyeball recipients.</p>
     </div>
 
     <div class="task">
@@ -309,10 +309,10 @@ for r in sheets.read_all_rows(config.TAB_TEMPLATES):
       <p>The old threshold was 80&ndash;100 unique recipients. You are past it. Do not keep scaling the same message and pretend volume is still the blocker.</p>
       <p><strong>Step 2: Confirm deliverability isn't the problem.</strong></p>
       <ul>
-        <li><strong>mail-tester.com</strong> &mdash; visit the site, get a temp address (e.g. <code>test-xxxxx@srv1.mail-tester.com</code>), send a real outreach email to it from Zoho, click "Check your score." Anything below 9/10 means the score itself is the problem. 10/10 = deliverability clean.</li>
+        <li><strong>mail-tester.com</strong> &mdash; visit the site, get a temp address (e.g. <code>test-xxxxx@srv1.mail-tester.com</code>), send a real outreach email to it from Gmail, click "Check your score." Anything below 9/10 means the score itself is the problem. 10/10 = deliverability clean.</li>
         <li><strong>Send to a personal Gmail account.</strong> Send a real outreach email to a Gmail address you own. Check whether it lands in Inbox, Promotions, or Spam. Spam = your sender reputation or content is being flagged.</li>
-        <li><strong>MX Toolbox blacklist check</strong> &mdash; <a href="https://mxtoolbox.com/blacklists.aspx" target="_blank">mxtoolbox.com/blacklists.aspx</a>. Enter <code>enrollifyapp.com</code> and check Zoho's outbound IP <code>136.143.188.16</code>. Anything on a major RBL (SpamCop, Spamhaus, Barracuda) needs to be cleared via Zoho support before sending more.</li>
-        <li><strong>Verify DNS records still pass.</strong> Use <a href="https://mxtoolbox.com" target="_blank">mxtoolbox.com</a> SPF / DKIM / DMARC checks against enrollifyapp.com. SPF must include <code>zoho.com</code>; DKIM record at <code>zoho._domainkey</code> must verify; DMARC should be at <code>p=quarantine</code> or stronger.</li>
+        <li><strong>MX Toolbox blacklist check</strong> &mdash; <a href="https://mxtoolbox.com/blacklists.aspx" target="_blank">mxtoolbox.com/blacklists.aspx</a>. Enter <code>mypontora.com</code>. Anything on a major RBL (SpamCop, Spamhaus, Barracuda) needs to be cleared before sending more.</li>
+        <li><strong>Verify DNS records still pass.</strong> Use <a href="https://mxtoolbox.com" target="_blank">mxtoolbox.com</a> SPF / DKIM / DMARC checks against <code>mypontora.com</code>. SPF must include Google's mail sender, DKIM must verify for Google Workspace, and DMARC should be at <code>p=quarantine</code> or stronger.</li>
       </ul>
       <p><strong>Step 3: After deliverability clears, change the experiment.</strong> Test offer, target segment, proof, CTA, and channel. Real-world follow-up with clickers is worth trying, but Brent and Carmen are no longer valid conversion evidence.</p>
     </div>

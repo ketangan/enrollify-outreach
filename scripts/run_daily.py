@@ -8,14 +8,14 @@ Runs in order:
 3. Phase 4 owners - run owner-lookup on ready_for_owner_lookup rows
 4. Phase 5 drafts — audit-gated initial outreach up to daily cap
 
-All of Ketan's approval actions happen in Zoho Drafts after this runs.
-Each sub-phase sends its own summary email; you'll get 1-3 emails depending
-on what happened.
+All of Ketan's approval actions happen in Gmail Drafts after this runs.
+Sub-phases log their summaries. Mail remains manual-review only because active
+Gmail workflows create drafts and never call Gmail send endpoints.
 
 Usage:
   python scripts/run_daily.py              # normal run
   python scripts/run_daily.py --dry-run    # pass-through to all sub-phases
-  python scripts/run_daily.py --skip-sync  # skip the Zoho sync step
+  python scripts/run_daily.py --skip-sync  # skip the Gmail sync step
 """
 
 from __future__ import annotations
@@ -28,6 +28,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from src import brand_guard
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,7 +59,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true",
                         help="Pass --dry-run to all sub-phases")
     parser.add_argument("--skip-sync", action="store_true",
-                        help="Skip the Zoho sync step")
+                        help="Skip the Gmail sync step")
     parser.add_argument("--skip-followup", action="store_true",
                         help="Skip the follow-up drafting step")
     parser.add_argument("--skip-owners", action="store_true",
@@ -69,20 +71,32 @@ def main():
     extra = ["--dry-run"] if args.dry_run else []
 
     logger.info("Starting daily run.")
+    failed_phases: list[str] = []
 
     # 1. Sync — catch replies + reconcile sent
     if not args.skip_sync:
         ok = run_phase("run_phase_6_sync.py", extra)
         if not ok:
-            logger.warning("Sync step failed — continuing anyway.")
+            logger.error("Sync step failed — stopping before follow-up/draft generation.")
+            failed_phases.append("run_phase_6_sync.py")
+            sys.exit(1)
     else:
         logger.info(">>> Skipping sync (--skip-sync)")
+
+    if not args.dry_run and (not args.skip_followup or not args.skip_drafts):
+        try:
+            brand_guard.assert_templates_rebranded()
+        except RuntimeError as e:
+            logger.error("%s", e)
+            logger.error("Daily run stopped before drafting/owner lookup.")
+            sys.exit(1)
 
     # 2. Follow-ups — draft for leads due today
     if not args.skip_followup:
         ok = run_phase("run_phase_6_followup.py", extra)
         if not ok:
             logger.warning("Follow-up step failed — continuing anyway.")
+            failed_phases.append("run_phase_6_followup.py")
     else:
         logger.info(">>> Skipping follow-up (--skip-followup)")
 
@@ -91,6 +105,7 @@ def main():
         ok = run_phase("run_phase_4_owners.py", extra)
         if not ok:
             logger.warning("Owner lookup step failed — continuing anyway.")
+            failed_phases.append("run_phase_4_owners.py")
     else:
         logger.info(">>> Skipping owners (--skip-owners)")
         
@@ -99,12 +114,18 @@ def main():
         ok = run_phase("run_phase_5_drafts.py", extra)
         if not ok:
             logger.warning("Drafts step failed.")
+            failed_phases.append("run_phase_5_drafts.py")
     else:
         logger.info(">>> Skipping drafts (--skip-drafts)")
 
+    if failed_phases:
+        logger.error("")
+        logger.error("Daily run completed with failed phase(s): %s", ", ".join(failed_phases))
+        sys.exit(1)
+
     logger.info("")
     logger.info("=" * 60)
-    logger.info("Daily run complete. Check Zoho Drafts + your inbox.")
+    logger.info("Daily run complete. Check Gmail Drafts + your inbox.")
     logger.info("=" * 60)
 
 

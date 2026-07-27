@@ -1,5 +1,9 @@
 """
-Phase 6: Zoho mailbox sync.
+Legacy Phase 6 Zoho mailbox sync.
+
+Pontora Outreach now uses src.gmail_client for active mail workflows. This
+module is retained only until Gmail draft creation and Gmail sync are verified
+end-to-end, then it should be removed.
 
 - Scans Zoho Sent folder to detect which queued drafts were actually sent.
   Updates lead status to `sent`, records sent_at and Message-ID, schedules follow-up.

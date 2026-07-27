@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-One-time: pull a table of drafts in Zoho with school metadata from the Leads sheet.
+One-time: pull a table of Gmail drafts with school metadata from the Leads sheet.
 
 Output columns: school_name | website | owner_name | best_email
 
@@ -16,17 +16,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-import email
-import imaplib
 import logging
-import ssl
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import config, sheets
+from src import config, sheets, gmail_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,39 +31,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("list_drafts")
 
-DRAFTS_FOLDER = "Drafts"
 SCAN_DAYS = 90
 
 
 def fetch_draft_to_addresses(since_days: int = SCAN_DAYS) -> list[str]:
-    ctx = ssl.create_default_context()
-    conn = imaplib.IMAP4_SSL(
-        host=config.ZOHO_IMAP_HOST,
-        port=config.ZOHO_IMAP_PORT,
-        ssl_context=ctx,
-    )
-    conn.login(config.ZOHO_EMAIL, config.ZOHO_APP_PASSWORD)
-    addrs = []
-    try:
-        conn.select(DRAFTS_FOLDER, readonly=True)
-        since_date = (datetime.now(timezone.utc) - timedelta(days=since_days)).strftime("%d-%b-%Y")
-        status, data = conn.search(None, f'(SINCE "{since_date}")')
-        if status != "OK":
-            return []
-        for uid in data[0].split():
-            status, msg_data = conn.fetch(uid, "(RFC822.HEADER)")
-            if status != "OK":
-                continue
-            msg = email.message_from_bytes(msg_data[0][1])
-            _, to_addr = email.utils.parseaddr(msg.get("To", ""))
-            if to_addr:
-                addrs.append(to_addr.lower().strip())
-    finally:
-        try:
-            conn.logout()
-        except Exception:
-            pass
-    return addrs
+    return [d.to_email for d in gmail_client.fetch_drafts(since_days=since_days)]
 
 
 def main():
@@ -76,9 +44,7 @@ def main():
                         help="Also write drafts_table.csv")
     args = parser.parse_args()
 
-    config.validate()
-
-    logger.info("Fetching drafts from Zoho (last %d days)...", SCAN_DAYS)
+    logger.info("Fetching drafts from Gmail (last %d days)...", SCAN_DAYS)
     draft_emails = fetch_draft_to_addresses()
     logger.info("Found %d drafts", len(draft_emails))
     if not draft_emails:

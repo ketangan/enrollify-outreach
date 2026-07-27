@@ -9,10 +9,10 @@ A lead is eligible for follow-up if:
   - has not already had a follow-up sent (follow_up_sent_at empty)
 
 Uses the follow_up template from the Templates tab.
-Drafts land in Zoho as proper replies (threaded via In-Reply-To).
+Drafts land in Gmail as proper replies (threaded via In-Reply-To).
 
 Usage:
-  python scripts/run_phase_6_followup.py --dry-run
+  python scripts/run_phase_6_followup.py --dry-run   # read Gmail, no drafts or Sheet writes
   python scripts/run_phase_6_followup.py
   python scripts/run_phase_6_followup.py --limit 10
 """
@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from gspread.utils import rowcol_to_a1
 
 from scripts import audit_drafts
-from src import config, sheets, drafter, zoho, zoho_sync
+from src import config, sheets, drafter, gmail_client, brand_guard
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,6 +44,8 @@ logger = logging.getLogger("phase6fu")
 # batch_update call so concurrent workflows (Phase 5, sync) don't trip the
 # combined per-minute write quota.
 SHEET_WRITE_THROTTLE_SEC = 1.2
+FOLLOWUP_DRAFTED_ACTION = "phase6_followup_drafted"
+FOLLOWUP_LEGACY_SKIP_ACTION = "phase6_followup_skipped_missing_gmail_original"
 
 
 def _due_today(follow_up_at: str) -> bool:
@@ -57,6 +59,13 @@ def _due_today(follow_up_at: str) -> bool:
     return target <= date.today()
 
 
+def _followup_already_handled(last_action: str) -> bool:
+    return last_action.strip() in {
+        FOLLOWUP_DRAFTED_ACTION,
+        FOLLOWUP_LEGACY_SKIP_ACTION,
+    }
+
+
 def _collect_due_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
     due = []
     for i, row in enumerate(all_rows[1:], start=2):
@@ -68,8 +77,8 @@ def _collect_due_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
             continue
         if row[col["follow_up_sent_at"]].strip():
             continue  # follow-up already sent
-        if row[col["last_action"]].strip() == "phase6_followup_drafted":
-            continue  # follow-up draft already exists; wait for send/sync
+        if _followup_already_handled(row[col["last_action"]]):
+            continue  # follow-up draft exists or was deliberately skipped
         if not _due_today(row[col["follow_up_at"]]):
             continue
         lead = {h: row[idx] for h, idx in col.items() if idx < len(row)}
@@ -82,12 +91,23 @@ def _collect_due_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Read Gmail/Sheets and render candidates, but don't create drafts or write Sheets",
+    )
     parser.add_argument("--limit", type=int,
                         help="Max follow-ups (default: DEFAULT_DAILY_EMAIL_CAP)")
     args = parser.parse_args()
 
     config.validate()
+
+    if not args.dry_run:
+        try:
+            brand_guard.assert_templates_rebranded()
+        except RuntimeError as e:
+            logger.error("%s", e)
+            sys.exit(1)
 
     leads_ws = sheets.get_tab(config.TAB_LEADS)
     all_rows = leads_ws.get_all_values()
@@ -122,20 +142,47 @@ def main():
             logger.exception("Draft audit preflight failed; refusing to create follow-ups: %s", e)
             sys.exit(1)
         logger.info(
-            "Draft audit preflight loaded: %d existing Zoho draft(s)",
+            "Draft audit preflight loaded: %d existing Gmail draft(s)",
             len(existing_drafts),
         )
 
     drafts = []
     failures = []
+    skipped = []
 
     for idx, lead in enumerate(batch, start=1):
         logger.info("[%d/%d] %s", idx, len(batch), lead.get("name", "")[:60])
 
-        # Try to extract the actual greeting from the original sent email
         sent_message_id = lead.get("sent_message_id", "")
-        original_body = zoho_sync.fetch_sent_email_body(sent_message_id) if sent_message_id else ""
-        greeting = zoho_sync.extract_first_line(original_body) if original_body else ""
+        original_body = ""
+        thread_id = gmail_client.find_sent_thread_id(sent_message_id)
+        if not thread_id:
+            logger.warning(
+                "  skipping — original sent message not found in Pontora Gmail Sent"
+            )
+            if not args.dry_run:
+                leads_ws.batch_update([
+                    {"range": rowcol_to_a1(lead["_row_idx"], col["last_action"] + 1),
+                     "values": [[FOLLOWUP_LEGACY_SKIP_ACTION]]},
+                    {"range": rowcol_to_a1(lead["_row_idx"], col["notes"] + 1),
+                     "values": [[
+                         "phase6: skipped follow-up because original sent message "
+                         "was not found in Pontora Gmail Sent; likely a pre-rebrand "
+                         "or legacy-mailbox send"
+                     ]]},
+                ], value_input_option="USER_ENTERED")
+                time.sleep(SHEET_WRITE_THROTTLE_SEC)
+            skipped.append({
+                "school": lead.get("name", ""),
+                "email": lead.get("best_email", ""),
+                "reason": "missing_gmail_original",
+            })
+            continue
+
+        if not args.dry_run:
+            # Try to extract the actual greeting from the original sent email.
+            original_body = gmail_client.fetch_sent_email_body(sent_message_id)
+        greeting = gmail_client.extract_first_line(original_body) if original_body else ""
         
         rendered = drafter.render_follow_up(lead, greeting_override=greeting if greeting else None)
         
@@ -159,7 +206,7 @@ def main():
                 reason = audit_drafts.format_sources(sources)
                 logger.warning("  skipping — audit preflight blocked follow-up: %s", reason)
                 last_action = (
-                    "phase6_followup_drafted"
+                    FOLLOWUP_DRAFTED_ACTION
                     if any(s.startswith("Drafts[") for s in sources)
                     else "phase6_followup_preflight_blocked"
                 )
@@ -185,14 +232,14 @@ def main():
             continue
 
         # Build threaded reply
-        msg = zoho_sync.build_threaded_reply(
+        msg = gmail_client.build_threaded_reply(
             to_email=lead.get("best_email", ""),
             subject=rendered.subject,
             html_body=rendered.html_body,
             in_reply_to_message_id=lead.get("sent_message_id", ""),
         )
 
-        ok, err = zoho.upload_draft(msg)
+        ok, err = gmail_client.upload_draft(msg, thread_id=thread_id)
         if not ok:
             logger.error("  draft upload failed: %s", err)
             leads_ws.batch_update([
@@ -213,7 +260,7 @@ def main():
         # For now, just flag it as "follow-up drafted" via last_action.
         leads_ws.batch_update([
             {"range": rowcol_to_a1(lead["_row_idx"], col["last_action"] + 1),
-             "values": [["phase6_followup_drafted"]]},
+             "values": [[FOLLOWUP_DRAFTED_ACTION]]},
         ], value_input_option="USER_ENTERED")
         time.sleep(SHEET_WRITE_THROTTLE_SEC)
 
@@ -229,46 +276,20 @@ def main():
             )
         )
 
-    # Summary email to Ketan
+    # Summary emails used to be sent automatically. Keep the completion signal
+    # in logs because Gmail workflows are draft-only/manual-review.
     if not args.dry_run and (drafts or failures):
-        rows_html = "\n".join(
-            f"<tr><td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{d['school']}</td>"
-            f"<td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{d['email']}</td>"
-            f"<td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{d['subject']}</td></tr>"
-            for d in drafts
+        logger.info(
+            "%s follow-up summary generated. Automated summary email disabled; "
+            "review Gmail Drafts at %s",
+            config.BRAND_NAME,
+            gmail_client.GMAIL_DRAFTS_WEB_URL,
         )
-        failure_html = ""
-        if failures:
-            fail_list = "\n".join(f"<li>{f['school']}: {f['error']}</li>" for f in failures)
-            failure_html = f"<h3 style='color:#9a2a1d;'>Failures</h3><ul>{fail_list}</ul>"
-
-        summary_html = f"""
-        <html><body style="font-family:-apple-system,sans-serif;max-width:760px;margin:20px auto;">
-          <h2 style="color:#3d5a3a;">Enrollify — {len(drafts)} follow-up draft(s) ready</h2>
-          <p>Generated {datetime.now().strftime('%A %b %d at %I:%M %p')}.
-             Review and send from <a href="https://mail.zoho.com/zm/#mail/folder/drafts">Zoho Drafts</a>.</p>
-          <table style="border-collapse:collapse;width:100%;font-size:14px;">
-            <thead><tr style="background:#f3ede1;">
-              <th style="padding:8px;text-align:left;">School</th>
-              <th style="padding:8px;text-align:left;">Email</th>
-              <th style="padding:8px;text-align:left;">Subject</th>
-            </tr></thead>
-            <tbody>{rows_html}</tbody>
-          </table>
-          {failure_html}
-        </body></html>
-        """
-        summary_msg = zoho.build_message(
-            to_email=config.ZOHO_EMAIL,
-            subject=f"Enrollify: {len(drafts)} follow-up(s) ready",
-            html_body=summary_html,
-        )
-        zoho.send_message(summary_msg)
 
     logger.info("")
     logger.info("=" * 50)
-    logger.info("Phase 6 follow-up complete. Drafts: %d. Failures: %d.",
-                len(drafts), len(failures))
+    logger.info("Phase 6 follow-up complete. Drafts: %d. Skipped: %d. Failures: %d.",
+                len(drafts), len(skipped), len(failures))
 
 
 if __name__ == "__main__":

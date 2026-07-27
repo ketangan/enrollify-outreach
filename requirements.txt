@@ -10,9 +10,10 @@ googlemaps>=4.10.0
 gspread>=6.0.0
 google-auth>=2.27.0
 google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.140.0
 
 # Email
-# (stdlib imaplib, smtplib, email — no third-party needed for Zoho basics)
+# Gmail API is used for draft creation and mailbox sync.
 
 # Dates / timezones
 python-dateutil>=2.8.2

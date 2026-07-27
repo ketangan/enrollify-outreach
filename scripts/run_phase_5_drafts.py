@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-Phase 5: Generate email drafts in Zoho + send approval summary.
+Phase 5: Generate email drafts in Gmail.
 
 For each ready_to_send lead (up to daily cap):
 1. Render email from template
-2. APPEND as draft to Zoho
+2. Create Gmail draft
 3. Mark lead awaiting_approval
-4. Email Ketan a summary with direct links to Zoho drafts
 
-The summary email also reports upstream pipeline state (pending_classify,
+The summary log reports upstream pipeline state (pending_classify,
 needs_manual_review counts) so Ketan knows when to run downstream next.
 
 Invalid-enrollment-method guard:
@@ -19,7 +18,7 @@ Invalid-enrollment-method guard:
   every daily run forever.
 
 Usage:
-  python scripts/run_phase_5_drafts.py --dry-run        # render only, don't touch Zoho
+  python scripts/run_phase_5_drafts.py --dry-run        # render only, don't touch Gmail or Sheets
   python scripts/run_phase_5_drafts.py --limit 5        # cap at 5 for testing
   python scripts/run_phase_5_drafts.py                  # real run, respects DEFAULT_DAILY_EMAIL_CAP
 """
@@ -38,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from gspread.utils import rowcol_to_a1
 
 from scripts import audit_drafts
-from src import config, sheets, drafter, zoho
+from src import config, sheets, drafter, gmail_client, brand_guard
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,9 +46,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("phase5")
 
-ZOHO_DRAFTS_WEB_URL = "https://mail.zoho.com/zm/#mail/folder/drafts"
+GMAIL_DRAFTS_WEB_URL = gmail_client.GMAIL_DRAFTS_WEB_URL
 
-# Thresholds for the "what to run next" recommendation in the summary email
+# Thresholds for the "what to run next" recommendation in the summary log
 LOW_QUEUE_THRESHOLD = 10        # ready_to_send count below this = low queue
 PENDING_REFILL_THRESHOLD = 50   # pending_classify above this = worth running downstream
 
@@ -92,7 +91,7 @@ def _collect_ready_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
 
 
 def _compute_pipeline_status(all_rows: list[list[str]], col: dict) -> dict:
-    """Count leads by status. Used for the pipeline-health section of the summary email."""
+    """Count leads by status. Used for the pipeline-health section of the summary."""
     counts: dict[str, int] = {}
     status_idx = col["status"]
     for row in all_rows[1:]:
@@ -106,7 +105,7 @@ def _compute_pipeline_status(all_rows: list[list[str]], col: dict) -> dict:
 
 def _build_pipeline_section(status_counts: dict, ready_after_run: int) -> str:
     """
-    Build the pipeline-health section of the summary email.
+    Build the pipeline-health section of the summary.
     Recommends what to run next based on upstream pending counts.
     """
     pending_classify = status_counts.get("pending_classify", 0)
@@ -134,7 +133,7 @@ def _build_pipeline_section(status_counts: dict, ready_after_run: int) -> str:
     if needs_manual >= 20:
         recommendations.append(
             f"📋 <strong>{needs_manual} leads</strong> need manual review. "
-            f"<a href='https://enrollify-admin.onrender.com/review'>Open the review queue</a> "
+            f"<a href='{config.OUTREACH_ADMIN_URL}/review'>Open the review queue</a> "
             f"when you have a few minutes."
         )
 
@@ -161,7 +160,7 @@ def _build_pipeline_section(status_counts: dict, ready_after_run: int) -> str:
 def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
                         rerouted: list[dict],
                         status_counts: dict, ready_after_run: int) -> str:
-    """Build the HTML body of the morning approval email."""
+    """Build the HTML body of the morning approval summary."""
     rows = []
     for d in drafts_summary:
         website = d.get('website', '')
@@ -197,7 +196,7 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
         <h3 style="color: #c47a18; margin-top: 24px;">Rerouted to review ({len(rerouted)})</h3>
         <p style="font-size: 13px; color: #54504a;">
             These leads had a corrupted enrollment_method and would have failed every daily run.
-            They're now in the <a href="https://enrollify-admin.onrender.com/review?mode=classify">Review Classify</a> tab.
+            They're now in the <a href="{config.OUTREACH_ADMIN_URL}/review?mode=classify">Review Classify</a> tab.
         </p>
         <ul>{rr_rows}</ul>
         """
@@ -207,9 +206,9 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
     return f"""
     <html>
     <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a1915; max-width: 900px; margin: 20px auto;">
-        <h2 style="color: #3d5a3a;">Enrollify Outreach — {len(drafts_summary)} drafts ready</h2>
+        <h2 style="color: #3d5a3a;">{config.BRAND_NAME} Outreach — {len(drafts_summary)} drafts ready</h2>
         <p>Generated {datetime.now().strftime('%A %b %d, %Y at %I:%M %p')}.</p>
-        <p>Review and send from your Zoho Drafts folder: <a href="{ZOHO_DRAFTS_WEB_URL}">{ZOHO_DRAFTS_WEB_URL}</a></p>
+        <p>Review and send from Gmail Drafts: <a href="{GMAIL_DRAFTS_WEB_URL}">{GMAIL_DRAFTS_WEB_URL}</a></p>
         <table style="border-collapse: collapse; width: 100%; margin-top: 16px; font-size: 14px;">
             <thead>
                 <tr style="background: #f3ede1;">
@@ -229,7 +228,7 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
         {rerouted_section}
         {pipeline_section}
         <p style="margin-top: 24px; color: #54504a; font-size: 13px;">
-            Drafts were created but NOT sent. Open Zoho and click send on the ones you approve.
+            Drafts were created but NOT sent. Open Gmail and click send on the ones you approve.
         </p>
     </body>
     </html>
@@ -239,14 +238,21 @@ def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true",
-                        help="Render drafts but don't upload to Zoho or update sheet")
+                        help="Render drafts but don't upload to Gmail or update sheet")
     parser.add_argument("--limit", type=int,
                         help="Override daily email cap (default: from .env)")
     parser.add_argument("--no-summary", action="store_true",
-                        help="Skip sending the summary email")
+                        help="Skip summary logging")
     args = parser.parse_args()
 
     config.validate()
+
+    if not args.dry_run:
+        try:
+            brand_guard.assert_templates_rebranded()
+        except RuntimeError as e:
+            logger.error("%s", e)
+            sys.exit(1)
 
     leads_ws = sheets.get_tab(config.TAB_LEADS)
     all_rows = leads_ws.get_all_values()
@@ -352,17 +358,12 @@ def main():
 
     if not batch:
         logger.info("Nothing to do.")
-        # Still send a pipeline status email so Ketan sees the state.
+        # Still generate a pipeline status summary so Ketan can see the state in logs.
         if not args.dry_run and not args.no_summary:
             status_counts = _compute_pipeline_status(all_rows, col)
             summary_html = _build_summary_html([], [], rerouted, status_counts, ready_after_run=0)
-            summary_msg = zoho.build_message(
-                to_email=config.ZOHO_EMAIL,
-                subject="Enrollify: 0 drafts today — pipeline status inside",
-                html_body=summary_html,
-            )
-            zoho.send_message(summary_msg)
-            logger.info("Pipeline-status email sent.")
+            logger.info("Pipeline-status summary generated; Gmail send is disabled.")
+            logger.info("Review Gmail Drafts: %s", GMAIL_DRAFTS_WEB_URL)
         return
 
     audit_context = None
@@ -376,7 +377,7 @@ def main():
             logger.exception("Draft audit preflight failed; refusing to create drafts: %s", e)
             sys.exit(1)
         logger.info(
-            "Draft audit preflight loaded: %d existing Zoho draft(s)",
+            "Draft audit preflight loaded: %d existing Gmail draft(s)",
             len(existing_drafts),
         )
 
@@ -445,12 +446,12 @@ def main():
             })
             continue
 
-        msg = zoho.build_message(
+        msg = gmail_client.build_message(
             to_email=to_email,
             subject=rendered.subject,
             html_body=rendered.html_body,
         )
-        success, err = zoho.upload_draft(msg)
+        success, err = gmail_client.upload_draft(msg)
 
         if not success:
             logger.error("  draft upload failed: %s", err)
@@ -499,16 +500,12 @@ def main():
 
         summary_html = _build_summary_html(drafts_summary, failures, rerouted,
                                            status_counts, ready_after_run)
-        summary_msg = zoho.build_message(
-            to_email=config.ZOHO_EMAIL,
-            subject=f"Enrollify: {len(drafts_summary)} draft(s) ready for approval",
-            html_body=summary_html,
+        logger.info(
+            "%s draft summary generated. Automated summary email disabled; "
+            "review Gmail Drafts at %s",
+            config.BRAND_NAME,
+            GMAIL_DRAFTS_WEB_URL,
         )
-        ok, err = zoho.send_message(summary_msg)
-        if ok:
-            logger.info("Summary email sent to %s", config.ZOHO_EMAIL)
-        else:
-            logger.error("Failed to send summary: %s", err)
 
     logger.info("")
     logger.info("=" * 50)

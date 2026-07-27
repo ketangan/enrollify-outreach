@@ -1,4 +1,4 @@
-name: Daily Outreach
+name: Daily Pontora Outreach
 
 on:
   schedule:
@@ -33,18 +33,25 @@ jobs:
           mkdir -p config
           echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/google-service-account.json
 
+      - name: Write Gmail OAuth JSON files from secrets
+        run: |
+          echo "${{ secrets.GMAIL_OAUTH_CLIENT_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/gmail-oauth-client.json
+          echo "${{ secrets.GMAIL_TOKEN_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/gmail-token.json
+
       - name: Run daily pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
           GOOGLE_SHEETS_CREDENTIALS_PATH: config/google-service-account.json
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          ZOHO_EMAIL: ${{ secrets.ZOHO_EMAIL }}
-          ZOHO_APP_PASSWORD: ${{ secrets.ZOHO_APP_PASSWORD }}
-          ZOHO_IMAP_HOST: imap.zoho.com
-          ZOHO_IMAP_PORT: 993
-          ZOHO_SMTP_HOST: smtp.zoho.com
-          ZOHO_SMTP_PORT: 465
+          BRAND_NAME: Pontora
+          PRODUCT_DOMAIN: mypontora.com
+          PRODUCT_URL: https://mypontora.com
+          DEMO_URL: https://mypontora.com/demo
+          OUTREACH_EMAIL: ketan@mypontora.com
+          OUTREACH_ADMIN_URL: https://enrollify-admin.onrender.com
+          GMAIL_OAUTH_CLIENT_PATH: config/gmail-oauth-client.json
+          GMAIL_TOKEN_PATH: config/gmail-token.json
           DEFAULT_DAILY_EMAIL_CAP: 20
           WORKING_HOURS_START: 9
           WORKING_HOURS_END: 17
@@ -57,3 +64,5 @@ jobs:
         if: always()
         run: |
           rm -f config/google-service-account.json
+          rm -f config/gmail-oauth-client.json
+          rm -f config/gmail-token.json

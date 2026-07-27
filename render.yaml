@@ -3,7 +3,7 @@
 
 services:
   - type: web
-    name: enrollify-admin
+    name: pontora-outreach-admin
     runtime: python
     plan: free
     region: oregon
@@ -21,8 +21,22 @@ services:
         sync: false
       - key: GOOGLE_SHEET_ID
         sync: false
-      - key: ZOHO_APP_PASSWORD
-        sync: false
+      - key: BRAND_NAME
+        value: Pontora
+      - key: PRODUCT_DOMAIN
+        value: mypontora.com
+      - key: PRODUCT_URL
+        value: https://mypontora.com
+      - key: DEMO_URL
+        value: https://mypontora.com/demo
+      - key: OUTREACH_EMAIL
+        value: ketan@mypontora.com
+      - key: OUTREACH_ADMIN_URL
+        value: https://enrollify-admin.onrender.com
+      - key: GMAIL_OAUTH_CLIENT_PATH
+        value: /etc/secrets/gmail-oauth-client.json
+      - key: GMAIL_TOKEN_PATH
+        value: /etc/secrets/gmail-token.json
       - key: HOME_ZIP
         sync: false
       - key: GOOGLE_SHEETS_CREDENTIALS_PATH
