@@ -111,6 +111,26 @@ def test_lead_key_prefers_sent_message_id():
     assert sync._lead_key(lead) == "sent_message_id:<sent@mypontora.com>"
 
 
+def test_initial_sent_sync_skips_manual_contact_form_rows():
+    lead = {
+        "status": "sent",
+        "sent_message_id": "",
+        "last_action": "manual_contact_form_submitted",
+    }
+
+    assert not sync._eligible_for_initial_sent_sync(lead)
+
+
+def test_initial_sent_sync_allows_normal_sent_rows_without_message_id():
+    lead = {
+        "status": "sent",
+        "sent_message_id": "",
+        "last_action": "phase5_drafted",
+    }
+
+    assert sync._eligible_for_initial_sent_sync(lead)
+
+
 def test_rows_to_leads_preserves_sheet_row_numbers():
     headers = ["id", "name", "best_email", "sent_message_id"]
     col = {header: idx for idx, header in enumerate(headers)}

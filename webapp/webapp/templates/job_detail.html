@@ -10,20 +10,6 @@
       <button type="submit" class="btn-cancel" onclick="return confirm('Cancel this job? The subprocess will be terminated.')">Cancel job</button>
     </form>
   </p>
-  <script>
-    // Preserve scroll position across auto-refresh
-    (function() {
-      var key = 'jobScroll_{{ job.id }}';
-      window.addEventListener('load', function() {
-        var y = sessionStorage.getItem(key);
-        if (y !== null) window.scrollTo(0, parseInt(y, 10));
-      });
-      setTimeout(function() {
-        sessionStorage.setItem(key, String(window.scrollY));
-        location.reload();
-      }, 5000);
-    })();
-  </script>
 {% endif %}
 
 <dl class="job-meta">
@@ -37,8 +23,68 @@
   {% if job.error %}<dt>Error</dt><dd class="job-error">{{ job.error }}</dd>{% endif %}
 </dl>
 
-<h3>Log (last 200 lines)</h3>
-<pre class="log-box">{{ log or "(no log yet)" }}</pre>
+<div class="log-heading">
+  <h3>Log (last 200 lines)</h3>
+  <button type="button" id="log-jump-latest" class="btn-subtle">Jump to latest</button>
+</div>
+<pre id="job-log" class="log-box" tabindex="0">{{ log or "(no log yet)" }}</pre>
+
+<script>
+  (function() {
+    var logBox = document.getElementById('job-log');
+    if (!logBox) return;
+
+    var windowScrollKey = 'jobScroll_{{ job.id }}';
+    var logScrollKey = 'jobLogScroll_{{ job.id }}';
+    var followKey = 'jobLogFollow_{{ job.id }}';
+
+    function nearBottom() {
+      return logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 40;
+    }
+
+    function jumpToLatest() {
+      logBox.scrollTop = logBox.scrollHeight;
+      sessionStorage.setItem(followKey, '1');
+      sessionStorage.setItem(logScrollKey, String(logBox.scrollTop));
+    }
+
+    function restoreScroll() {
+      var shouldFollow = sessionStorage.getItem(followKey);
+      if (shouldFollow === null || shouldFollow === '1') {
+        jumpToLatest();
+      } else {
+        var savedLogY = sessionStorage.getItem(logScrollKey);
+        if (savedLogY !== null) logBox.scrollTop = parseInt(savedLogY, 10) || 0;
+      }
+
+      var savedWindowY = sessionStorage.getItem(windowScrollKey);
+      if (savedWindowY !== null) window.scrollTo(0, parseInt(savedWindowY, 10) || 0);
+    }
+
+    logBox.addEventListener('scroll', function() {
+      sessionStorage.setItem(logScrollKey, String(logBox.scrollTop));
+      sessionStorage.setItem(followKey, nearBottom() ? '1' : '0');
+    });
+
+    var jumpButton = document.getElementById('log-jump-latest');
+    if (jumpButton) jumpButton.addEventListener('click', jumpToLatest);
+
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', restoreScroll);
+    } else {
+      restoreScroll();
+    }
+
+    {% if job.status in ("queued", "running") %}
+      setTimeout(function() {
+        sessionStorage.setItem(windowScrollKey, String(window.scrollY));
+        sessionStorage.setItem(logScrollKey, String(logBox.scrollTop));
+        sessionStorage.setItem(followKey, nearBottom() ? '1' : '0');
+        location.reload();
+      }, 5000);
+    {% endif %}
+  })();
+</script>
 
 <p><a href="/jobs">← back to jobs list</a></p>
 {% endblock %}

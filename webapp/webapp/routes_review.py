@@ -23,7 +23,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Cookie, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -60,6 +62,9 @@ ENROLLMENT_METHOD_OPTIONS = [
     "third_party_form_qualify",
     "online_system_exclude",
 ]
+
+MANUAL_CONTACT_FORM_ACTION = "form_submitted"
+MANUAL_CONTACT_FORM_LAST_ACTION = "manual_contact_form_submitted"
 
 
 # ─── Cookie helpers ────────────────────────────────────────────────────
@@ -199,6 +204,36 @@ def _update_lead_fields(lead_id: str, updates: dict) -> bool:
             col = headers.index(key) + 1
             ws.update_cell(row_idx, col, value)
     return True
+
+
+def _append_note(existing_notes: str, note: str) -> str:
+    existing_notes = str(existing_notes or "").strip()
+    if not existing_notes:
+        return note
+    if note in existing_notes:
+        return existing_notes
+    return f"{existing_notes}|{note}"
+
+
+def _manual_contact_form_updates(
+    existing_notes: str = "",
+    now: datetime | None = None,
+) -> dict:
+    """Build the sheet updates for a website contact-form submission."""
+    now = now or datetime.now(ZoneInfo(config.TIMEZONE)).replace(microsecond=0)
+    note = (
+        f"Manual contact form submitted on {now.date().isoformat()}; "
+        "no direct email found; no Gmail thread/follow-up possible."
+    )
+    return {
+        "status": "sent",
+        "sent_at": now.isoformat(),
+        "sent_message_id": "",
+        "follow_up_at": "",
+        "follow_up_sent_at": "",
+        "last_action": MANUAL_CONTACT_FORM_LAST_ACTION,
+        "notes": _append_note(existing_notes, note),
+    }
 
 
 def _redirect_with_mode(path: str, mode: str) -> RedirectResponse:
@@ -436,6 +471,26 @@ def review_grid_update(
     best_email = best_email.strip().lower()
     enrollment_method = enrollment_method.strip()
     website = website.strip()
+
+    if action_type == MANUAL_CONTACT_FORM_ACTION:
+        lead = _find_lead_by_id(lead_id) or {}
+        updates = _manual_contact_form_updates(str(lead.get("notes", "")))
+        if owner_name:
+            updates["owner_name"] = owner_name
+        if best_email:
+            updates["best_email"] = best_email
+            updates["email_confidence"] = "manual"
+        if website:
+            updates["website"] = website
+        if enrollment_method:
+            updates["enrollment_method"] = enrollment_method
+
+        if not _update_lead_fields(lead_id, updates):
+            logger.warning(
+                "review_grid_update (form_submitted): lead %s not found",
+                lead_id,
+            )
+        return RedirectResponse(f"/review?mode={mode}&page={page}", status_code=303)
 
     updates: dict = {"last_action": "review_grid_edit"}
     if owner_name:

@@ -594,6 +594,25 @@ form.filters button:hover { background: #2d4229; }
 .job-meta dd { margin: 0; }
 .job-error { color: #6b0000; }
 
+.log-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 22px 0 8px;
+}
+.log-heading h3 { margin: 0; }
+.btn-subtle {
+  border: 1px solid #cfc8bc;
+  background: #fffaf2;
+  color: #3d5a3a;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-subtle:hover { background: #f3ede1; }
+
 .log-box {
   background: #1a1915;
   color: #d4d0c8;
@@ -632,6 +651,18 @@ form.filters button:hover { background: #2d4229; }
   white-space: nowrap;
 }
 .btn-save-row:hover { background: #2d4229; }
+.btn-form-row {
+  background: #eef7f8;
+  color: #0b5861;
+  border: 1px solid #8fcdd1;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+.btn-form-row:hover { background: #dff0f2; }
 .muted-empty {
   background: #c8e6c9;
   color: #1b5e20;

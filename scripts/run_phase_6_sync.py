@@ -41,6 +41,7 @@ logging.basicConfig(
 logger = logging.getLogger("phase6sync")
 
 FOLLOW_UP_DAYS = 7
+MANUAL_CONTACT_FORM_LAST_ACTION = "manual_contact_form_submitted"
 
 # ─── Bounce detection ──────────────────────────────────────────────────
 # Sender patterns that indicate this is a bounce, not a human reply.
@@ -166,6 +167,17 @@ def _lead_key(lead: dict) -> str:
         if value:
             return f"{field}:{value}"
     return f"name:{str(lead.get('name', '')).strip().lower()}"
+
+
+def _eligible_for_initial_sent_sync(lead: dict) -> bool:
+    """Can a Gmail sent item be attached to this lead as the initial outreach?"""
+    if str(lead.get("status", "")).strip() != "sent":
+        return False
+    if str(lead.get("sent_message_id", "")).strip():
+        return False
+    if str(lead.get("last_action", "")).strip() == MANUAL_CONTACT_FORM_LAST_ACTION:
+        return False
+    return True
 
 
 def _fallback_reply_match_allowed(reply: gmail_client.InboxReply) -> bool:
@@ -348,7 +360,7 @@ def main():
             if current_status == "awaiting_approval":
                 target = lead
                 break
-            if current_status == "sent" and not lead.get("sent_message_id"):
+            if _eligible_for_initial_sent_sync(lead):
                 target = lead
                 break
 

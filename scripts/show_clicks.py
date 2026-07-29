@@ -71,13 +71,28 @@ def main():
         logger.info("No clicks matching filters.")
         return
 
-    # Aggregate by lead_id
+    # Aggregate by lead_id. Flyer / campaign QR links are not tied to a school,
+    # so demo.html records them with a synthetic campaign:<source>:<medium>:<campaign> id.
     by_lead: dict[str, dict] = defaultdict(lambda: {"count": 0, "first": "", "last": "", "campaigns": set()})
+    by_campaign: dict[str, dict] = defaultdict(lambda: {"count": 0, "first": "", "last": "", "sources": set(), "paths": set()})
     for c in clicks:
         lead_id = str(c.get("lead_id", "")).strip()
         if not lead_id:
             continue
         ts = str(c.get("timestamp", "")).strip()
+        if lead_id.startswith("campaign:"):
+            rec = by_campaign[lead_id]
+            rec["count"] += 1
+            if not rec["first"] or ts < rec["first"]:
+                rec["first"] = ts
+            if ts > rec["last"]:
+                rec["last"] = ts
+            if c.get("utm_source"):
+                rec["sources"].add(c["utm_source"])
+            if c.get("path"):
+                rec["paths"].add(c["path"])
+            continue
+
         rec = by_lead[lead_id]
         rec["count"] += 1
         if not rec["first"] or ts < rec["first"]:
@@ -88,6 +103,8 @@ def main():
             rec["campaigns"].add(c["utm_campaign"])
 
     logger.info("  %d unique leads have clicked", len(by_lead))
+    if by_campaign:
+        logger.info("  %d campaign-level links have activity", len(by_campaign))
 
     # Read Leads + Archive to look up school details
     leads = sheets.read_all_rows(config.TAB_LEADS)
@@ -142,6 +159,26 @@ def main():
         replied = " ✉" if r["replied"] else ""
         website = (r["website"] or "")[:40]
         print(f"{r['school']:<44} {website:<42} {r['status']:<22} {r['clicks']:>6}  {r['last_click']:<20}{marker}{replied}")
+
+    if by_campaign:
+        print()
+        print("=" * 130)
+        print("CAMPAIGN / FLYER ACTIVITY")
+        print("=" * 130)
+        print(f"{'Campaign id':<62} {'Clicks':>6}  {'Last clicked':<20} {'Source':<16} {'Path'}")
+        print("-" * 130)
+        campaign_rows = []
+        for campaign_id, rec in by_campaign.items():
+            campaign_rows.append({
+                "campaign_id": campaign_id,
+                "clicks": rec["count"],
+                "last": rec["last"][:19],
+                "sources": ", ".join(sorted(rec["sources"])),
+                "paths": ", ".join(sorted(rec["paths"])),
+            })
+        campaign_rows.sort(key=lambda r: (-r["clicks"], r["last"]))
+        for r in campaign_rows:
+            print(f"{r['campaign_id'][:60]:<62} {r['clicks']:>6}  {r['last']:<20} {r['sources'][:15]:<16} {r['paths'][:30]}")
 
     # Highlight prime second-follow-up candidates
     candidates = [r for r in rows_out

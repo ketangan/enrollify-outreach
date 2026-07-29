@@ -135,7 +135,11 @@ def process_zip(zip_code: str, admin: str = "") -> dict:
 
     coverage.mark_in_progress(zip_code, city=city, state=state, admin=admin)
 
-    result = places.discover_zip(zip_code)
+    try:
+        result = places.discover_zip(zip_code)
+    except Exception:
+        coverage.mark_failed(zip_code, city=city, state=state, admin=admin)
+        raise
 
     if result["places_with_website"]:
         lead_rows = [_place_to_lead_row(p) for p in result["places_with_website"]]
@@ -206,6 +210,9 @@ def run_next(region_name: str, admin: str = "") -> bool:
     logger.info("Auto-picked zip %s for region %s", z, region_name)
     try:
         process_zip(z, admin=admin)
+    except places.PlacesAuthError as e:
+        logger.exception("Fatal Places API auth failure while processing zip %s: %s", z, e)
+        raise
     except Exception as e:
         logger.exception("Failed processing zip %s: %s", z, e)
     return True
@@ -242,6 +249,9 @@ def run_auto(
         )
         try:
             process_zip(z, admin=admin)
+        except places.PlacesAuthError as e:
+            logger.exception("Fatal Places API auth failure while processing zip %s: %s", z, e)
+            raise
         except Exception as e:
             logger.exception("Failed processing zip %s: %s", z, e)
         placed += 1

@@ -225,6 +225,12 @@
         <td style="white-space: nowrap;">
           <button type="submit" class="btn-save-row">Save</button>
           <button type="submit"
+                  class="btn-form-row"
+                  onclick="if(!confirm('Mark as contacted through the website contact form?')) return false; this.form.action_type.value='form_submitted';"
+                  title="Set status=sent and last_action=manual_contact_form_submitted without scheduling a Gmail follow-up">
+            Form sent
+          </button>
+          <button type="submit"
                   class="btn-dnc-row"
                   onclick="if(!confirm('Mark as do-not-contact?')) return false; this.form.action_type.value='dnc';"
                   title="Mark this lead as do-not-contact">

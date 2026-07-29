@@ -10,6 +10,7 @@ same functions instead of duplicating logic.
 Status transitions:
   (absent)       — never attempted
   in_progress    — someone is processing this zip right now
+  failed         — attempted, but discovery failed before completion
   complete       — done, no categories hit the 60-result cap
   partial_complete — done, but at least one category hit the cap
                      (data is real but incomplete)
@@ -39,7 +40,7 @@ class CoverageRow:
     qualified: int = 0
     contacted: int = 0
     replied: int = 0
-    status: str = ""               # in_progress / complete / partial_complete
+    status: str = ""               # in_progress / failed / complete / partial_complete
     started_date: str = ""
     completed_date: str = ""
     capped_categories: str = ""    # comma-separated category names
@@ -133,6 +134,23 @@ def mark_complete(
         replied=0,
         status="partial_complete" if capped_categories else "complete",
         capped_categories=",".join(capped_categories),
+        completed_date=date.today().isoformat(),
+        admin=admin,
+    )
+
+
+def mark_failed(
+    zip_code: str,
+    city: str,
+    state: str,
+    admin: str = "",
+) -> None:
+    """Mark a zip as failed so it does not remain stuck in_progress."""
+    sheets.upsert_coverage_row(
+        zip_code,
+        city=city,
+        state=state,
+        status="failed",
         completed_date=date.today().isoformat(),
         admin=admin,
     )

@@ -57,7 +57,7 @@ MAX_RESULTS_PER_QUERY = 60
 
 # API call counter — bumped on every Places API request (text search or details).
 # Reset via reset_api_call_count(). Read via get_api_call_count().
-api_call_count = 0
+_api_call_count = 0
  
  
 def get_api_call_count() -> int:

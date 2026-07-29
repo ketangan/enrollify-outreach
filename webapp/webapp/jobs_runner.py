@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -62,7 +63,9 @@ def _write_status(job_id: str, **updates) -> None:
         except json.JSONDecodeError:
             data = {}
     data.update(updates)
-    path.write_text(json.dumps(data, indent=2))
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp_path.write_text(json.dumps(data, indent=2))
+    tmp_path.replace(path)
 
 
 def list_jobs(limit: int = 30) -> list[dict]:
@@ -81,10 +84,13 @@ def get_job(job_id: str) -> dict | None:
     path = _job_path(job_id)
     if not path.exists():
         return None
-    try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError:
-        return None
+    for attempt in range(3):
+        try:
+            return json.loads(path.read_text())
+        except json.JSONDecodeError:
+            if attempt == 2:
+                return None
+            time.sleep(0.05)
 
 
 def _new_job_id(kind: str) -> str:
