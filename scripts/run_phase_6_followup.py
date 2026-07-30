@@ -10,6 +10,7 @@ A lead is eligible for follow-up if:
 
 Uses the follow_up template from the Templates tab.
 Drafts land in Gmail as proper replies (threaded via In-Reply-To).
+After drafting, sends an internal summary email to Ketan.
 
 Usage:
   python scripts/run_phase_6_followup.py --dry-run   # read Gmail, no drafts or Sheet writes
@@ -46,6 +47,73 @@ logger = logging.getLogger("phase6fu")
 SHEET_WRITE_THROTTLE_SEC = 1.2
 FOLLOWUP_DRAFTED_ACTION = "phase6_followup_drafted"
 FOLLOWUP_LEGACY_SKIP_ACTION = "phase6_followup_skipped_missing_gmail_original"
+
+
+def _send_summary_email(subject: str, summary_html: str) -> None:
+    to_email = config.SUMMARY_EMAIL_TO.strip()
+    if not to_email:
+        logger.info("Follow-up summary email skipped: SUMMARY_EMAIL_TO is empty.")
+        return
+
+    ok, err = gmail_client.send_internal_notification(
+        to_email=to_email,
+        subject=subject,
+        html_body=summary_html,
+    )
+    if ok:
+        logger.info("Follow-up summary email sent to %s", to_email)
+    else:
+        logger.error("Failed to send follow-up summary email: %s", err)
+
+
+def _build_summary_html(
+    drafts: list[dict],
+    failures: list[dict],
+    skipped: list[dict],
+) -> str:
+    rows_html = "\n".join(
+        f"<tr><td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{d['school']}</td>"
+        f"<td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{d['email']}</td>"
+        f"<td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{d['subject']}</td></tr>"
+        for d in drafts
+    )
+    rows_html = rows_html or (
+        "<tr><td colspan='3' style='padding:8px;'><em>No follow-up drafts created</em></td></tr>"
+    )
+
+    failure_html = ""
+    if failures:
+        fail_list = "\n".join(f"<li>{f['school']}: {f['error']}</li>" for f in failures)
+        failure_html = f"<h3 style='color:#9a2a1d;'>Failures</h3><ul>{fail_list}</ul>"
+
+    skipped_html = ""
+    if skipped:
+        skipped_list = "\n".join(
+            f"<li>{s['school']} ({s['email']}): {s['reason']}</li>"
+            for s in skipped
+        )
+        skipped_html = f"<h3 style='color:#c47a18;'>Skipped</h3><ul>{skipped_list}</ul>"
+
+    return f"""
+    <html><body style="font-family:-apple-system,sans-serif;max-width:760px;margin:20px auto;">
+      <h2 style="color:#3d5a3a;">{config.BRAND_NAME} — {len(drafts)} follow-up draft(s) ready</h2>
+      <p>Generated {datetime.now().strftime('%A %b %d at %I:%M %p')}.
+         Review and send from <a href="{gmail_client.GMAIL_DRAFTS_WEB_URL}">Gmail Drafts</a>.</p>
+      <table style="border-collapse:collapse;width:100%;font-size:14px;">
+        <thead><tr style="background:#f3ede1;">
+          <th style="padding:8px;text-align:left;">School</th>
+          <th style="padding:8px;text-align:left;">Email</th>
+          <th style="padding:8px;text-align:left;">Subject</th>
+        </tr></thead>
+        <tbody>{rows_html}</tbody>
+      </table>
+      {failure_html}
+      {skipped_html}
+      <p style="margin-top:24px;color:#54504a;font-size:13px;">
+        Follow-up drafts were created but NOT sent. Open Gmail and click send on the ones you approve.
+      </p>
+    </body></html>
+    """
 
 
 def _due_today(follow_up_at: str) -> bool:
@@ -98,6 +166,8 @@ def main():
     )
     parser.add_argument("--limit", type=int,
                         help="Max follow-ups (default: DEFAULT_DAILY_EMAIL_CAP)")
+    parser.add_argument("--no-summary", action="store_true",
+                        help="Skip sending the follow-up summary email")
     args = parser.parse_args()
 
     config.validate()
@@ -276,14 +346,12 @@ def main():
             )
         )
 
-    # Summary emails used to be sent automatically. Keep the completion signal
-    # in logs because Gmail workflows are draft-only/manual-review.
-    if not args.dry_run and (drafts or failures):
-        logger.info(
-            "%s follow-up summary generated. Automated summary email disabled; "
-            "review Gmail Drafts at %s",
-            config.BRAND_NAME,
-            gmail_client.GMAIL_DRAFTS_WEB_URL,
+    # Internal summary to Ketan. School-facing follow-ups remain Gmail drafts.
+    if not args.dry_run and not args.no_summary and (drafts or failures or skipped):
+        summary_html = _build_summary_html(drafts, failures, skipped)
+        _send_summary_email(
+            subject=f"{config.BRAND_NAME}: {len(drafts)} follow-up(s) ready",
+            summary_html=summary_html,
         )
 
     logger.info("")

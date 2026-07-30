@@ -8,9 +8,9 @@ Responsibilities:
 
 Gmail requires the gmail.compose scope to create drafts. That scope can also
 call Gmail's send endpoints, so the draft-only guarantee is enforced here:
-there is no active send implementation, and accidental send attempts fail
-closed. Outreach mail must remain draft-only until Ketan reviews and sends it
-in Gmail.
+the generic send implementation fails closed. Outreach mail must remain
+draft-only until Ketan reviews and sends it in Gmail. The only send path is a
+narrow allowlisted internal notification for operational summaries.
 """
 
 from __future__ import annotations
@@ -244,6 +244,53 @@ def upload_draft(msg: EmailMessage, thread_id: str = "") -> tuple[bool, str]:
         return True, ""
     except Exception as e:
         return False, f"gmail_draft_create_failed:{type(e).__name__}:{e}"
+
+
+def _recipient_addresses(raw: str) -> set[str]:
+    return {
+        addr.lower().strip()
+        for _, addr in email.utils.getaddresses([raw or ""])
+        if addr.strip()
+    }
+
+
+def send_internal_notification(
+    to_email: str,
+    subject: str,
+    html_body: str,
+) -> tuple[bool, str]:
+    """
+    Send an internal operational notification.
+
+    This is intentionally not a general mail sender. It may only send to the
+    configured SUMMARY_EMAIL_TO recipient(s), so outreach emails remain
+    draft-only/manual-review.
+    """
+    allowed = _recipient_addresses(config.SUMMARY_EMAIL_TO)
+    requested = _recipient_addresses(to_email)
+    if not allowed:
+        return False, "gmail_internal_notification_disabled:no_summary_email_to"
+    if not requested:
+        return False, "gmail_internal_notification_failed:no_recipient"
+    if not requested.issubset(allowed):
+        return False, "gmail_internal_notification_blocked:recipient_not_allowlisted"
+
+    msg = build_message(
+        to_email=to_email,
+        subject=subject,
+        html_body=html_body,
+        from_name=f"{config.BRAND_NAME} Outreach",
+    )
+
+    try:
+        service = get_service()
+        service.users().messages().send(
+            userId="me",
+            body={"raw": _encode_message(msg)},
+        ).execute()
+        return True, ""
+    except Exception as e:
+        return False, f"gmail_internal_notification_failed:{type(e).__name__}:{e}"
 
 
 def send_message(msg: EmailMessage) -> tuple[bool, str]:

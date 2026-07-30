@@ -226,6 +226,10 @@ def _apply_pre_filter(place: DiscoveredPlace) -> None:
     skip, reason = skip_lists.is_skipped_by_domain(place.website)
     if skip:
         place.skip_reason = reason
+        return
+    skip, reason = skip_lists.is_skipped_by_place_types(place.place_types)
+    if skip:
+        place.skip_reason = reason
 
 
 def search_zip_for_category(zip_code: str, category: str) -> tuple[list[dict], bool]:

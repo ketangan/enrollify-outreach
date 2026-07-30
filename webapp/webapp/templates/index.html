@@ -114,6 +114,7 @@
 
   {# ─── Phase 5-6: Daily ─────────────────────────── #}
   {% set dl = stage_counts.daily or {"pending": 0} %}
+  {% set ip = stage_counts.in_progress or {"pending": 0, "breakdown": {}} %}
   <div class="phase-card phase-actionable {% if dl.pending > 0 %}phase-needs-action{% else %}phase-clear{% endif %}">
     <div class="phase-header">
       <span class="phase-num">5-6</span>
@@ -122,6 +123,12 @@
     <p class="phase-desc">Create Gmail drafts, sync sent mail, replies, follow-ups.</p>
     <p class="phase-count {% if dl.pending > 0 %}phase-count-pending{% else %}phase-count-clear{% endif %}">
       <span>{{ dl.pending }}</span> ready to send
+    </p>
+    <p class="phase-context">
+      <strong>{{ ip.pending }}</strong> active outreach
+      {% if ip.pending > 0 %}
+        <br><a href="/in-progress">Review in-progress queue →</a>
+      {% endif %}
     </p>
     {% set rec = recommendations.daily %}
     <p class="phase-rec rec-{{ rec.level }}">{{ rec.text }}</p>

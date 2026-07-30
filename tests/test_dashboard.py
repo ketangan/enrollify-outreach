@@ -7,7 +7,22 @@ def test_discovery_count_tracks_new_unprocessed_leads(monkeypatch):
         {"status": "pending_classify"},
         {"status": "ready_for_owner_lookup"},
         {"status": "ready_to_send"},
-        {"status": "sent"},
+        {"status": "awaiting_approval"},
+        {
+            "status": "sent",
+            "sent_message_id": "<initial@mypontora.com>",
+            "sent_at": "2026-07-30T07:40:06-07:00",
+            "follow_up_sent_at": "",
+            "last_action": "phase6_sent_detected",
+        },
+        {
+            "status": "sent",
+            "sent_message_id": "",
+            "follow_up_sent_at": "",
+            "last_action": "manual_contact_form_submitted",
+        },
+        {"status": "replied", "sent_at": "2026-07-30T07:40:06-07:00"},
+        {"status": "replied", "sent_at": "2026-05-21T10:00:00-07:00"},
         {"status": "already_contacted"},
         {"status": "online_system_exclude"},
     ]
@@ -15,11 +30,17 @@ def test_discovery_count_tracks_new_unprocessed_leads(monkeypatch):
 
     counts = dashboard.compute_stage_counts()
 
-    assert counts["_total_leads"] == 7
+    assert counts["_total_leads"] == 11
     assert counts["discovery"]["pending"] == 2
     assert counts["discovery"]["breakdown"] == {"pending_classify": 2}
     assert counts["downstream"]["pending"] == 3
-    assert counts["_history_leads"] == 3
+    assert counts["in_progress"]["pending"] == 3
+    assert counts["in_progress"]["breakdown"] == {
+        "draft_waiting": 1,
+        "followup_pending": 1,
+        "reply_received": 1,
+    }
+    assert counts["_history_leads"] == 6
 
 
 def test_discovery_recommendation_uses_backlog_not_lifetime_total():

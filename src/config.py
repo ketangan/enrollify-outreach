@@ -28,6 +28,7 @@ PRODUCT_URL = os.getenv("PRODUCT_URL", f"https://{PRODUCT_DOMAIN}")
 DEMO_URL = os.getenv("DEMO_URL", f"{PRODUCT_URL}/demo")
 OUTREACH_EMAIL = os.getenv("OUTREACH_EMAIL", "ketan@mypontora.com")
 OUTREACH_DOMAIN = OUTREACH_EMAIL.split("@")[-1] if "@" in OUTREACH_EMAIL else PRODUCT_DOMAIN
+SUMMARY_EMAIL_TO = os.getenv("SUMMARY_EMAIL_TO", "kg.ketan@gmail.com")
 OUTREACH_ADMIN_URL = os.getenv(
     "OUTREACH_ADMIN_URL",
     "https://enrollify-admin.onrender.com",
@@ -61,6 +62,7 @@ WORKING_HOURS_START = int(os.getenv("WORKING_HOURS_START", "9"))
 WORKING_HOURS_END = int(os.getenv("WORKING_HOURS_END", "17"))
 TIMEZONE = os.getenv("TIMEZONE", "America/Los_Angeles")
 HOME_ZIP = os.getenv("HOME_ZIP", "90045")
+ACTIVE_OUTREACH_START_DATE = os.getenv("ACTIVE_OUTREACH_START_DATE", "2026-07-29")
 
 
 # --- Categories we search ---

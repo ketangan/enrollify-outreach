@@ -110,6 +110,74 @@ def test_vendor_marker_does_not_match_inside_regular_words():
     assert classifier.local_classify([page]) is None
 
 
+def test_vendor_link_is_online_system_exclude_even_when_raw_html_misses_it():
+    page = FetchedPage(
+        url="https://example-dance-studio.com/",
+        status_code=200,
+        text="Welcome to our dance studio.",
+        raw_html_snippet="",
+        outbound_links=[
+            {
+                "href": "https://app.jackrabbitclass.com/portal/ppLogin.asp?id=123",
+                "text": "Portal Login",
+            }
+        ],
+    )
+
+    result = classifier.local_classify([page])
+
+    assert result is not None
+    assert result.status == "online_system_exclude"
+    assert result.reason == "local:vendor:jackrabbitclass"
+
+
+def test_classify_lead_follows_same_site_location_subdomain_for_vendor_link(monkeypatch):
+    def fake_fetch(url):
+        if url == "https://www.freckledfrogdancestudio.com/":
+            return FetchedPage(
+                url=url,
+                status_code=200,
+                text="Freckled Frog Dance Studio",
+                raw_html_snippet="",
+                outbound_links=[
+                    {
+                        "href": "https://www.freckledfrogdancestudio.com/contact-us",
+                        "text": "Contact Us!",
+                    },
+                    {
+                        "href": "https://downey.freckledfrogdancestudio.com/",
+                        "text": "Downey Studio",
+                    },
+                ],
+            )
+        if url == "https://downey.freckledfrogdancestudio.com/":
+            return FetchedPage(
+                url=url,
+                status_code=200,
+                text="Downey classes and tuition",
+                raw_html_snippet="",
+                outbound_links=[
+                    {
+                        "href": "https://app.jackrabbitclass.com/jr3.0/ParentPortal/Login?orgID=557552",
+                        "text": "Portal Login",
+                    },
+                ],
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    monkeypatch.setattr(classifier.fetcher, "fetch", fake_fetch)
+
+    result = classifier.classify_lead(
+        "https://www.freckledfrogdancestudio.com/",
+        client=None,
+        name="Freckled Frog Dance Studio",
+    )
+
+    assert result.status == "online_system_exclude"
+    assert result.reason == "local:vendor:jackrabbitclass"
+    assert result.pages_fetched == 2
+
+
 def test_skip_lists_exclude_childplus_and_family_services():
     assert skip_lists.is_skipped_by_domain("https://www.childplus.net/apply")[0]
     assert skip_lists.is_skipped_by_name("St. Anne's Family Services")[0]
@@ -123,6 +191,10 @@ def test_skip_lists_exclude_recent_bad_lead_names():
         "GEOS Languages Plus Los Angeles",
         "Good Beginnings Head Start",
         "Fairfield Family Branch YMCA",
+        "Big 5 Sporting Goods",
+        "Dick's Sporting Goods",
+        "Lakeshore Learning",
+        "Shiekh",
     ]:
         skipped, reason = skip_lists.is_skipped_by_name(name)
         assert skipped, name
@@ -131,11 +203,15 @@ def test_skip_lists_exclude_recent_bad_lead_names():
 
 def test_skip_lists_exclude_public_chain_and_shopping_domains():
     for website in [
+        "https://www.big5sportinggoods.com/",
+        "https://www.dickssportinggoods.com/",
         "https://enterprise.lacountypools.com/",
         "https://evanscas.lausd.org/",
         "https://grattseec-lausd-ca.schoolloop.com/",
+        "https://www.lakeshorelearning.com/",
         "https://www.myeyelevel.com/US/center/torrance",
         "https://www.pacela.org/",
+        "https://www.shiekh.com/stores/compton",
         "https://www.shopgatewaytownecenter.com/",
         "https://www.ymca.org/locations/fairfield-family-branch-ymca-0",
     ]:

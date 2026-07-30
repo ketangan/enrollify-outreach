@@ -2,16 +2,18 @@
 
 Pontora Outreach uses the Gmail API for:
 
-- creating outreach drafts for manual review and sending
+- creating outreach drafts that Ketan manually reviews and sends
+- sending the internal daily draft-summary notification to Ketan
 - reading Gmail Drafts for duplicate-draft audits
 - reading Gmail Sent for send/follow-up detection
 - reading Gmail Inbox for replies and bounces
 
-It does not request `gmail.send`, and active scripts do not call Gmail send
-endpoints. Important caveat: Google requires `gmail.compose` for draft
-creation, and that scope can technically send mail through Gmail's API. The
-application-level guard is that `src.gmail_client.send_message()` is disabled
-and active workflows only create drafts for manual review.
+It does not request `gmail.send`. Important caveat: Google requires
+`gmail.compose` for draft creation, and that scope can technically send mail
+through Gmail's API. The application-level guard is that
+`src.gmail_client.send_message()` is disabled, outreach workflows only create
+drafts for manual review, and the one internal notification sender is limited
+to `SUMMARY_EMAIL_TO`.
 
 ## Required Google Cloud Setup
 
@@ -104,6 +106,7 @@ Set env vars:
 GMAIL_OAUTH_CLIENT_PATH=/etc/secrets/gmail-oauth-client.json
 GMAIL_TOKEN_PATH=/etc/secrets/gmail-token.json
 OUTREACH_EMAIL=ketan@mypontora.com
+SUMMARY_EMAIL_TO=kg.ketan@gmail.com
 ```
 
 ## OAuth Testing Caveat

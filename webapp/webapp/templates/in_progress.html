@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>In Progress</h2>
+
+<p class="muted">
+  Active outreach rows: Gmail drafts waiting, initial emails sent and pending follow-up, and replies that need a decision.
+  Sent/replied rows are limited to the current outreach campaign starting {{ active_start_date }}.
+  Rows disappear from this view after a follow-up is sent, or after they become DNC / bounced / closed.
+</p>
+
+<form method="GET" action="/in-progress" class="filters">
+  <label>
+    Search:
+    <input type="search" name="q" value="{{ q }}" placeholder="School name, website, or email..." style="width: 260px;">
+  </label>
+  <button type="submit">Apply</button>
+  <a href="/in-progress" class="muted-link">Clear</a>
+</form>
+
+<p class="muted">Showing {{ rows|length }} of {{ total }} active outreach row{% if total != 1 %}s{% endif %}.</p>
+
+<table class="data-table in-progress-table">
+  <thead>
+    <tr>
+      <th>School</th>
+      <th>Status</th>
+      <th>Stage</th>
+      <th>Contact</th>
+      <th>Sent</th>
+      <th>Follow-up</th>
+      <th>Last Action</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    {% set stage = r.get("_active_stage", {}) %}
+    <tr>
+      <td>
+        <div class="school-name">{{ r.get("name", "") }}</div>
+        <div class="school-meta">
+          {{ r.get("category", "") }} · {{ r.get("zip", "") }}
+          {% if r.get("website") %}
+            · <a href="{{ r.get('website') }}" target="_blank" rel="noopener">website</a>
+          {% endif %}
+          · <a href="/review?id={{ r.get('id', '') }}">review</a>
+        </div>
+      </td>
+      <td><span class="status-tag status-{{ r.get('status', '')|replace('_', '-') }}">{{ r.get("status", "") }}</span></td>
+      <td>
+        <strong>{{ stage.get("label", "") }}</strong>
+        <div class="school-meta">{{ stage.get("detail", "") }}</div>
+      </td>
+      <td>
+        <div>{{ r.get("owner_name", "") }}</div>
+        <div class="school-meta">{{ r.get("best_email", "") }}</div>
+      </td>
+      <td>{{ (r.get("sent_at", "") or "")[:10] }}</td>
+      <td>{{ r.get("follow_up_at", "") }}</td>
+      <td>{{ r.get("last_action", "") }}</td>
+      <td>
+        <form method="POST" action="/in-progress/dnc" class="inline-dnc-form">
+          <input type="hidden" name="lead_id" value="{{ r.get('id', '') }}">
+          <input type="hidden" name="q" value="{{ q }}">
+          <input type="hidden" name="page" value="{{ page }}">
+          <select name="reason" class="dnc-reason" aria-label="DNC reason">
+            <option value="not_interested_or_unqualified_after_contact">Not interested</option>
+            <option value="already_uses_enrollment_software">Uses software</option>
+            <option value="wrong_business_type">Wrong type</option>
+            <option value="requested_no_contact">Asked stop</option>
+          </select>
+          <button type="submit"
+                  class="btn-dnc-small"
+                  onclick="return confirm('Mark this lead as do-not-contact and block follow-up?')">
+            DNC
+          </button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">No active outreach rows.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+  {% if page > 1 %}
+    <a href="/in-progress?q={{ q }}&page={{ page - 1 }}">Prev</a>
+  {% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}
+    <a href="/in-progress?q={{ q }}&page={{ page + 1 }}">Next</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -24,8 +24,9 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
 
-# Keywords in link text/href that suggest the link leads to an enrollment page
-ENROLLMENT_LINK_PATTERNS = [
+# Strong keywords in link text/href that suggest the link leads to an
+# enrollment, pricing, schedule, or portal page.
+PRIMARY_ENROLLMENT_LINK_PATTERNS = [
     r"enroll",
     r"register",
     r"apply",
@@ -33,8 +34,27 @@ ENROLLMENT_LINK_PATTERNS = [
     r"admission",
     r"sign[-_\s]?up",
     r"join",
+    r"portal",
+    r"login",
+    r"class(?:es)?",
+    r"programs?",
+    r"pricing",
+    r"tuition",
+    r"schedule",
+]
+
+# Useful but weaker links. Contact pages often clarify the enrollment path,
+# but they should not crowd out stronger location/portal evidence.
+SECONDARY_ENROLLMENT_LINK_PATTERNS = [
     r"contact",
     r"get[-_\s]?started",
+]
+
+LOCATION_LINK_PATTERNS = [
+    r"studio",
+    r"location",
+    r"campus",
+    r"branch",
 ]
 
 # Tags we strip entirely — pure noise
@@ -115,6 +135,31 @@ def _same_domain(a: str, b: str) -> bool:
         return da and db and da == db
     except Exception:
         return False
+
+
+def _registrable_domain(url: str) -> str:
+    """
+    Lightweight same-site grouping for common school domains.
+    This intentionally handles the practical .com/.org/.net case without
+    adding a public-suffix dependency for the outreach scraper.
+    """
+    try:
+        host = urlparse(url).netloc.lower().split("@")[-1].split(":")[0]
+        host = host.lstrip("www.")
+        parts = [p for p in host.split(".") if p]
+        if len(parts) < 2:
+            return host
+        return ".".join(parts[-2:])
+    except Exception:
+        return ""
+
+
+def _same_site(a: str, b: str) -> bool:
+    if _same_domain(a, b):
+        return True
+    da = _registrable_domain(a)
+    db = _registrable_domain(b)
+    return bool(da and db and da == db)
 
 
 def fetch(url: str) -> FetchedPage:
@@ -205,16 +250,35 @@ def find_enrollment_links(page: FetchedPage, max_links: int = 3) -> list[str]:
     """From a fetched homepage, pick up to max_links that look enrollment-related."""
     if not page.outbound_links:
         return []
-    pattern = re.compile("|".join(ENROLLMENT_LINK_PATTERNS), re.IGNORECASE)
+    primary_pattern = re.compile("|".join(PRIMARY_ENROLLMENT_LINK_PATTERNS), re.IGNORECASE)
+    secondary_pattern = re.compile("|".join(SECONDARY_ENROLLMENT_LINK_PATTERNS), re.IGNORECASE)
+    location_pattern = re.compile("|".join(LOCATION_LINK_PATTERNS), re.IGNORECASE)
     candidates = []
     base_url = page.url
-    for link in page.outbound_links:
+    seen = set()
+    for order, link in enumerate(page.outbound_links):
         href = link["href"]
         text = link["text"]
-        if not _same_domain(base_url, href):
+        if not _same_site(base_url, href):
             continue
-        if pattern.search(href) or pattern.search(text):
-            candidates.append(href)
-            if len(candidates) >= max_links:
-                break
-    return candidates
+        if href in seen:
+            continue
+
+        signal = f"{text} {href}"
+        priority = None
+        if primary_pattern.search(signal):
+            priority = 0
+        elif location_pattern.search(text):
+            # Location subdomains often carry the actual registration portal.
+            # Do not inspect the full href here: domains like dancestudio.com
+            # would make every link look like a location.
+            priority = 1
+        elif secondary_pattern.search(signal):
+            priority = 2
+
+        if priority is not None:
+            seen.add(href)
+            candidates.append((priority, order, href))
+
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return [href for _, _, href in candidates[:max_links]]

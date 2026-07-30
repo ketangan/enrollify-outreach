@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src import config, sheets
-from webapp.webapp import jobs_runner
+from webapp.webapp import jobs_runner, outreach_state
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,17 @@ def compute_stage_counts() -> dict:
             "pending": pending,
             "breakdown": breakdown,
         }
+
+    in_progress_breakdown: dict[str, int] = {}
+    for r in rows:
+        if not outreach_state.is_active_outreach(r):
+            continue
+        stage = outreach_state.active_stage(r)["key"]
+        in_progress_breakdown[stage] = in_progress_breakdown.get(stage, 0) + 1
+    counts["in_progress"] = {
+        "pending": sum(in_progress_breakdown.values()),
+        "breakdown": in_progress_breakdown,
+    }
 
     counts["_total_leads"] = len(rows)
     counts["_status_totals"] = status_totals

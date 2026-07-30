@@ -6,8 +6,9 @@ For each ready_to_send lead (up to daily cap):
 1. Render email from template
 2. Create Gmail draft
 3. Mark lead awaiting_approval
+4. Email Ketan an internal summary with a link to Gmail drafts
 
-The summary log reports upstream pipeline state (pending_classify,
+The summary email reports upstream pipeline state (pending_classify,
 needs_manual_review counts) so Ketan knows when to run downstream next.
 
 Invalid-enrollment-method guard:
@@ -48,7 +49,7 @@ logger = logging.getLogger("phase5")
 
 GMAIL_DRAFTS_WEB_URL = gmail_client.GMAIL_DRAFTS_WEB_URL
 
-# Thresholds for the "what to run next" recommendation in the summary log
+# Thresholds for the "what to run next" recommendation in the summary email
 LOW_QUEUE_THRESHOLD = 10        # ready_to_send count below this = low queue
 PENDING_REFILL_THRESHOLD = 50   # pending_classify above this = worth running downstream
 
@@ -91,7 +92,7 @@ def _collect_ready_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
 
 
 def _compute_pipeline_status(all_rows: list[list[str]], col: dict) -> dict:
-    """Count leads by status. Used for the pipeline-health section of the summary."""
+    """Count leads by status. Used for the pipeline-health section of the summary email."""
     counts: dict[str, int] = {}
     status_idx = col["status"]
     for row in all_rows[1:]:
@@ -105,7 +106,7 @@ def _compute_pipeline_status(all_rows: list[list[str]], col: dict) -> dict:
 
 def _build_pipeline_section(status_counts: dict, ready_after_run: int) -> str:
     """
-    Build the pipeline-health section of the summary.
+    Build the pipeline-health section of the summary email.
     Recommends what to run next based on upstream pending counts.
     """
     pending_classify = status_counts.get("pending_classify", 0)
@@ -155,6 +156,23 @@ def _build_pipeline_section(status_counts: dict, ready_after_run: int) -> str:
         {recs_html}
     </div>
     """
+
+
+def _send_summary_email(subject: str, summary_html: str) -> None:
+    to_email = config.SUMMARY_EMAIL_TO.strip()
+    if not to_email:
+        logger.info("Summary email skipped: SUMMARY_EMAIL_TO is empty.")
+        return
+
+    ok, err = gmail_client.send_internal_notification(
+        to_email=to_email,
+        subject=subject,
+        html_body=summary_html,
+    )
+    if ok:
+        logger.info("Summary email sent to %s", to_email)
+    else:
+        logger.error("Failed to send summary email: %s", err)
 
 
 def _build_summary_html(drafts_summary: list[dict], failures: list[dict],
@@ -242,7 +260,7 @@ def main():
     parser.add_argument("--limit", type=int,
                         help="Override daily email cap (default: from .env)")
     parser.add_argument("--no-summary", action="store_true",
-                        help="Skip summary logging")
+                        help="Skip sending the summary email")
     args = parser.parse_args()
 
     config.validate()
@@ -358,12 +376,14 @@ def main():
 
     if not batch:
         logger.info("Nothing to do.")
-        # Still generate a pipeline status summary so Ketan can see the state in logs.
+        # Still send a pipeline status summary so Ketan sees the state.
         if not args.dry_run and not args.no_summary:
             status_counts = _compute_pipeline_status(all_rows, col)
             summary_html = _build_summary_html([], [], rerouted, status_counts, ready_after_run=0)
-            logger.info("Pipeline-status summary generated; Gmail send is disabled.")
-            logger.info("Review Gmail Drafts: %s", GMAIL_DRAFTS_WEB_URL)
+            _send_summary_email(
+                subject=f"{config.BRAND_NAME}: 0 drafts today — pipeline status inside",
+                summary_html=summary_html,
+            )
         return
 
     audit_context = None
@@ -498,13 +518,16 @@ def main():
         status_counts = _compute_pipeline_status(fresh_rows, col)
         ready_after_run = status_counts.get("ready_to_send", 0)
 
-        summary_html = _build_summary_html(drafts_summary, failures, rerouted,
-                                           status_counts, ready_after_run)
-        logger.info(
-            "%s draft summary generated. Automated summary email disabled; "
-            "review Gmail Drafts at %s",
-            config.BRAND_NAME,
-            GMAIL_DRAFTS_WEB_URL,
+        summary_html = _build_summary_html(
+            drafts_summary,
+            failures,
+            rerouted,
+            status_counts,
+            ready_after_run,
+        )
+        _send_summary_email(
+            subject=f"{config.BRAND_NAME}: {len(drafts_summary)} draft(s) ready for approval",
+            summary_html=summary_html,
         )
 
     logger.info("")

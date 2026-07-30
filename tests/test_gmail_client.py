@@ -36,6 +36,55 @@ def test_send_message_is_disabled():
     assert err == "gmail_send_disabled:manual_review_required"
 
 
+def test_internal_notification_sends_only_allowlisted_summary_recipient(monkeypatch):
+    captured = {}
+
+    class ExecuteCall:
+        def execute(self):
+            return {"id": "sent-1"}
+
+    class Messages:
+        def send(self, userId, body):
+            captured["userId"] = userId
+            captured["body"] = body
+            return ExecuteCall()
+
+    class Users:
+        def messages(self):
+            return Messages()
+
+    class Service:
+        def users(self):
+            return Users()
+
+    monkeypatch.setattr(gmail_client.config, "SUMMARY_EMAIL_TO", "kg.ketan@gmail.com")
+    monkeypatch.setattr(gmail_client, "get_service", lambda: Service())
+
+    ok, err = gmail_client.send_internal_notification(
+        to_email="kg.ketan@gmail.com",
+        subject="Pontora: 20 draft(s) ready for approval",
+        html_body="<p>Review drafts</p>",
+    )
+
+    assert ok
+    assert err == ""
+    assert captured["userId"] == "me"
+    assert captured["body"]["raw"]
+
+
+def test_internal_notification_blocks_non_allowlisted_recipient(monkeypatch):
+    monkeypatch.setattr(gmail_client.config, "SUMMARY_EMAIL_TO", "kg.ketan@gmail.com")
+
+    ok, err = gmail_client.send_internal_notification(
+        to_email="school@example.com",
+        subject="Pontora: 20 draft(s) ready for approval",
+        html_body="<p>Review drafts</p>",
+    )
+
+    assert not ok
+    assert err == "gmail_internal_notification_blocked:recipient_not_allowlisted"
+
+
 def test_upload_draft_includes_thread_id(monkeypatch):
     captured = {}
 

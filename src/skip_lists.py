@@ -52,6 +52,8 @@ NON_TARGET_EXACT_NAMES = {
     "los angeles",
     "la county",
     "city of la",
+    "lakeshore learning",
+    "shiekh",
 }
 
 NON_TARGET_NAME_PATTERNS = {
@@ -61,6 +63,7 @@ NON_TARGET_NAME_PATTERNS = {
     "la lakers",
     "los angeles clippers",
     "la clippers",
+    "lakeshore learning",
     "major league soccer",
     "la fitness",
     "24 hour fitness",
@@ -80,10 +83,12 @@ NON_TARGET_NAME_PATTERNS = {
     "public pool",
     "swim stadium",
     "sports massage",
+    "sporting goods",
     "personal trainer",
     "personal training",
     "shopping center",
     "shopping mall",
+    "shoe store",
     "public library",
     "public school",
     "elementary school",
@@ -134,16 +139,49 @@ ENROLLMENT_VENDOR_DOMAINS = {
     "childplus.net",
 }
 
+# Places API type values that are clearly retail/public-facility results, not
+# independent schools or activity programs. Keep this list conservative; Phase 3
+# still handles ambiguous sites with content-based checks.
+NON_TARGET_PLACE_TYPES = {
+    "book_store",
+    "clothing_store",
+    "department_store",
+    "home_goods_store",
+    "shoe_store",
+    "sporting_goods_store",
+    "store",
+    "shopping_mall",
+    "toy_store",
+}
+
+TARGET_PLACE_TYPES = {
+    "child_care_agency",
+    "dance_school",
+    "education",
+    "educational_institution",
+    "martial_arts_school",
+    "music_school",
+    "preschool",
+    "school",
+    "sports_activity_location",
+    "swimming_school",
+    "tutoring_service",
+}
+
 # Domains that indicate the school is too large / already digital
 EXCLUDED_TLDS = (".edu", ".gov")
 
 EXCLUDED_DOMAINS = {
+    "big5sportinggoods.com",
     "comptoncity.org",
+    "dickssportinggoods.com",
     "lacountypools.com",
+    "lakeshorelearning.com",
     "lausd.org",
     "myeyelevel.com",
     "pacela.org",
     "schoolloop.com",
+    "shiekh.com",
     "shopgatewaytownecenter.com",
     "sprachcaffe.com",
     "ymca.org",
@@ -189,4 +227,15 @@ def is_skipped_by_domain(website: str) -> tuple[bool, str]:
         if domain in website_lower:
             return True, f"excluded_domain:{domain}"
 
+    return False, ""
+
+
+def is_skipped_by_place_types(place_types: list[str] | tuple[str, ...] | None) -> tuple[bool, str]:
+    """Returns (skip, reason). True if Places classified this as clear retail/non-target."""
+    normalized = {str(t or "").strip().lower() for t in (place_types or [])}
+    if normalized & TARGET_PLACE_TYPES:
+        return False, ""
+    for place_type in sorted(NON_TARGET_PLACE_TYPES):
+        if place_type in normalized:
+            return True, f"non_target_place_type:{place_type}"
     return False, ""

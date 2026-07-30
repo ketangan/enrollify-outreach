@@ -9,8 +9,9 @@ Runs in order:
 4. Phase 5 drafts — audit-gated initial outreach up to daily cap
 
 All of Ketan's approval actions happen in Gmail Drafts after this runs.
-Sub-phases log their summaries. Mail remains manual-review only because active
-Gmail workflows create drafts and never call Gmail send endpoints.
+Sub-phases email internal summaries when configured. Outreach mail remains
+manual-review only because active outreach workflows create drafts and never
+send school-facing email through the API.
 
 Usage:
   python scripts/run_daily.py              # normal run

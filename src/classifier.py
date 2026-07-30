@@ -142,6 +142,14 @@ def _check_keywords(text: str, keyword_list: list[str]) -> tuple[bool, str]:
     return False, ""
 
 
+def _link_signal(pages: list[fetcher.FetchedPage]) -> str:
+    parts: list[str] = []
+    for page in pages:
+        for link in page.outbound_links:
+            parts.append(f"{link.get('text', '')} {link.get('href', '')}")
+    return " ".join(parts)
+
+
 def _check_non_target_org(text: str) -> tuple[bool, str]:
     hit, reason = _check_keywords(text, NON_TARGET_ORG_KEYWORDS)
     if hit:
@@ -195,10 +203,11 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
     """
     Fast, free keyword/pattern check. Returns None if no confident verdict.
     """
+    combined_links = _link_signal(pages)
     combined_snippet = " ".join(p.raw_html_snippet for p in pages if p.raw_html_snippet)
     combined_text = " ".join(p.text for p in pages if p.text)
 
-    hit, reason = _check_vendor_markers(combined_snippet)
+    hit, reason = _check_vendor_markers(f"{combined_snippet} {combined_links}")
     if hit:
         return Classification(
             status="online_system_exclude",
@@ -235,7 +244,7 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
             pages_fetched=len(pages),
         )
 
-    hit, reason = _check_keywords(combined_text, ONLINE_SYSTEM_KEYWORDS)
+    hit, reason = _check_keywords(f"{combined_text} {combined_links}", ONLINE_SYSTEM_KEYWORDS)
     if hit:
         return Classification(
             status="online_system_exclude",
