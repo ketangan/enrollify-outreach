@@ -281,7 +281,11 @@ def render_email(lead: dict) -> RenderedEmail | None:
         return None
 
     owner_name = str(lead.get("owner_name", "")).strip()
-    school_name = clean_school_name(str(lead.get("name", "")).strip())
+    school_name = clean_school_name(
+        str(lead.get("name", "")).strip(),
+        city=str(lead.get("city", "")).strip(),
+        state=str(lead.get("state", "")).strip(),
+    )
     category = str(lead.get("category", "")).strip() or "school"
     lead_id = str(lead.get("id", "")).strip()
 
@@ -326,7 +330,11 @@ def render_follow_up(lead: dict, greeting_override: str | None = None) -> Render
         return None
 
     owner_name = str(lead.get("owner_name", "")).strip()
-    school_name = clean_school_name(str(lead.get("name", "")).strip())
+    school_name = clean_school_name(
+        str(lead.get("name", "")).strip(),
+        city=str(lead.get("city", "")).strip(),
+        state=str(lead.get("state", "")).strip(),
+    )
     greeting = _greeting_name(owner_name) or "there"
     lead_id = str(lead.get("id", "")).strip()
 

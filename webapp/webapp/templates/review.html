@@ -32,7 +32,7 @@
   {% if mode == 'classify' %}
     Phase 3 couldn't classify these. Look at the website and pick the enrollment method — or mark do-not-contact if the school has an online enrollment system.
   {% elif mode == 'owner' %}
-    Phase 4 couldn't find owner/email. Look at the website and fill in what you can.
+    Phase 4 couldn't find owner/email. Fill in what you can. If the email is good but no person is findable, approve it without owner and the draft will use "Hi there".
   {% else %}
     Ready-to-send leads with no owner name. Fix the name so the draft uses it instead of "Hi there".
   {% endif %}
@@ -78,6 +78,7 @@
     <form method="POST" action="/review/save" class="review-form">
       <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
       <input type="hidden" name="mode" value="{{ mode }}">
+      <input type="hidden" name="action_type" value="save">
 
       <label>
         School name
@@ -111,6 +112,14 @@
 
       <div class="review-actions">
         <button type="submit" class="btn-primary">Save &amp; next</button>
+        {% if mode == 'owner' %}
+          <button type="submit"
+                  class="btn-secondary-action"
+                  onclick="if(!this.form.best_email.value.trim()){alert('Best email is required before approving without owner.'); return false;} this.form.action_type.value='approve_without_owner';"
+                  title="Move to ready_to_send with a blank owner. The email draft will start with Hi there.">
+            Approve without owner
+          </button>
+        {% endif %}
       </div>
     </form>
 
@@ -224,6 +233,14 @@
         </td>
         <td style="white-space: nowrap;">
           <button type="submit" class="btn-save-row">Save</button>
+          {% if mode == 'owner' %}
+          <button type="submit"
+                  class="btn-approve-row"
+                  onclick="if(!this.form.best_email.value.trim()){alert('Best email is required before approving without owner.'); return false;} this.form.action_type.value='approve_without_owner';"
+                  title="Move to ready_to_send with a blank owner. The email draft will start with Hi there.">
+            No owner OK
+          </button>
+          {% endif %}
           <button type="submit"
                   class="btn-form-row"
                   onclick="if(!confirm('Mark as contacted through the website contact form?')) return false; this.form.action_type.value='form_submitted';"

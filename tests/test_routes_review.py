@@ -71,3 +71,58 @@ def test_grid_form_submitted_action_updates_manual_contact_state(monkeypatch):
             "enrollment_method": "contact_form_qualify",
         },
     }
+
+
+def test_top_card_owner_review_can_approve_without_owner(monkeypatch):
+    captured = {}
+
+    def fake_update(lead_id, updates):
+        captured["lead_id"] = lead_id
+        captured["updates"] = updates
+        return True
+
+    monkeypatch.setattr(routes_review, "_update_lead_fields", fake_update)
+
+    response = routes_review.review_save(
+        lead_id="90089-47c537",
+        name="A1 College Prep",
+        owner_name="",
+        best_email="admin@a1collegeprep.com",
+        enrollment_method="contact_form_qualify",
+        action_type=routes_review.APPROVE_WITHOUT_OWNER_ACTION,
+        mode=routes_review.MODE_OWNER,
+        review_history=None,
+        review_skipped=None,
+    )
+
+    assert response.status_code == 303
+    assert captured["updates"]["status"] == "ready_to_send"
+    assert captured["updates"]["owner_name"] == ""
+    assert captured["updates"]["best_email"] == "admin@a1collegeprep.com"
+    assert captured["updates"]["last_action"] == "review_approved_without_owner"
+
+
+def test_grid_owner_review_save_with_email_promotes_even_without_owner(monkeypatch):
+    captured = {}
+
+    def fake_update(lead_id, updates):
+        captured["lead_id"] = lead_id
+        captured["updates"] = updates
+        return True
+
+    monkeypatch.setattr(routes_review, "_update_lead_fields", fake_update)
+
+    response = routes_review.review_grid_update(
+        lead_id="90089-47c537",
+        owner_name="",
+        best_email="admin@a1collegeprep.com",
+        enrollment_method="contact_form_qualify",
+        website="",
+        mode=routes_review.MODE_OWNER,
+        page=1,
+        action_type="save",
+    )
+
+    assert response.status_code == 303
+    assert captured["updates"]["status"] == "ready_to_send"
+    assert captured["updates"]["best_email"] == "admin@a1collegeprep.com"

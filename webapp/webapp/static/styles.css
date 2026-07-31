@@ -316,6 +316,8 @@ form.filters button:hover { background: #2d4229; }
 
 .review-actions {
   margin-top: 18px;
+  display: grid;
+  gap: 10px;
 }
 .btn-primary {
   width: 100%;
@@ -329,6 +331,18 @@ form.filters button:hover { background: #2d4229; }
   cursor: pointer;
 }
 .btn-primary:hover { background: #2d4229; }
+.btn-secondary-action {
+  width: 100%;
+  background: #fffaf2;
+  color: #3d5a3a;
+  border: 1px solid #cfc8bc;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-secondary-action:hover { background: #f3ede1; }
 
 .review-secondary {
   margin-top: 14px;
@@ -664,6 +678,18 @@ form.filters button:hover { background: #2d4229; }
   margin-left: 4px;
 }
 .btn-form-row:hover { background: #dff0f2; }
+.btn-approve-row {
+  background: #fffaf2;
+  color: #3d5a3a;
+  border: 1px solid #cfc8bc;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+.btn-approve-row:hover { background: #f3ede1; }
 .btn-dnc-row,
 .btn-dnc-small {
   background: #fff;

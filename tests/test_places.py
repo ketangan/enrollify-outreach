@@ -28,6 +28,24 @@ def test_places_prefilter_skips_retail_place_types():
     assert place.skip_reason == "non_target_place_type:shoe_store"
 
 
+def test_parse_place_cleans_city_suffix_using_address_components():
+    raw = {
+        "id": "place-1",
+        "displayName": {"text": "Power of One Self-Defense - Long Beach"},
+        "formattedAddress": "123 Main St, Long Beach, CA 90802",
+        "addressComponents": [
+            {"longText": "Long Beach", "shortText": "Long Beach", "types": ["locality"]},
+            {"longText": "California", "shortText": "CA", "types": ["administrative_area_level_1"]},
+            {"longText": "90802", "shortText": "90802", "types": ["postal_code"]},
+        ],
+    }
+
+    place = places._parse_place(raw, category="martial_arts", fallback_zip="90802")
+
+    assert place.name == "Power of One Self-Defense"
+    assert place.city == "Long Beach"
+
+
 def test_places_prefilter_does_not_skip_target_school_with_store_type():
     place = places.DiscoveredPlace(
         place_id="abc",

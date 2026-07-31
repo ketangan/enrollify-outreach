@@ -187,7 +187,6 @@ def _extract_components(addr_components: list[dict]) -> tuple[str, str, str]:
 
 
 def _parse_place(raw: dict, category: str, fallback_zip: str) -> DiscoveredPlace:
-    name = clean_school_name(raw.get("displayName", {}).get("text", ""))
     place_id = raw.get("id", "")
     address = raw.get("formattedAddress", "")
     website = raw.get("websiteUri", "")
@@ -201,6 +200,11 @@ def _parse_place(raw: dict, category: str, fallback_zip: str) -> DiscoveredPlace
     city, state, zip_code = _extract_components(addr_components)
     if not zip_code:
         zip_code = fallback_zip
+    name = clean_school_name(
+        raw.get("displayName", {}).get("text", ""),
+        city=city,
+        state=state,
+    )
 
     return DiscoveredPlace(
         place_id=place_id,

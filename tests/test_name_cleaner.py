@@ -18,6 +18,30 @@ def test_clean_school_name_title_cases_all_caps_without_shouting():
 def test_clean_school_name_removes_trailing_location_suffixes():
     assert clean_school_name("10th Planet Jiu Jitsu - West LA") == "10th Planet Jiu Jitsu"
     assert clean_school_name("10th Planet Jiu Jitsu - Downtown Los Angeles") == "10th Planet Jiu Jitsu"
+    assert (
+        clean_school_name("Power of One Self-Defense - Long Beach", city="Long Beach", state="CA")
+        == "Power of One Self-Defense"
+    )
+    assert (
+        clean_school_name("Some Preschool Los Angeles", city="Los Angeles", state="CA")
+        == "Some Preschool"
+    )
+    assert (
+        clean_school_name("CODELA Preschool Hawthorne C.D.C", city="Hawthorne", state="CA")
+        == "CODELA Preschool"
+    )
+    assert (
+        clean_school_name("Bessie Pregerson Child Development Center", city="Los Angeles", state="CA")
+        == "Bessie Pregerson Child Development Center"
+    )
+    assert (
+        clean_school_name("Alliance Française de Los Angeles", city="Los Angeles", state="CA")
+        == "Alliance Française de Los Angeles"
+    )
+    assert (
+        clean_school_name("Ballet School of Long Beach", city="Long Beach", state="CA")
+        == "Ballet School of Long Beach"
+    )
 
 
 def test_clean_school_name_removes_non_english_alternate_names():

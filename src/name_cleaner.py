@@ -56,6 +56,12 @@ LOWERCASE_WORDS = {
     "with",
 }
 
+LOCATION_CONNECTOR_WORDS = {
+    "de",
+    "del",
+    "of",
+}
+
 LOCATION_SUFFIXES = {
     "downtown la",
     "downtown los angeles",
@@ -68,6 +74,11 @@ LOCATION_SUFFIXES = {
     "west la",
     "west los angeles",
 }
+
+TRAILING_ORG_SUFFIX_RE = re.compile(
+    r"\s+\b(c\.?\s*d\.?\s*c\.?|cdc)\b\.?$",
+    re.IGNORECASE,
+)
 
 PUNCT_TRANSLATION = str.maketrans({
     "’": "'",
@@ -140,18 +151,48 @@ def _smart_title(name: str) -> str:
     return " ".join(titled)
 
 
-def _strip_location_suffix(name: str) -> str:
-    """Remove location-only suffixes that make outreach sound scraped."""
+def _location_suffix_variants(city: str = "", state: str = "") -> set[str]:
+    variants = set(LOCATION_SUFFIXES)
+
+    city = re.sub(r"\s+", " ", str(city or "").strip().lower())
+    state = re.sub(r"\s+", " ", str(state or "").strip().lower())
+    if city:
+        variants.add(city)
+        if state:
+            variants.add(f"{city} {state}")
+            variants.add(f"{city}, {state}")
+    return variants
+
+
+def _strip_known_location_suffix(name: str, city: str = "", state: str = "") -> str:
+    """Remove city/location suffixes when they are clearly appended to the name."""
+    variants = _location_suffix_variants(city, state)
+
     parts = re.split(r"\s+[-–—]\s+", name)
-    if len(parts) <= 1:
-        return name
-    suffix = parts[-1].strip().lower().strip(".,;: ")
-    if suffix in LOCATION_SUFFIXES:
-        return " - ".join(parts[:-1]).strip()
-    return name
+    if len(parts) > 1:
+        suffix = parts[-1].strip().lower().strip(".,;: ")
+        if suffix in variants:
+            return " - ".join(parts[:-1]).strip()
+
+    cleaned = name.strip()
+    while True:
+        low = cleaned.lower().strip(".,;: ")
+        matched = ""
+        for suffix in sorted(variants, key=len, reverse=True):
+            if low.endswith(f" {suffix}"):
+                matched = suffix
+                break
+        if not matched:
+            break
+        prefix = low[: -(len(matched) + 1)].strip()
+        previous_word = prefix.split()[-1] if prefix.split() else ""
+        if previous_word in LOCATION_CONNECTOR_WORDS:
+            break
+        cleaned = cleaned[: -(len(matched) + 1)].strip(" ,;:-")
+    return cleaned
 
 
-def clean_school_name(raw_name: str) -> str:
+def clean_school_name(raw_name: str, *, city: str = "", state: str = "") -> str:
     """
     Return a concise, English-first display name suitable for outreach.
 
@@ -161,6 +202,8 @@ def clean_school_name(raw_name: str) -> str:
       Tree House Kids #2 Daycare -> Tree House Kids Daycare
       PEPE'S SPORTS -> Pepe's Sports
       Edupro Academy(.../ Tutoring/ SAT/ ACT/ ...) -> Edupro Academy
+      Power of One Self-Defense - Long Beach -> Power of One Self-Defense
+      CODELA Preschool Hawthorne C.D.C -> CODELA Preschool
     """
     original = str(raw_name or "").strip()
     if not original:
@@ -183,7 +226,9 @@ def clean_school_name(raw_name: str) -> str:
     # like a scraped database row.
     name = re.sub(r"\s+#\s*\d+\b", " ", name)
     name = re.sub(r"\s+\b(no\.?|number)\s*\d+\b", " ", name, flags=re.IGNORECASE)
-    name = _strip_location_suffix(name)
+    name = _strip_known_location_suffix(name, city=city, state=state)
+    name = TRAILING_ORG_SUFFIX_RE.sub("", name).strip()
+    name = _strip_known_location_suffix(name, city=city, state=state)
     while True:
         cleaned = LEGAL_SUFFIX_RE.sub("", name).strip()
         if cleaned == name.strip():

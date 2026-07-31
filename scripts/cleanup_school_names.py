@@ -52,6 +52,8 @@ def clean_tab(tab_name: str, commit: bool) -> dict:
         return {"checked": 0, "changed": 0}
 
     name_col = headers.index("name") + 1
+    city_col = headers.index("city") + 1 if "city" in headers else None
+    state_col = headers.index("state") + 1 if "state" in headers else None
     updates = []
     checked = 0
 
@@ -62,7 +64,9 @@ def clean_tab(tab_name: str, commit: bool) -> dict:
         if not original:
             continue
         checked += 1
-        cleaned = clean_school_name(original)
+        city = row[city_col - 1].strip() if city_col and len(row) >= city_col else ""
+        state = row[state_col - 1].strip() if state_col and len(row) >= state_col else ""
+        cleaned = clean_school_name(original, city=city, state=state)
         if cleaned and cleaned != original:
             updates.append((row_idx, original, cleaned))
 

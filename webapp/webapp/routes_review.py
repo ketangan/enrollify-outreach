@@ -14,7 +14,8 @@ Endpoints:
   POST /review/save           → Save & Next from top card
   POST /review/skip           → Skip from top card
   POST /review/dnc            → Mark do-not-contact from top card
-  POST /review/grid-update    → Inline edit from bottom grid (Save OR DNC)
+  POST /review/grid-update    → Inline edit from bottom grid (Save, no-owner OK,
+                                contact form sent, OR DNC)
   POST /review/clear-skipped  → Reset session skip list
 """
 
@@ -65,6 +66,7 @@ ENROLLMENT_METHOD_OPTIONS = [
 
 MANUAL_CONTACT_FORM_ACTION = "form_submitted"
 MANUAL_CONTACT_FORM_LAST_ACTION = "manual_contact_form_submitted"
+APPROVE_WITHOUT_OWNER_ACTION = "approve_without_owner"
 
 
 # ─── Cookie helpers ────────────────────────────────────────────────────
@@ -344,6 +346,7 @@ def review_save(
     owner_name: str = Form(""),
     best_email: str = Form(""),
     enrollment_method: str = Form(""),
+    action_type: str = Form("save"),
     mode: str = Form(MODE_OWNER),
     review_history: str = Cookie(default=None),
     review_skipped: str = Cookie(default=None),
@@ -353,6 +356,7 @@ def review_save(
     owner_name = owner_name.strip()
     best_email = best_email.strip().lower()
     enrollment_method = enrollment_method.strip()
+    action_type = action_type.strip()
 
     if mode == MODE_CLASSIFY:
         updates: dict = {"last_action": "review_classified"}
@@ -369,12 +373,17 @@ def review_save(
             updates["email_confidence"] = "manual"
     else:
         if best_email:
+            last_action = (
+                "review_approved_without_owner"
+                if action_type == APPROVE_WITHOUT_OWNER_ACTION and not owner_name
+                else "review_saved"
+            )
             updates = {
                 "owner_name": owner_name,
                 "best_email": best_email,
                 "email_confidence": "manual",
                 "status": "ready_to_send",
-                "last_action": "review_saved",
+                "last_action": last_action,
             }
         else:
             updates = {
@@ -449,7 +458,8 @@ def review_grid_update(
     page: int = Form(1),
     action_type: str = Form("save"),
 ):
-    """Inline grid edit. action_type=save (default) or action_type=dnc.
+    """Inline grid edit. action_type=save (default), approve_without_owner,
+    form_submitted, or dnc.
 
     DNC path: ignores other fields, sets status=do_not_contact with
     reason=manual_review_grid_dnc, last_action=review_grid_dnc.
@@ -508,8 +518,10 @@ def review_grid_update(
             updates["status"] = "online_system_exclude"
         else:
             updates["status"] = "ready_for_owner_lookup"
-    elif mode == MODE_OWNER and owner_name and best_email:
+    elif mode == MODE_OWNER and best_email:
         updates["status"] = "ready_to_send"
+        if action_type == APPROVE_WITHOUT_OWNER_ACTION and not owner_name:
+            updates["last_action"] = "review_grid_approved_without_owner"
 
     if not _update_lead_fields(lead_id, updates):
         logger.warning("review_grid_update: lead %s not found", lead_id)
