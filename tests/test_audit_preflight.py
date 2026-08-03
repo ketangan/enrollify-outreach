@@ -292,6 +292,7 @@ def test_followup_real_run_marks_missing_gmail_original_as_skipped(monkeypatch):
         "",
     ]
     updates = []
+    summaries = []
 
     class FakeWorksheet:
         def get_all_values(self):
@@ -308,6 +309,11 @@ def test_followup_real_run_marks_missing_gmail_original_as_skipped(monkeypatch):
     monkeypatch.setattr(run_followup.sheets, "get_tab", lambda name: FakeWorksheet())
     monkeypatch.setattr(run_followup.gmail_client, "find_sent_thread_id", lambda message_id: "")
     monkeypatch.setattr(run_followup.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        run_followup,
+        "_send_summary_email",
+        lambda subject, summary_html: summaries.append((subject, summary_html)),
+    )
 
     def render_should_not_run(*args, **kwargs):
         raise AssertionError("missing Gmail original should skip before rendering")
@@ -319,6 +325,8 @@ def test_followup_real_run_marks_missing_gmail_original_as_skipped(monkeypatch):
     written_values = [cell for update in updates for row_values in update["values"] for cell in row_values]
     assert run_followup.FOLLOWUP_LEGACY_SKIP_ACTION in written_values
     assert any("original sent message was not found in Pontora Gmail Sent" in v for v in written_values)
+    assert len(summaries) == 1
+    assert summaries[0][0] == "Pontora: 0 follow-up(s) ready"
 
 
 def test_initial_preflight_existing_draft_routes_to_owner_review():

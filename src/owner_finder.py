@@ -129,7 +129,9 @@ class OwnerCandidate:
     reason: str = ""
 
 
-PERSON_NAME = r"([A-Z][a-zA-Z'’.-]+(?:\s+[A-Z][a-zA-Z'’.-]+){1,3})"
+NAME_WORD = r"[^\W\d_][^\W\d_.'’.-]*"
+PERSON_NAME_PATTERN = rf"{NAME_WORD}(?:\s+{NAME_WORD}){{1,3}}"
+PERSON_NAME = rf"({PERSON_NAME_PATTERN})"
 OWNER_TITLES = (
     "Owner",
     "Director",
@@ -162,7 +164,10 @@ NON_PERSON_NAME_WORDS = {
     "child",
     "children",
     "class",
+    "co",
     "contact",
+    "call",
+    "director",
     "early",
     "education",
     "email",
@@ -175,6 +180,7 @@ NON_PERSON_NAME_WORDS = {
     "my",
     "preschool",
     "program",
+    "principal",
     "school",
     "second",
     "sent",
@@ -184,6 +190,7 @@ NON_PERSON_NAME_WORDS = {
     "team",
     "teacher",
     "today",
+    "us",
     "will",
     "your",
 }
@@ -279,6 +286,56 @@ def _normalize_owner_title(title: str) -> str:
     return title.title()
 
 
+def _is_bad_title_anchor_context(text: str, title_start: int, title_end: int) -> bool:
+    """Reject title anchors that usually describe a non-decision-maker."""
+    before = text[max(0, title_start - 40):title_start].lower()
+    current_phrase = text[max(0, title_start - 12):title_end + 35].lower()
+    if re.search(r"\b(?:assistant|associate|former)\s+$", before):
+        return True
+    if re.search(r"\b(?:assistant|associate|former)\s+director\b", current_phrase):
+        return True
+    if re.search(r"\bboard\s+of\s+directors?\b", current_phrase):
+        return True
+    return False
+
+
+def _extract_name_after_title_anchor(text: str, title_end: int) -> str:
+    """
+    Find a nearby person name after a strong role title.
+
+    Staff pages often flatten role labels into text like:
+      "Director/Master Teacher Sylvia Lawrence Co-Teachers ..."
+
+    Strip the role modifiers, then look for a 2-3 word person name. The short
+    window keeps us from grabbing random names farther down the staff list.
+    """
+    window = text[title_end:title_end + 90]
+    window = re.sub(
+        r"^\s*(?:(?:/|&|-|,|\band\b)?\s*"
+        r"(?:master|lead|head|program|site|executive|assistant|associate|"
+        r"teacher|educator|administrator|admin|school|of)\b\s*)+",
+        "",
+        window,
+        flags=re.IGNORECASE,
+    )
+    window = re.split(
+        r"\b(?:co[-\s]?teachers?|teachers?|staff|contact|phone|email)\b",
+        window,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+
+    anchor_name_pattern = re.compile(
+        rf"\b({NAME_WORD}(?:\s+{NAME_WORD}){{1,2}})\b",
+        re.IGNORECASE,
+    )
+    for match in anchor_name_pattern.finditer(window):
+        name = _clean_owner_name(match.group(1))
+        if name:
+            return name
+    return ""
+
+
 def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate:
     """
     Deterministic safety net for simple owner bios.
@@ -289,7 +346,11 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
     title_pattern = "|".join(re.escape(title) for title in OWNER_TITLES)
     short_or_full_name = (
         r"((?:Mr|Mrs|Ms|Miss|Dr)\.?\s+[A-Z][a-zA-Z'’.-]+|"
-        r"[A-Z][a-zA-Z'’.-]+\s+[A-Z][a-zA-Z'’.-]+)"
+        rf"{PERSON_NAME_PATTERN})"
+    )
+    strong_title_anchor_pattern = re.compile(
+        r"\b(?P<title>owner|founder|director|principal|head\s+of\s+school)\b",
+        re.IGNORECASE,
     )
     compound_director_patterns = [
         re.compile(
@@ -333,6 +394,22 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
                         reason="compound_director_title_pattern",
                     )
 
+        for match in strong_title_anchor_pattern.finditer(text):
+            if _is_bad_title_anchor_context(
+                text,
+                match.start("title"),
+                match.end("title"),
+            ):
+                continue
+            name = _extract_name_after_title_anchor(text, match.end("title"))
+            if name:
+                return OwnerCandidate(
+                    name=name,
+                    title=_infer_owner_title(match.group("title")),
+                    source_url=page.url,
+                    reason="title_anchor_owner_pattern",
+                )
+
         for pattern in explicit_patterns:
             for match in pattern.finditer(text):
                 groups = match.groups()
@@ -341,9 +418,15 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
                 if groups[0].lower() in {t.lower() for t in OWNER_TITLES}:
                     title = _normalize_owner_title(groups[0])
                     name = _clean_owner_name(groups[1])
+                    title_start = match.start(1)
+                    title_end = match.end(1)
                 else:
                     name = _clean_owner_name(groups[0])
                     title = _normalize_owner_title(groups[1])
+                    title_start = match.start(2)
+                    title_end = match.end(2)
+                if _is_bad_title_anchor_context(text, title_start, title_end):
+                    continue
                 if name:
                     return OwnerCandidate(
                         name=name,

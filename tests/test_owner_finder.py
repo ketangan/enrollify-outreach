@@ -161,6 +161,73 @@ def test_find_owner_recovers_director_from_teachers_page(monkeypatch):
     assert "compound_director_title_pattern" in result.reason
 
 
+def test_find_owner_recovers_title_first_director_from_staff_page(monkeypatch):
+    staff_text = (
+        "Staff Pacific Sage Preschool Collaborators and companions "
+        "Director/Master Teacher Sylvia Velásquez Lawrence "
+        "Co-Teachers Perla Aguila Aster Woldemariam "
+        "Contact info@pacificsagepreschool.org"
+    )
+
+    def fake_fetch(url):
+        if url.rstrip("/") == "http://pacificsagepreschool.org":
+            return FetchedPage(
+                url="http://pacificsagepreschool.org/",
+                status_code=200,
+                text="Pacific Sage Preschool",
+                outbound_links=[
+                    {
+                        "href": "http://pacificsagepreschool.org/staff",
+                        "text": "Staff",
+                    }
+                ],
+            )
+        if url.rstrip("/") == "http://pacificsagepreschool.org/staff":
+            return FetchedPage(
+                url="http://pacificsagepreschool.org/staff",
+                status_code=200,
+                text=staff_text,
+                raw_html_snippet=staff_text.lower(),
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+
+    result = owner_finder.find_owner(
+        "http://pacificsagepreschool.org/",
+        _FakeClient(),
+        name="Pacific Sage Preschool",
+        category="preschool",
+        city="Rancho Palos Verdes",
+        state="CA",
+    )
+
+    assert result.owner_name == "Sylvia Velásquez Lawrence"
+    assert result.owner_title == "Director"
+    assert result.owner_source_url == "http://pacificsagepreschool.org/staff"
+    assert result.best_email == "info@pacificsagepreschool.org"
+    assert result.email_confidence == "medium"
+    assert "title_anchor_owner_pattern" in result.reason
+
+
+def test_title_anchor_skips_assistant_director_for_real_director():
+    page = FetchedPage(
+        url="https://example-preschool.test/staff",
+        status_code=200,
+        text=(
+            "Staff Assistant Director Jane Helper "
+            "Director/Master Teacher Sylvia Lawrence "
+            "Co-Teachers Perla Aguila"
+        ),
+    )
+
+    candidate = owner_finder._extract_owner_candidate([page])
+
+    assert candidate.name == "Sylvia Lawrence"
+    assert candidate.title == "Director"
+    assert candidate.reason == "title_anchor_owner_pattern"
+
+
 def test_find_owner_pages_treats_parents_and_teachers_as_owner_pages():
     home = FetchedPage(
         url="https://example-school.test/",
