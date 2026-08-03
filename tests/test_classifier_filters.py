@@ -131,6 +131,79 @@ def test_vendor_link_is_online_system_exclude_even_when_raw_html_misses_it():
     assert result.reason == "local:vendor:jackrabbitclass"
 
 
+def test_pushpress_link_is_online_system_exclude():
+    page = FetchedPage(
+        url="https://example-bjj.com/",
+        status_code=200,
+        text="Brazilian Jiu Jitsu academy for kids and adults.",
+        raw_html_snippet="",
+        outbound_links=[
+            {
+                "href": "https://members.pushpress.com/landing/plans/plan_123/login",
+                "text": "Memberships",
+            }
+        ],
+    )
+
+    result = classifier.local_classify([page])
+
+    assert result is not None
+    assert result.status == "online_system_exclude"
+    assert result.reason == "local:vendor:pushpress"
+
+
+def test_business_services_profile_is_non_target_org():
+    page = FetchedPage(
+        url="https://codingfortreasure.com/",
+        status_code=200,
+        text=(
+            "Coding for Treasure provides software development, IT services, "
+            "technology staffing, and business solutions for companies."
+        ),
+        raw_html_snippet="",
+    )
+
+    result = classifier.local_classify([page])
+
+    assert result is not None
+    assert result.status == "online_system_exclude"
+    assert result.reason.startswith("local:non_target_org:business_services")
+
+
+def test_music_teacher_with_lessons_is_not_excluded_as_solo_personal_service():
+    page = FetchedPage(
+        url="https://www.dejuancarlosmusic.com/teacher",
+        status_code=200,
+        text=(
+            "Individual classes, group classes, private voice lessons, "
+            "choir coaching, and a free consultation."
+        ),
+        raw_html_snippet="",
+        outbound_links=[
+            {
+                "href": "https://www.dejuancarlosmusic.com/book-online",
+                "text": "Book Online",
+            }
+        ],
+    )
+
+    assert skip_lists.is_skipped_by_name("DeJuan Carlos Music") == (False, "")
+    assert classifier.local_classify([page]) is None
+
+
+def test_deterministic_exclude_can_run_without_fetching_site(monkeypatch):
+    def fetch_should_not_run(url):
+        raise AssertionError("cheap pre-draft checks must not fetch every ready lead")
+
+    monkeypatch.setattr(classifier.fetcher, "fetch", fetch_should_not_run)
+
+    assert classifier.deterministic_exclude_lead(
+        "https://example-bjj.com/",
+        name="Example BJJ",
+        inspect_site=False,
+    ) is None
+
+
 def test_classify_lead_follows_same_site_location_subdomain_for_vendor_link(monkeypatch):
     def fake_fetch(url):
         if url == "https://www.freckledfrogdancestudio.com/":
@@ -205,12 +278,15 @@ def test_skip_lists_exclude_public_chain_and_shopping_domains():
     for website in [
         "https://www.big5sportinggoods.com/",
         "https://www.dickssportinggoods.com/",
+        "https://drewcdc.org/",
+        "https://www.ecenglish.com/en/school-locations/usa/learn-english-in-los-angeles",
         "https://enterprise.lacountypools.com/",
         "https://evanscas.lausd.org/",
         "https://grattseec-lausd-ca.schoolloop.com/",
         "https://www.lakeshorelearning.com/",
         "https://www.myeyelevel.com/US/center/torrance",
         "https://www.pacela.org/",
+        "https://cms3.revize.com/revize/carsonca/services/aquatics.php",
         "https://www.shiekh.com/stores/compton",
         "https://www.shopgatewaytownecenter.com/",
         "https://www.ymca.org/locations/fairfield-family-branch-ymca-0",

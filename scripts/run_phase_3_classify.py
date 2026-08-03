@@ -84,6 +84,9 @@ def main():
             "row_idx": i,
             "name": row[col["name"]],
             "website": row[col["website"]],
+            "category": row[col["category"]] if "category" in col and len(row) > col["category"] else "",
+            "city": row[col["city"]] if "city" in col and len(row) > col["city"] else "",
+            "state": row[col["state"]] if "state" in col and len(row) > col["state"] else "",
         })
 
     if args.limit:
@@ -103,6 +106,9 @@ def main():
                 lead["website"],
                 anthropic_client,
                 name=lead["name"],
+                category=lead.get("category", ""),
+                city=lead.get("city", ""),
+                state=lead.get("state", ""),
             )
         except Exception as e:
             logger.exception("Unexpected error classifying %s: %s", lead["name"], e)

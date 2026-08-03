@@ -331,3 +331,16 @@ def test_initial_preflight_prior_contact_routes_to_already_contacted():
     assert run_phase_5._status_for_initial_preflight_block(
         ["Leads[status=sent,name=Example]"]
     ) == "already_contacted"
+
+
+def test_phase5_quality_gate_blocks_prefiltered_bad_ready_lead():
+    lead = {
+        "name": "EC Los Angeles English Language School",
+        "website": "https://www.ecenglish.com/en/school-locations/usa/learn-english-in-los-angeles",
+    }
+
+    result = run_phase_5._draft_quality_block(lead)
+
+    assert result is not None
+    assert result.status == "online_system_exclude"
+    assert result.reason == "prefilter:known_chain:ec los angeles"

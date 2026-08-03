@@ -60,7 +60,9 @@ VENDOR_MARKERS = [
     "studiodirector", "mindbodyonline", "brightwheel", "procareconnect",
     "kindertales", "classdojo", "sawyer", "hi-sawyer", "regpacks",
     "activenetwork", "amilia", "perfectmind", "swimschoolsoftware",
-    "gostudiopro", "opus1", "childplus", "childplus.net",
+    "gostudiopro", "opus1", "childplus", "childplus.net", "pushpress",
+    "wellnessliving", "zenplanner", "wodify", "kicksite", "sparkmembership",
+    "gymdesk", "clubready", "teamup.com",
 ]
 
 # Non-target organizations that can look like schools at the page level.
@@ -199,6 +201,41 @@ def _check_mission_nonprofit_profile(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+def _check_business_services_profile(text: str) -> tuple[bool, str]:
+    """
+    Catch companies that look educational by name but are actually software,
+    staffing, consulting, or IT service businesses.
+    """
+    text_lower = text.lower()
+
+    hard_markers = [
+        "technology staffing",
+        "tech staffing",
+        "it staffing",
+        "staff augmentation",
+    ]
+    for marker in hard_markers:
+        if marker in text_lower:
+            return True, f"business_services:{marker}"
+
+    service_markers = [
+        "staffing",
+        "it services",
+        "consulting services",
+        "business solutions",
+        "cloud services",
+        "products and services",
+        "division of",
+    ]
+    if (
+        ("software development" in text_lower or "web development" in text_lower)
+        and any(marker in text_lower for marker in service_markers)
+    ):
+        return True, "business_services:software_or_web_services"
+
+    return False, ""
+
+
 def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
     """
     Fast, free keyword/pattern check. Returns None if no confident verdict.
@@ -227,6 +264,15 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
         )
 
     hit, reason = _check_non_target_org(combined_text)
+    if hit:
+        return Classification(
+            status="online_system_exclude",
+            reason=f"local:non_target_org:{reason}",
+            used_llm=False,
+            pages_fetched=len(pages),
+        )
+
+    hit, reason = _check_business_services_profile(combined_text)
     if hit:
         return Classification(
             status="online_system_exclude",
@@ -280,8 +326,9 @@ Classification rules (apply in order — pick the first that fits):
    - Community/mission nonprofits, advocacy/media brands, youth outreach groups, or donation/merch/newsletter sites that support children but do NOT present a parent-facing class, lesson, application, waitlist, registration, or enrollment process
    - Shopping centers, malls, senior centers, community centers, public pools/aquatic facilities, adult schools, language-travel agencies, or professional-development businesses
    - Solo personal services such as sports massage, personal training, physical therapy, or coaching pages that do not present themselves as a school/studio/academy with student enrollment
+   - Software development, IT staffing, consulting, or business-service companies, even if the name sounds educational
    - Parent/student login portal, "My Account", member area
-   - Third-party enrollment, registration, payment, billing, or parent-portal vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, GoStudioPro, iClassPro, Opus1, ChildPlus, etc.) referenced anywhere in content or outbound links
+   - Third-party enrollment, registration, payment, billing, membership, or parent-portal vendor (Jackrabbit, ClassDojo, Brightwheel, Mindbody, PushPress, GoStudioPro, iClassPro, Opus1, ChildPlus, etc.) referenced anywhere in content or outbound links
    - /cart, /checkout, /shop URLs on their own domain suggesting an e-commerce enrollment flow
    - An /apply or /enroll page that contains form fields AND payment processing
 
@@ -389,7 +436,12 @@ def _call_llm_with_retry(client: Anthropic, user_content: str):
     raise last_exc
 
 
-def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classification:
+def llm_classify(
+    pages: list[fetcher.FetchedPage],
+    client: Anthropic,
+    *,
+    metadata: dict[str, str] | None = None,
+) -> Classification:
     """Call Claude Haiku with the combined page content."""
     combined_text = []
     combined_links = []
@@ -401,7 +453,16 @@ def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classif
             if label not in combined_links:
                 combined_links.append(label)
 
-    user_content = (
+    metadata_lines = []
+    for key, value in (metadata or {}).items():
+        clean_value = str(value or "").strip()
+        if clean_value:
+            metadata_lines.append(f"{key}: {clean_value}")
+
+    user_content = ""
+    if metadata_lines:
+        user_content += "LEAD METADATA:\n" + "\n".join(metadata_lines) + "\n\n"
+    user_content += (
         "WEBSITE CONTENT:\n\n"
         + "\n\n".join(combined_text)
         + "\n\nOUTBOUND LINKS:\n"
@@ -473,7 +534,65 @@ def llm_classify(pages: list[fetcher.FetchedPage], client: Anthropic) -> Classif
     )
 
 
-def classify_lead(website: str, client: Anthropic, *, name: str = "") -> Classification:
+def deterministic_exclude_lead(
+    website: str,
+    *,
+    name: str = "",
+    inspect_site: bool = True,
+) -> Classification | None:
+    """Return an online_system_exclude verdict when deterministic checks are enough."""
+    skip, reason = skip_lists.is_skipped_by_name(name)
+    if skip:
+        return Classification(
+            status="online_system_exclude",
+            reason=f"prefilter:{reason}",
+            used_llm=False,
+            pages_fetched=0,
+        )
+
+    skip, reason = skip_lists.is_skipped_by_domain(website)
+    if skip:
+        return Classification(
+            status="online_system_exclude",
+            reason=f"prefilter:{reason}",
+            used_llm=False,
+            pages_fetched=0,
+        )
+
+    if not inspect_site:
+        return None
+
+    home = fetcher.fetch(website)
+    if home.error:
+        return None
+
+    pages = [home]
+    verdict = local_classify(pages)
+    if verdict and verdict.status == "online_system_exclude":
+        return verdict
+
+    sub_urls = fetcher.find_enrollment_links(home, max_links=2)
+    for sub_url in sub_urls:
+        sub = fetcher.fetch(sub_url)
+        if not sub.error:
+            pages.append(sub)
+
+    verdict = local_classify(pages)
+    if verdict and verdict.status == "online_system_exclude":
+        return verdict
+
+    return None
+
+
+def classify_lead(
+    website: str,
+    client: Anthropic,
+    *,
+    name: str = "",
+    category: str = "",
+    city: str = "",
+    state: str = "",
+) -> Classification:
     """Full Phase 3 classification pipeline for one lead."""
     skip, reason = skip_lists.is_skipped_by_name(name)
     if skip:
@@ -518,4 +637,14 @@ def classify_lead(website: str, client: Anthropic, *, name: str = "") -> Classif
     if verdict:
         return verdict
 
-    return llm_classify(pages, client)
+    return llm_classify(
+        pages,
+        client,
+        metadata={
+            "name": name,
+            "category": category,
+            "city": city,
+            "state": state,
+            "website": website,
+        },
+    )

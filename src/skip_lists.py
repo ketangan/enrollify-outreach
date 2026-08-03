@@ -38,6 +38,7 @@ KNOWN_CHAIN_NAMES = {
     "i9 sports",
     "kaplan",
     "ec english",
+    "ec los angeles",
     "eye level",
     "geos languages plus",
     "sprachcaffe",
@@ -100,6 +101,10 @@ NON_TARGET_NAME_PATTERNS = {
     "early head start",
     "head start",
     "family services",
+    "software development services",
+    "technology staffing",
+    "tech staffing",
+    "it staffing",
 }
 
 NON_TARGET_WORD_PATTERNS = {
@@ -137,6 +142,15 @@ ENROLLMENT_VENDOR_DOMAINS = {
     "app.gostudiopro.com",
     "opus1.io",
     "childplus.net",
+    "pushpress.com",
+    "wellnessliving.com",
+    "zenplanner.com",
+    "wodify.com",
+    "kicksite.com",
+    "sparkmembership.com",
+    "gymdesk.com",
+    "clubready.com",
+    "teamup.com",
 }
 
 # Places API type values that are clearly retail/public-facility results, not
@@ -175,6 +189,8 @@ EXCLUDED_DOMAINS = {
     "big5sportinggoods.com",
     "comptoncity.org",
     "dickssportinggoods.com",
+    "drewcdc.org",
+    "ecenglish.com",
     "lacountypools.com",
     "lakeshorelearning.com",
     "lausd.org",
@@ -184,6 +200,7 @@ EXCLUDED_DOMAINS = {
     "shiekh.com",
     "shopgatewaytownecenter.com",
     "sprachcaffe.com",
+    "revize.com",
     "ymca.org",
 }
 

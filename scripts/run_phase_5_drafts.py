@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from gspread.utils import rowcol_to_a1
 
 from scripts import audit_drafts
-from src import config, sheets, drafter, gmail_client, brand_guard
+from src import config, sheets, drafter, gmail_client, brand_guard, classifier
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,6 +63,25 @@ SHEET_WRITE_THROTTLE_SEC = 1.2
 # needs_enrollment_system_classification (Review Classify tab) instead of
 # failing forever on every daily run.
 VALID_ENROLLMENT_METHODS = set(drafter.ENROLLMENT_METHOD_TO_TEMPLATE.keys())
+
+
+def _draft_quality_block(
+    lead: dict,
+    *,
+    inspect_site: bool = True,
+) -> classifier.Classification | None:
+    """
+    Final deterministic safety check before creating a Gmail draft.
+
+    This catches stale ready_to_send rows that survived before the stricter
+    classifier existed. It intentionally does not call Anthropic; the daily run
+    should not become dependent on a paid LLM decision at draft time.
+    """
+    return classifier.deterministic_exclude_lead(
+        lead.get("website", ""),
+        name=lead.get("name", ""),
+        inspect_site=inspect_site,
+    )
 
 
 def _status_for_initial_preflight_block(sources: list[str]) -> str:
@@ -330,6 +349,19 @@ def main():
                 "_row_idx": lead["_row_idx"],
                 "reroute_status": "needs_enrollment_system_classification",
                 "wipe_owner": False,
+                "clear_enrollment": True,
+            })
+            continue
+
+        quality_block = _draft_quality_block(lead, inspect_site=False)
+        if quality_block:
+            rerouted.append({
+                "school": lead.get("name", ""),
+                "enrollment_method": f"quality_gate:{quality_block.reason}",
+                "_row_idx": lead["_row_idx"],
+                "reroute_status": "online_system_exclude",
+                "wipe_owner": False,
+                "enrollment_method_update": "online_system_exclude",
             })
             continue
 
@@ -360,7 +392,12 @@ def main():
                     "range": rowcol_to_a1(r["_row_idx"], col["owner_name"] + 1),
                     "values": [[""]],
                 })
-            else:
+            elif "enrollment_method_update" in r:
+                updates.append({
+                    "range": rowcol_to_a1(r["_row_idx"], col["enrollment_method"] + 1),
+                    "values": [[r["enrollment_method_update"]]],
+                })
+            elif r.get("clear_enrollment", False):
                 # Clear enrollment_method (the corrupted value).
                 updates.append({
                     "range": rowcol_to_a1(r["_row_idx"], col["enrollment_method"] + 1),
@@ -406,6 +443,31 @@ def main():
 
     for idx, lead in enumerate(batch, start=1):
         logger.info("[%d/%d] %s", idx, len(batch), lead.get("name", "")[:60])
+
+        quality_block = _draft_quality_block(lead, inspect_site=True)
+        if quality_block:
+            reason = f"quality_gate:{quality_block.reason}"
+            logger.warning("  skipping — quality gate blocked draft: %s", reason)
+            if not args.dry_run:
+                leads_ws.batch_update(
+                    [
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["status"] + 1),
+                         "values": [["online_system_exclude"]]},
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["enrollment_method"] + 1),
+                         "values": [["online_system_exclude"]]},
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["notes"] + 1),
+                         "values": [[f"phase5_quality_gate_blocked:{quality_block.reason[:400]}"]]},
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["last_action"] + 1),
+                         "values": [["phase5_quality_gate_blocked"]]},
+                    ],
+                    value_input_option="USER_ENTERED",
+                )
+                time.sleep(SHEET_WRITE_THROTTLE_SEC)
+            failures.append({
+                "school": lead.get("name", ""),
+                "error": f"quality gate blocked draft: {reason}",
+            })
+            continue
 
         to_email = lead.get("best_email", "").strip()
         if not to_email:
