@@ -34,6 +34,14 @@ OUTREACH_ADMIN_URL = os.getenv(
     "https://enrollify-admin.onrender.com",
 )
 
+# Optional website-mock upsell flow. Keep these optional so daily outreach does
+# not break before the Cloudflare mock site is configured.
+WEBSITE_MOCK_BASE_URL = os.getenv("WEBSITE_MOCK_BASE_URL", "")
+CLICK_LOGGER_URL = (
+    os.getenv("CLICK_LOGGER_URL")
+    or "https://script.google.com/macros/s/AKfycbxC_jG6QI9cuXYNRWfq1nn0fJlUTCkeAJmx_x4k24QlN6-if-pTjq5UrOsxaHCHy7td/exec"
+)
+
 # --- Gmail OAuth ---
 GMAIL_OAUTH_CLIENT_PATH = os.getenv(
     "GMAIL_OAUTH_CLIENT_PATH",

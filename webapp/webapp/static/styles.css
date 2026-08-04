@@ -344,6 +344,74 @@ form.filters button:hover { background: #2d4229; }
 }
 .btn-secondary-action:hover { background: #f3ede1; }
 
+.mock-controls {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #d8e6f3;
+  border-radius: 8px;
+  background: #f6fbff;
+}
+.mock-controls strong {
+  display: block;
+  margin-bottom: 4px;
+}
+.mock-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+.mock-form select,
+.mock-form input[type="text"] {
+  padding: 8px 10px;
+  border: 1px solid #c5d5e5;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+}
+.btn-mock,
+.btn-mock-secondary,
+.btn-mock-row {
+  border: 1px solid #0f5db8;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn-mock,
+.btn-mock-row {
+  background: #0f5db8;
+  color: #fff;
+}
+.btn-mock:hover,
+.btn-mock-row:hover { background: #0a468d; }
+.btn-mock-secondary {
+  background: #fff;
+  color: #0f5db8;
+}
+.btn-mock-secondary:hover { background: #eaf4ff; }
+.mock-links a {
+  color: #0f5db8;
+  font-weight: 600;
+}
+.inline-mock-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.btn-mock-small {
+  background: #0f5db8;
+  color: #fff;
+  border: 1px solid #0f5db8;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.btn-mock-small:hover { background: #0a468d; }
+
 .review-secondary {
   margin-top: 14px;
   display: flex;
@@ -382,6 +450,7 @@ form.filters button:hover { background: #2d4229; }
   body { padding: 12px; }
   .review-card { padding: 14px; }
   .lead-name { font-size: 18px; }
+  .mock-form { grid-template-columns: 1fr; }
 }
 
 /* Pipeline alert banner — top of home page */

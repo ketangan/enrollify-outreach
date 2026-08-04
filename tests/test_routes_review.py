@@ -126,3 +126,38 @@ def test_grid_owner_review_save_with_email_promotes_even_without_owner(monkeypat
     assert response.status_code == 303
     assert captured["updates"]["status"] == "ready_to_send"
     assert captured["updates"]["best_email"] == "admin@a1collegeprep.com"
+
+
+def test_review_mock_update_marks_candidate_without_status_change(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(routes_review, "_ensure_mock_headers", lambda: None)
+    monkeypatch.setattr(
+        routes_review,
+        "_find_lead_by_id",
+        lambda lead_id: {
+            "category": "music",
+            "website_mock_notes": "existing",
+        },
+    )
+
+    def fake_update(lead_id, updates):
+        captured["lead_id"] = lead_id
+        captured["updates"] = updates
+        return True
+
+    monkeypatch.setattr(routes_review, "_update_lead_fields", fake_update)
+
+    response = routes_review.review_mock_update(
+        lead_id="90277-music",
+        mock_type="music",
+        versions="auto",
+        action_type=routes_review.WEBSITE_MOCK_CANDIDATE_ACTION,
+        mode=routes_review.MODE_OWNER,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/review?id=90277-music&mode=owner"
+    assert captured["updates"]["website_mock_candidate"] == "yes"
+    assert captured["updates"]["website_mock_type"] == "music"
+    assert captured["updates"]["website_mock_status"] == "not_started"
+    assert "status" not in captured["updates"]

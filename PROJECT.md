@@ -182,9 +182,25 @@ Templates live in the Google Sheet `Templates` tab. They should use Pontora word
 {{product_domain}}
 {{product_url}}
 {{demo_url}}
+{{website_mock_addendum}}
 ```
 
 Before outreach resumes, run a read-only template check and ensure no old brand/domain remains.
+
+## Website Mock Addendum
+
+Optional website-refresh mocks are manual-gated. Mark a lead as a mock candidate from Review or In Progress, then run:
+
+```bash
+python scripts/setup_website_mock_sheet.py
+python scripts/generate_website_mocks.py --base-url https://mocks.mypontora.com --write-sheet
+```
+
+The generator creates two versions by default for each mock type (`preschool`, `music`, `sports`) and stores all public URLs in `website_mock_payload` as JSON. Follow-up drafts append the `website_mock_followup_addendum` template only when `website_mock_status=generated` and at least one mock URL exists.
+
+Do not deploy these files into the manually managed main `mypontora.com` website project unless the full marketing site is also in the same deploy directory. Use a separate Cloudflare Workers static-assets app/subdomain such as `mocks.mypontora.com` for this workflow.
+
+Mock generation/deployment is non-blocking in GitHub Actions. If Cloudflare fails, the daily outreach pipeline still runs, and Sheet mock URLs are not written.
 
 ## Operational Notes
 
@@ -192,6 +208,7 @@ Before outreach resumes, run a read-only template check and ensure no old brand/
 - Daily run stops before drafting if Gmail sync fails; sending against stale reply/bounce data is not acceptable.
 - Follow-up drafting requires the original sent message to exist in the Pontora Gmail mailbox. Legacy pre-rebrand sends are skipped and marked with `phase6_followup_skipped_missing_gmail_original`.
 - Click tracking still writes to `Click_Log`; `{{lead_id}}` renders into follow-up demo URLs.
+- Website mock pages include the same human-gesture-filtered click logger, so mock page activity appears in `Click_Log` when links use `utm_content=<lead_id>`.
 - Run `python scripts/show_clicks.py --since-days 7` on Mondays to find clickers.
 - Run stale-close and cleanup weekly:
 

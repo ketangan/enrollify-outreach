@@ -23,7 +23,7 @@ Copy this exactly when creating the sheet. Column order matters — the code ind
 Row 1 (headers, frozen):
 
 ```
-id | name | website | category | city | state | zip | phone | address | discovered_date | status | enrollment_method | owner_name | owner_title | owner_source_url | best_email | email_confidence | last_action | sent_at | follow_up_at | follow_up_sent_at | replied_at | notes
+id | name | website | category | city | state | zip | phone | address | discovered_date | status | enrollment_method | owner_name | owner_title | owner_source_url | best_email | email_confidence | last_action | sent_at | follow_up_at | follow_up_sent_at | replied_at | notes | website_mock_candidate | website_mock_type | website_mock_versions | website_mock_status | website_mock_payload | website_mock_generated_at | website_mock_notes
 ```
 
 **Column types:**
@@ -33,6 +33,13 @@ id | name | website | category | city | state | zip | phone | address | discover
 - `discovered_date`, `follow_up_at` → date
 - `sent_at`, `follow_up_sent_at`, `replied_at` → datetime (ISO 8601 strings)
 - `status`, `enrollment_method`, `email_confidence` → dropdown (see below)
+- `website_mock_candidate` → optional `yes/no`; only marked leads can get website-refresh mock links in follow-up emails
+- `website_mock_type` → `preschool`, `music`, or `sports`
+- `website_mock_versions` → `auto` or comma-separated version ids; `auto` currently creates 2 versions per type
+- `website_mock_status` → `not_started`, `generated`, `failed`, or `skip`
+- `website_mock_payload` → JSON list of generated mock URLs; supports more versions without adding more columns
+- `website_mock_generated_at` → ISO date/time when mock metadata was generated
+- `website_mock_notes` → free text for mock workflow decisions
 
 ### Dropdown: `category`
 ```
@@ -103,12 +110,14 @@ template_id | subject | body | last_updated
 | email | ... | ... |
 | pdf_form | ... | ... |
 | follow_up | ... | ... |
+| website_mock_followup_addendum | blank | optional P.S. body appended to follow-up drafts for generated website mock candidates |
 
 **Supported placeholders:**
 - `{{owner_first_name}}` — e.g. "Jane"
 - `{{school_name}}` — e.g. "Lincoln Dance Academy"
 - `{{category}}` — e.g. "dance studio"
 - `{{specific_observation}}` — 1-2 sentence personalized note drafted by Claude
+- `{{website_mock_addendum}}` — optional follow-up-only P.S. inserted when a lead has generated website mock URLs
 
 ## Setup checklist
 

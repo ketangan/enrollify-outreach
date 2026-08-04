@@ -25,6 +25,7 @@
       <th>School</th>
       <th>Status</th>
       <th>Stage</th>
+      <th>Website Mock</th>
       <th>Contact</th>
       <th>Sent</th>
       <th>Follow-up</th>
@@ -50,6 +51,28 @@
       <td>
         <strong>{{ stage.get("label", "") }}</strong>
         <div class="school-meta">{{ stage.get("detail", "") }}</div>
+      </td>
+      <td>
+        <div class="school-meta">
+          {{ r.get("website_mock_status", "") or "not_started" }}
+          {% if r.get("website_mock_type") %} · {{ r.get("website_mock_type") }}{% endif %}
+        </div>
+        <form method="POST" action="/in-progress/mock" class="inline-mock-form">
+          <input type="hidden" name="lead_id" value="{{ r.get('id', '') }}">
+          <input type="hidden" name="q" value="{{ q }}">
+          <input type="hidden" name="page" value="{{ page }}">
+          <select name="mock_type" class="dnc-reason" aria-label="Website mock type">
+            {% for opt in mock_type_options %}
+              <option value="{{ opt }}" {% if opt == r.get('_mock_type_default', '') %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="versions" value="{{ r.get('website_mock_versions', '') or 'auto' }}">
+          <button type="submit"
+                  class="btn-mock-small"
+                  onclick="return confirm('Mark this lead for website mock generation?')">
+            Mock
+          </button>
+        </form>
       </td>
       <td>
         <div>{{ r.get("owner_name", "") }}</div>
@@ -78,7 +101,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="8" class="muted">No active outreach rows.</td></tr>
+    <tr><td colspan="9" class="muted">No active outreach rows.</td></tr>
   {% endfor %}
   </tbody>
 </table>

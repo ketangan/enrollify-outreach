@@ -35,6 +35,7 @@ def test_decorate_rows_keeps_only_active_outreach():
         {
             "name": "A",
             "status": "sent",
+            "category": "martial_arts",
             "sent_message_id": "<initial@mypontora.com>",
             "sent_at": "2026-07-30T07:40:06-07:00",
             "follow_up_sent_at": "",
@@ -52,6 +53,7 @@ def test_decorate_rows_keeps_only_active_outreach():
     decorated = routes_in_progress._decorate_rows(rows)
 
     assert [r["name"] for r in decorated] == ["A", "B"]
+    assert decorated[0]["_mock_type_default"] == "sports"
     assert decorated[0]["_active_stage"]["key"] in {
         "followup_due",
         "followup_scheduled",

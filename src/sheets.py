@@ -78,6 +78,25 @@ def get_headers(tab_name: str) -> list[str]:
     return ws.row_values(1)
 
 
+def ensure_headers(tab_name: str, required_headers: list[str]) -> list[str]:
+    """
+    Ensure a tab has the requested headers appended to row 1.
+
+    Existing columns are preserved in order. Missing columns are appended at
+    the end so older code that relies on existing positions keeps working.
+    Returns the final header list.
+    """
+    ws = get_tab(tab_name)
+    headers = ws.row_values(1)
+    missing = [h for h in required_headers if h not in headers]
+    if not missing:
+        return headers
+
+    final_headers = headers + missing
+    ws.update("A1", [final_headers], value_input_option="USER_ENTERED")
+    return final_headers
+
+
 def upsert_coverage_row(zip_code: str, **fields) -> None:
     """
     Update or insert a row in the Coverage tab keyed on zip_code.

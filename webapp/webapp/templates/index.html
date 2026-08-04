@@ -188,6 +188,14 @@ python scripts/show_clicks.py --campaign initial --since-days 30</code></pre>
     </div>
 
     <div class="task">
+      <h4>Add website mock links to a follow-up</h4>
+      <p>Mark a dated-site lead as a mock candidate from <a href="/review">Review</a> or <a href="/in-progress">In Progress</a>. Then generate mock pages and write the public URLs back to the lead row:</p>
+      <pre><code>python scripts/setup_website_mock_sheet.py
+python scripts/generate_website_mocks.py --base-url https://mocks.mypontora.com --write-sheet</code></pre>
+      <p>Follow-up drafts include the mock P.S. only when <code>website_mock_status=generated</code>. Use a separate Cloudflare Workers static-assets app/subdomain for mocks; do not direct-upload partial mock files into the main manually managed website project.</p>
+    </div>
+
+    <div class="task">
       <h4>Mark a lead as do-not-contact</h4>
       <p>Three paths, fastest first:</p>
       <ol>

@@ -12,6 +12,7 @@ Automated cold-outreach pipeline for Pontora. It targets small activity-based sc
 - Google Sheets — data store (Leads, Coverage, Templates, Already_Contacted, No_Website_Schools, Archive)
 - Gmail API — draft creation, draft audit, sent/reply/bounce sync
 - GitHub Actions — daily scheduled runs (`.github/workflows/daily.yml`)
+- Optional Cloudflare Workers static-assets app — generated website-refresh mock pages for selected follow-up leads
 
 ## Quick Start
 
@@ -80,7 +81,7 @@ Set `PONTORA_ADMIN` in `.env` or pass `--admin NAME`. The legacy `ENROLLIFY_ADMI
 | 7 | Coverage tracking + zip expansion automation | DONE |
 | 8 | Webapp admin UI | DONE, auth pending |
 | 9 | GitHub Actions cron | DONE |
-| 10 | Website-builder upsell to no-website schools | Deferred indefinitely |
+| 10 | Website mock follow-up addendum | MVP |
 
 ## Project Structure
 
@@ -91,6 +92,8 @@ Set `PONTORA_ADMIN` in `.env` or pass `--admin NAME`. The legacy `ENROLLIFY_ADMI
 ├── docs/
 ├── scripts/
 │   ├── setup_gmail_oauth.py
+│   ├── setup_website_mock_sheet.py
+│   ├── generate_website_mocks.py
 │   ├── run_daily.py
 │   ├── run_phase_1_discovery.py
 │   ├── run_phase_2_dedupe.py
@@ -111,5 +114,6 @@ Set `PONTORA_ADMIN` in `.env` or pass `--admin NAME`. The legacy `ENROLLIFY_ADMI
     ├── places.py
     ├── regions.py
     ├── sheets.py
-    └── skip_lists.py
+    ├── skip_lists.py
+    └── website_mocks.py
 ```

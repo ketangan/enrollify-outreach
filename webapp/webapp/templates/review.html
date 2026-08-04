@@ -123,6 +123,46 @@
       </div>
     </form>
 
+    <div class="mock-controls">
+      <div>
+        <strong>Website mock</strong>
+        <p class="school-meta">
+          Status: {{ lead.get("website_mock_status", "not_started") or "not_started" }}
+          {% if lead.get("website_mock_type") %} · {{ lead.get("website_mock_type") }}{% endif %}
+          {% if lead.get("website_mock_versions") %} · {{ lead.get("website_mock_versions") }}{% endif %}
+        </p>
+        {% if lead_mock_links %}
+          <p class="school-meta mock-links">
+            {% for item in lead_mock_links %}
+              <a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.label }}</a>{% if not loop.last %} · {% endif %}
+            {% endfor %}
+          </p>
+        {% endif %}
+      </div>
+      <form method="POST" action="/review/mock" class="mock-form">
+        <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
+        <input type="hidden" name="mode" value="{{ mode }}">
+        <select name="mock_type" aria-label="Website mock type">
+          {% for opt in mock_type_options %}
+            <option value="{{ opt }}" {% if opt == lead_mock_type %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="versions" value="{{ lead.get('website_mock_versions', '') or 'auto' }}" aria-label="Website mock versions">
+        <button type="submit"
+                name="action_type"
+                value="website_mock_candidate"
+                class="btn-mock">
+          Mark mock
+        </button>
+        <button type="submit"
+                name="action_type"
+                value="website_mock_skip"
+                class="btn-mock-secondary">
+          Skip mock
+        </button>
+      </form>
+    </div>
+
     <div class="review-secondary">
       {% if prev_id %}
         <a href="/review?id={{ prev_id }}&mode={{ mode }}" class="btn-back">← Back</a>
@@ -241,6 +281,12 @@
             No owner OK
           </button>
           {% endif %}
+          <button type="submit"
+                  class="btn-mock-row"
+                  onclick="this.form.action_type.value='website_mock_candidate';"
+                  title="Mark this lead for optional website mock generation">
+            Mock
+          </button>
           <button type="submit"
                   class="btn-form-row"
                   onclick="if(!confirm('Mark as contacted through the website contact form?')) return false; this.form.action_type.value='form_submitted';"

@@ -35,7 +35,7 @@ from fastapi.templating import Jinja2Templates
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src import config, sheets
+from src import config, sheets, website_mocks
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,8 @@ ENROLLMENT_METHOD_OPTIONS = [
 MANUAL_CONTACT_FORM_ACTION = "form_submitted"
 MANUAL_CONTACT_FORM_LAST_ACTION = "manual_contact_form_submitted"
 APPROVE_WITHOUT_OWNER_ACTION = "approve_without_owner"
+WEBSITE_MOCK_CANDIDATE_ACTION = "website_mock_candidate"
+WEBSITE_MOCK_SKIP_ACTION = "website_mock_skip"
 
 
 # ─── Cookie helpers ────────────────────────────────────────────────────
@@ -208,6 +210,10 @@ def _update_lead_fields(lead_id: str, updates: dict) -> bool:
     return True
 
 
+def _ensure_mock_headers() -> None:
+    sheets.ensure_headers(config.TAB_LEADS, website_mocks.MOCK_LEAD_HEADERS)
+
+
 def _append_note(existing_notes: str, note: str) -> str:
     existing_notes = str(existing_notes or "").strip()
     if not existing_notes:
@@ -300,6 +306,15 @@ def review_view(
         elif history:
             prev_id = history[-1]
 
+    lead_mock_type = ""
+    lead_mock_links = []
+    if lead:
+        lead_mock_type = website_mocks.normalize_mock_type(
+            str(lead.get("website_mock_type", "")).strip(),
+            category=str(lead.get("category", "")).strip(),
+        )
+        lead_mock_links = website_mocks.generated_mock_links(lead)
+
     # Grid: all leads matching current mode, sorted, paginated
     grid_leads = [r for r in rows if _matches_mode(r, mode)]
     if mode == MODE_PRE_SEND:
@@ -335,6 +350,9 @@ def review_view(
             "grid_total": total_grid,
             "grid_page_size": GRID_PAGE_SIZE,
             "method_options": ENROLLMENT_METHOD_OPTIONS,
+            "mock_type_options": website_mocks.MOCK_TYPE_OPTIONS,
+            "lead_mock_type": lead_mock_type,
+            "lead_mock_links": lead_mock_links,
         },
     )
 
@@ -459,7 +477,7 @@ def review_grid_update(
     action_type: str = Form("save"),
 ):
     """Inline grid edit. action_type=save (default), approve_without_owner,
-    form_submitted, or dnc.
+    form_submitted, website_mock_candidate, website_mock_skip, or dnc.
 
     DNC path: ignores other fields, sets status=do_not_contact with
     reason=manual_review_grid_dnc, last_action=review_grid_dnc.
@@ -474,6 +492,27 @@ def review_grid_update(
         }
         if not _update_lead_fields(lead_id, updates):
             logger.warning("review_grid_update (dnc): lead %s not found", lead_id)
+        return RedirectResponse(f"/review?mode={mode}&page={page}", status_code=303)
+
+    if action_type in {WEBSITE_MOCK_CANDIDATE_ACTION, WEBSITE_MOCK_SKIP_ACTION}:
+        _ensure_mock_headers()
+        lead = _find_lead_by_id(lead_id) or {}
+        if action_type == WEBSITE_MOCK_CANDIDATE_ACTION:
+            updates = website_mocks.candidate_updates(
+                website_mocks.normalize_mock_type(
+                    _clean_form_value(lead.get("website_mock_type")),
+                    category=_clean_form_value(lead.get("category")),
+                ),
+                _clean_form_value(lead.get("website_mock_versions")) or "auto",
+                category=_clean_form_value(lead.get("category")),
+                existing_notes=_clean_form_value(lead.get("website_mock_notes")),
+            )
+        else:
+            updates = website_mocks.skip_updates(
+                existing_notes=_clean_form_value(lead.get("website_mock_notes")),
+            )
+        if not _update_lead_fields(lead_id, updates):
+            logger.warning("review_grid_update (%s): lead %s not found", action_type, lead_id)
         return RedirectResponse(f"/review?mode={mode}&page={page}", status_code=303)
 
     # save path
@@ -527,6 +566,39 @@ def review_grid_update(
         logger.warning("review_grid_update: lead %s not found", lead_id)
 
     return RedirectResponse(f"/review?mode={mode}&page={page}", status_code=303)
+
+
+def _clean_form_value(value) -> str:
+    return str(value or "").strip()
+
+
+@router.post("/review/mock")
+def review_mock_update(
+    lead_id: str = Form(...),
+    mock_type: str = Form(""),
+    versions: str = Form("auto"),
+    action_type: str = Form(WEBSITE_MOCK_CANDIDATE_ACTION),
+    mode: str = Form(MODE_OWNER),
+):
+    """Mark or skip a lead for the website-mock follow-up addendum."""
+    _ensure_mock_headers()
+    lead = _find_lead_by_id(lead_id) or {}
+    if action_type == WEBSITE_MOCK_SKIP_ACTION:
+        updates = website_mocks.skip_updates(
+            existing_notes=_clean_form_value(lead.get("website_mock_notes")),
+        )
+    else:
+        updates = website_mocks.candidate_updates(
+            mock_type,
+            versions,
+            category=_clean_form_value(lead.get("category")),
+            existing_notes=_clean_form_value(lead.get("website_mock_notes")),
+        )
+
+    if not _update_lead_fields(lead_id, updates):
+        logger.warning("review_mock_update: lead %s not found", lead_id)
+
+    return RedirectResponse(f"/review?id={lead_id}&mode={mode}", status_code=303)
 
 
 @router.post("/review/clear-skipped")

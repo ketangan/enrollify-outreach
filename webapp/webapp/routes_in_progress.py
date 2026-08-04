@@ -22,7 +22,7 @@ from gspread.utils import rowcol_to_a1
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src import config, sheets
+from src import config, sheets, website_mocks
 from webapp.webapp import outreach_state
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 PAGE_SIZE = 100
 IN_PROGRESS_DNC_ACTION = "in_progress_dnc"
+IN_PROGRESS_MOCK_ACTION = "in_progress_website_mock_candidate"
 DEFAULT_DNC_REASON = "not_interested_or_unqualified_after_contact"
 
 
@@ -82,6 +83,10 @@ def _dnc_updates(existing_notes: str, reason: str, now: datetime | None = None) 
     }
 
 
+def _ensure_mock_headers() -> None:
+    sheets.ensure_headers(config.TAB_LEADS, website_mocks.MOCK_LEAD_HEADERS)
+
+
 def _decorate_rows(rows: list[dict]) -> list[dict]:
     decorated = []
     for row in rows:
@@ -89,6 +94,10 @@ def _decorate_rows(rows: list[dict]) -> list[dict]:
             continue
         copied = dict(row)
         copied["_active_stage"] = outreach_state.active_stage(row)
+        copied["_mock_type_default"] = website_mocks.normalize_mock_type(
+            str(copied.get("website_mock_type", "")).strip(),
+            category=str(copied.get("category", "")).strip(),
+        )
         decorated.append(copied)
 
     stage_order = {
@@ -146,6 +155,7 @@ def in_progress_view(request: Request, q: str = "", page: int = 1):
             "total_pages": total_pages,
             "q": q,
             "active_start_date": outreach_state.active_start_date().isoformat(),
+            "mock_type_options": website_mocks.MOCK_TYPE_OPTIONS,
         },
     )
 
@@ -171,6 +181,44 @@ def in_progress_dnc(
         for idx, header in enumerate(headers)
     }
     updates = _dnc_updates(existing.get("notes", ""), reason)
+    batch = [
+        {"range": rowcol_to_a1(row_idx, headers.index(key) + 1), "values": [[value]]}
+        for key, value in updates.items()
+        if key in headers
+    ]
+    ws.batch_update(batch, value_input_option="USER_ENTERED")
+    return RedirectResponse(_in_progress_url(q=q, page=page), status_code=303)
+
+
+@router.post("/in-progress/mock")
+def in_progress_mock(
+    lead_id: str = Form(...),
+    mock_type: str = Form(""),
+    versions: str = Form("auto"),
+    q: str = Form(""),
+    page: int = Form(1),
+):
+    _ensure_mock_headers()
+    ws = sheets.get_tab(config.TAB_LEADS)
+    all_rows = ws.get_all_values()
+    row_idx = _find_row_index_by_id(all_rows, lead_id)
+    if not row_idx:
+        logger.warning("in_progress_mock: lead %s not found", lead_id)
+        return RedirectResponse(_in_progress_url(q=q, page=page), status_code=303)
+
+    headers = all_rows[0]
+    row_values = all_rows[row_idx - 1]
+    existing = {
+        header: row_values[idx] if idx < len(row_values) else ""
+        for idx, header in enumerate(headers)
+    }
+    updates = website_mocks.candidate_updates(
+        mock_type,
+        versions,
+        category=existing.get("category", ""),
+        existing_notes=existing.get("website_mock_notes", ""),
+    )
+    updates["last_action"] = IN_PROGRESS_MOCK_ACTION
     batch = [
         {"range": rowcol_to_a1(row_idx, headers.index(key) + 1), "values": [[value]]}
         for key, value in updates.items()

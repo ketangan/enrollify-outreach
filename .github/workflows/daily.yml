@@ -38,6 +38,44 @@ jobs:
           echo "${{ secrets.GMAIL_OAUTH_CLIENT_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/gmail-oauth-client.json
           echo "${{ secrets.GMAIL_TOKEN_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/gmail-token.json
 
+      - name: Render website mocks
+        id: render_mocks
+        if: ${{ vars.WEBSITE_MOCK_BASE_URL != '' && vars.CLOUDFLARE_MOCKS_WORKER_NAME != '' }}
+        continue-on-error: true
+        env:
+          GOOGLE_SHEETS_CREDENTIALS_PATH: config/google-service-account.json
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          WEBSITE_MOCK_BASE_URL: ${{ vars.WEBSITE_MOCK_BASE_URL }}
+          CLICK_LOGGER_URL: ${{ vars.CLICK_LOGGER_URL }}
+          TIMEZONE: America/Los_Angeles
+        run: |
+          python scripts/generate_website_mocks.py --base-url "$WEBSITE_MOCK_BASE_URL" --output-dir generated/website-mocks-site
+
+      - name: Deploy website mocks to Cloudflare Workers
+        id: deploy_mocks
+        if: ${{ vars.WEBSITE_MOCK_BASE_URL != '' && vars.CLOUDFLARE_MOCKS_WORKER_NAME != '' && steps.render_mocks.outcome == 'success' }}
+        continue-on-error: true
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --assets generated/website-mocks-site --name=${{ vars.CLOUDFLARE_MOCKS_WORKER_NAME }} --compatibility-date=2026-08-04
+
+      - name: Update website mock metadata in Sheet
+        if: ${{ vars.WEBSITE_MOCK_BASE_URL != '' && vars.CLOUDFLARE_MOCKS_WORKER_NAME != '' && steps.deploy_mocks.outcome == 'success' }}
+        env:
+          GOOGLE_SHEETS_CREDENTIALS_PATH: config/google-service-account.json
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          WEBSITE_MOCK_BASE_URL: ${{ vars.WEBSITE_MOCK_BASE_URL }}
+          CLICK_LOGGER_URL: ${{ vars.CLICK_LOGGER_URL }}
+          TIMEZONE: America/Los_Angeles
+        run: |
+          python scripts/generate_website_mocks.py --base-url "$WEBSITE_MOCK_BASE_URL" --output-dir generated/website-mocks-site --write-sheet
+
       - name: Run daily pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -50,6 +88,8 @@ jobs:
           DEMO_URL: https://mypontora.com/demo
           OUTREACH_EMAIL: ketan@mypontora.com
           OUTREACH_ADMIN_URL: https://enrollify-admin.onrender.com
+          WEBSITE_MOCK_BASE_URL: ${{ vars.WEBSITE_MOCK_BASE_URL }}
+          CLICK_LOGGER_URL: ${{ vars.CLICK_LOGGER_URL }}
           GMAIL_OAUTH_CLIENT_PATH: config/gmail-oauth-client.json
           GMAIL_TOKEN_PATH: config/gmail-token.json
           DEFAULT_DAILY_EMAIL_CAP: 20

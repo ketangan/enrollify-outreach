@@ -48,3 +48,40 @@ def test_render_email_supports_brand_placeholders(monkeypatch):
     assert "Pontora lives at https://mypontora.com" in rendered.html_body
     assert "with demo https://mypontora.com/demo" in rendered.html_body
     assert "domain mypontora.com" in rendered.html_body
+
+
+def test_render_follow_up_appends_website_mock_addendum(monkeypatch):
+    monkeypatch.setattr(
+        drafter,
+        "_load_templates",
+        lambda: {
+            "follow_up": {
+                "subject": "Re: {{brand_name}}",
+                "observation": "",
+                "body": "Hi {{owner_first_name}},\n\nJust following up.",
+            },
+            "website_mock_followup_addendum": {
+                "subject": "",
+                "observation": "",
+                "body": "P.S. {{mock_links_html}}",
+            },
+        },
+    )
+
+    rendered = drafter.render_follow_up(
+        {
+            "id": "lead-1",
+            "name": "Lincoln Dance Academy",
+            "owner_name": "Jane Owner",
+            "website_mock_status": "generated",
+            "website_mock_payload": (
+                '[{"type":"music","version":"studio","label":"Studio concept",'
+                '"url":"https://mocks.mypontora.com/mocks/lead-1/music-studio/"}]'
+            ),
+        }
+    )
+
+    assert rendered.subject == "Re: Pontora"
+    assert "Just following up." in rendered.html_body
+    assert "P.S." in rendered.html_body
+    assert "Studio concept" in rendered.html_body

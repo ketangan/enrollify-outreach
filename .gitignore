@@ -18,6 +18,7 @@ env/
 # Local data / cache
 data/*
 !data/.gitkeep
+generated/
 
 # Logs
 *.log

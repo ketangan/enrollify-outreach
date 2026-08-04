@@ -28,7 +28,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from src import config, sheets
+from src import config, sheets, website_mocks
 from src.name_cleaner import clean_school_name
 
 logger = logging.getLogger(__name__)
@@ -346,8 +346,17 @@ def render_follow_up(lead: dict, greeting_override: str | None = None) -> Render
         "product_domain": config.PRODUCT_DOMAIN,
         "product_url": config.PRODUCT_URL,
         "demo_url": config.DEMO_URL,
+        "website_mock_addendum": "",
     }
+
+    addendum_template = (templates.get(website_mocks.MOCK_TEMPLATE_ID) or {}).get("body", "")
+    mock_addendum = website_mocks.render_followup_addendum(lead, addendum_template)
+    ctx["website_mock_addendum"] = mock_addendum
+
     body = _render(tpl["body"], ctx)
+
+    if mock_addendum and "{{website_mock_addendum}}" not in tpl["body"]:
+        body = body.rstrip() + "\n\n" + mock_addendum
 
     if greeting_override:
         body = re.sub(
