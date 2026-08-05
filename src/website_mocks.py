@@ -170,6 +170,12 @@ def is_mock_candidate(lead: dict) -> bool:
     return _truthy(lead.get("website_mock_candidate"))
 
 
+def is_mock_suggested(lead: dict) -> bool:
+    candidate = _clean(lead.get("website_mock_candidate")).lower()
+    status = _clean(lead.get("website_mock_status")).lower()
+    return candidate == "suggested" or status == "needs_review"
+
+
 def mock_generated(lead: dict) -> bool:
     return _clean(lead.get("website_mock_status")).lower() == "generated"
 
@@ -314,6 +320,33 @@ def candidate_updates(
     }
 
 
+def suggested_updates(
+    mock_type: str,
+    *,
+    category: str = "",
+    confidence: str = "medium",
+    reason: str = "",
+    existing_notes: str = "",
+    now: datetime | None = None,
+) -> dict:
+    now = now or datetime.now(ZoneInfo(config.TIMEZONE)).replace(microsecond=0)
+    normalized = normalize_mock_type(mock_type, category=category)
+    clean_confidence = _clean(confidence) or "medium"
+    clean_reason = _clean(reason) or "website looks dated or hard to use"
+    note = (
+        f"Suggested website mock on {now.date().isoformat()}; "
+        f"type={normalized}; confidence={clean_confidence}; reason={clean_reason}."
+    )
+    return {
+        "website_mock_candidate": "suggested",
+        "website_mock_type": normalized,
+        "website_mock_versions": "auto",
+        "website_mock_status": "needs_review",
+        "website_mock_notes": append_note(existing_notes, note),
+        "last_action": "website_mock_suggested",
+    }
+
+
 def skip_updates(
     *,
     existing_notes: str = "",
@@ -341,3 +374,10 @@ def append_note(existing_notes: str, note: str) -> str:
     if note in existing_notes:
         return existing_notes
     return f"{existing_notes}|{note}"
+
+
+def latest_mock_note(lead: dict) -> str:
+    notes = _clean(lead.get("website_mock_notes"))
+    if not notes:
+        return ""
+    return notes.split("|")[-1].strip()

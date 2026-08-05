@@ -127,10 +127,18 @@
       <div>
         <strong>Website mock</strong>
         <p class="school-meta">
-          Status: {{ lead.get("website_mock_status", "not_started") or "not_started" }}
+          Status:
+          {% if lead_mock_suggested %}
+            <span class="mock-status-suggested">Suggested</span>
+          {% else %}
+            {{ lead.get("website_mock_status", "not_started") or "not_started" }}
+          {% endif %}
           {% if lead.get("website_mock_type") %} · {{ lead.get("website_mock_type") }}{% endif %}
           {% if lead.get("website_mock_versions") %} · {{ lead.get("website_mock_versions") }}{% endif %}
         </p>
+        {% if lead_mock_suggested and lead_mock_note %}
+          <p class="school-meta mock-note">{{ lead_mock_note }}</p>
+        {% endif %}
         {% if lead_mock_links %}
           <p class="school-meta mock-links">
             {% for item in lead_mock_links %}
@@ -152,7 +160,7 @@
                 name="action_type"
                 value="website_mock_candidate"
                 class="btn-mock">
-          Mark mock
+          {% if lead_mock_suggested %}Approve mock{% else %}Mark mock{% endif %}
         </button>
         <button type="submit"
                 name="action_type"

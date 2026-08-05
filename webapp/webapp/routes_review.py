@@ -308,12 +308,16 @@ def review_view(
 
     lead_mock_type = ""
     lead_mock_links = []
+    lead_mock_suggested = False
+    lead_mock_note = ""
     if lead:
         lead_mock_type = website_mocks.normalize_mock_type(
             str(lead.get("website_mock_type", "")).strip(),
             category=str(lead.get("category", "")).strip(),
         )
         lead_mock_links = website_mocks.generated_mock_links(lead)
+        lead_mock_suggested = website_mocks.is_mock_suggested(lead)
+        lead_mock_note = website_mocks.latest_mock_note(lead)
 
     # Grid: all leads matching current mode, sorted, paginated
     grid_leads = [r for r in rows if _matches_mode(r, mode)]
@@ -353,6 +357,8 @@ def review_view(
             "mock_type_options": website_mocks.MOCK_TYPE_OPTIONS,
             "lead_mock_type": lead_mock_type,
             "lead_mock_links": lead_mock_links,
+            "lead_mock_suggested": lead_mock_suggested,
+            "lead_mock_note": lead_mock_note,
         },
     )
 

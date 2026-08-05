@@ -58,3 +58,20 @@ def test_decorate_rows_keeps_only_active_outreach():
         "followup_due",
         "followup_scheduled",
     }
+
+
+def test_decorate_rows_marks_mock_suggestions():
+    rows = [
+        {
+            "name": "Suggested",
+            "status": "awaiting_approval",
+            "website_mock_candidate": "suggested",
+            "website_mock_status": "needs_review",
+            "website_mock_notes": "old|new suggestion",
+        }
+    ]
+
+    decorated = routes_in_progress._decorate_rows(rows)
+
+    assert decorated[0]["_mock_suggested"] is True
+    assert decorated[0]["_mock_note_excerpt"] == "new suggestion"

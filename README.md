@@ -93,6 +93,7 @@ Set `PONTORA_ADMIN` in `.env` or pass `--admin NAME`. The legacy `ENROLLIFY_ADMI
 ├── scripts/
 │   ├── setup_gmail_oauth.py
 │   ├── setup_website_mock_sheet.py
+│   ├── suggest_website_mocks.py
 │   ├── generate_website_mocks.py
 │   ├── run_daily.py
 │   ├── run_phase_1_discovery.py

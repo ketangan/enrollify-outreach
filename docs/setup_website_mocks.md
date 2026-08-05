@@ -1,7 +1,8 @@
 # Website Mock Follow-Up Setup
 
 This feature adds optional website-refresh mock links to follow-up emails for
-schools you manually mark as good candidates.
+schools you approve as good candidates. A conservative scanner can suggest
+dated-site opportunities first, but suggestions are manual-gated.
 
 Use a separate Cloudflare Workers static-assets app/subdomain for mocks. Do not
 direct-upload only mock files into the manually managed `mypontora.com` website
@@ -73,7 +74,23 @@ scripts for the account.
 
 ## Manual Test
 
-After marking a lead as a mock candidate in Review or In Progress:
+To scan active outreach rows and ready-to-send rows for likely dated-site
+opportunities:
+
+```bash
+python scripts/suggest_website_mocks.py --dry-run --include-ready-to-send
+python scripts/suggest_website_mocks.py --write-sheet --include-ready-to-send
+```
+
+This writes `website_mock_candidate=suggested` and
+`website_mock_status=needs_review`. It does not generate pages and does not
+change email copy.
+
+Approve suggestions from In Progress or Review before the follow-up is due.
+That changes the row to `website_mock_candidate=yes` and
+`website_mock_status=not_started`.
+
+After approving a lead as a mock candidate in Review or In Progress:
 
 ```bash
 python scripts/generate_website_mocks.py --base-url https://mocks.mypontora.com --output-dir generated/website-mocks-site
@@ -95,6 +112,20 @@ website_mock_status=generated
 website_mock_payload contains at least one URL
 ```
 
-In GitHub Actions, mock rendering/deployment is intentionally non-blocking for
-the core daily outreach run. If Cloudflare deployment fails, daily Gmail draft
-generation still continues, and mock URLs are not written back to the Sheet.
+In GitHub Actions, the suggestion scan, mock rendering, and mock deployment are
+intentionally non-blocking for the core daily outreach run. If Cloudflare
+deployment fails, daily Gmail draft generation still continues, and mock URLs
+are not written back to the Sheet.
+
+The daily order is:
+
+```text
+suggest website mock opportunities
+render/deploy approved mock candidates
+write generated URLs back to Leads
+create Gmail drafts/follow-ups
+```
+
+So the practical rule is simple: approve a suggestion before the morning daily
+run that will create the follow-up. If you approve it after that run, the mock
+can be generated on the next run instead.

@@ -33,10 +33,10 @@ id | name | website | category | city | state | zip | phone | address | discover
 - `discovered_date`, `follow_up_at` → date
 - `sent_at`, `follow_up_sent_at`, `replied_at` → datetime (ISO 8601 strings)
 - `status`, `enrollment_method`, `email_confidence` → dropdown (see below)
-- `website_mock_candidate` → optional `yes/no`; only marked leads can get website-refresh mock links in follow-up emails
+- `website_mock_candidate` → optional `suggested/yes/no`; only `yes` leads can get website-refresh mock links in follow-up emails
 - `website_mock_type` → `preschool`, `music`, or `sports`
 - `website_mock_versions` → `auto` or comma-separated version ids; `auto` currently creates 2 versions per type
-- `website_mock_status` → `not_started`, `generated`, `failed`, or `skip`
+- `website_mock_status` → `needs_review`, `not_started`, `generated`, `failed`, or `skip`
 - `website_mock_payload` → JSON list of generated mock URLs; supports more versions without adding more columns
 - `website_mock_generated_at` → ISO date/time when mock metadata was generated
 - `website_mock_notes` → free text for mock workflow decisions

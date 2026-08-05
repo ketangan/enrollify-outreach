@@ -18,6 +18,12 @@
 </form>
 
 <p class="muted">Showing {{ rows|length }} of {{ total }} active outreach row{% if total != 1 %}s{% endif %}.</p>
+{% if mock_suggestion_count %}
+  <p class="mock-suggestion-summary">
+    {{ mock_suggestion_count }} website mock suggestion{% if mock_suggestion_count != 1 %}s{% endif %}
+    need review before they can be generated for a follow-up.
+  </p>
+{% endif %}
 
 <table class="data-table in-progress-table">
   <thead>
@@ -54,13 +60,21 @@
       </td>
       <td>
         <div class="school-meta">
-          {{ r.get("website_mock_status", "") or "not_started" }}
+          {% if r.get("_mock_suggested") %}
+            <span class="mock-status-suggested">Suggested</span>
+          {% else %}
+            {{ r.get("website_mock_status", "") or "not_started" }}
+          {% endif %}
           {% if r.get("website_mock_type") %} · {{ r.get("website_mock_type") }}{% endif %}
         </div>
+        {% if r.get("_mock_suggested") and r.get("_mock_note_excerpt") %}
+          <div class="school-meta mock-note">{{ r.get("_mock_note_excerpt") }}</div>
+        {% endif %}
         <form method="POST" action="/in-progress/mock" class="inline-mock-form">
           <input type="hidden" name="lead_id" value="{{ r.get('id', '') }}">
           <input type="hidden" name="q" value="{{ q }}">
           <input type="hidden" name="page" value="{{ page }}">
+          <input type="hidden" name="action_type" value="candidate">
           <select name="mock_type" class="dnc-reason" aria-label="Website mock type">
             {% for opt in mock_type_options %}
               <option value="{{ opt }}" {% if opt == r.get('_mock_type_default', '') %}selected{% endif %}>{{ opt }}</option>
@@ -68,10 +82,21 @@
           </select>
           <input type="hidden" name="versions" value="{{ r.get('website_mock_versions', '') or 'auto' }}">
           <button type="submit"
+                  name="action_type"
+                  value="candidate"
                   class="btn-mock-small"
-                  onclick="return confirm('Mark this lead for website mock generation?')">
-            Mock
+                  onclick="return confirm('{% if r.get('_mock_suggested') %}Approve this website mock suggestion for generation?{% else %}Mark this lead for website mock generation?{% endif %}')">
+            {% if r.get("_mock_suggested") %}Approve{% else %}Mock{% endif %}
           </button>
+          {% if r.get("_mock_suggested") %}
+            <button type="submit"
+                    name="action_type"
+                    value="skip"
+                    class="btn-mock-skip-small"
+                    onclick="return confirm('Skip the website mock suggestion for this lead?')">
+              Skip
+            </button>
+          {% endif %}
         </form>
       </td>
       <td>

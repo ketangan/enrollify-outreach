@@ -189,7 +189,14 @@ Before outreach resumes, run a read-only template check and ensure no old brand/
 
 ## Website Mock Addendum
 
-Optional website-refresh mocks are manual-gated. Mark a lead as a mock candidate from Review or In Progress, then run:
+Optional website-refresh mocks are manual-gated. The scanner can suggest likely dated-site opportunities:
+
+```bash
+python scripts/suggest_website_mocks.py --dry-run --include-ready-to-send
+python scripts/suggest_website_mocks.py --write-sheet --include-ready-to-send
+```
+
+Suggestions show as `website_mock_candidate=suggested` / `website_mock_status=needs_review` in Review and In Progress. They do not generate pages and do not affect email copy. Approve a suggestion to convert it to `website_mock_candidate=yes`, then run:
 
 ```bash
 python scripts/setup_website_mock_sheet.py
@@ -200,7 +207,7 @@ The generator creates two versions by default for each mock type (`preschool`, `
 
 Do not deploy these files into the manually managed main `mypontora.com` website project unless the full marketing site is also in the same deploy directory. Use a separate Cloudflare Workers static-assets app/subdomain such as `mocks.mypontora.com` for this workflow.
 
-Mock generation/deployment is non-blocking in GitHub Actions. If Cloudflare fails, the daily outreach pipeline still runs, and Sheet mock URLs are not written.
+Mock suggestion, generation, and deployment are non-blocking in GitHub Actions. If Cloudflare fails, the daily outreach pipeline still runs, and Sheet mock URLs are not written. The daily order is: suggest opportunities, render/deploy approved candidates, write URLs, then create Gmail drafts/follow-ups.
 
 ## Operational Notes
 

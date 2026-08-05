@@ -38,6 +38,15 @@ jobs:
           echo "${{ secrets.GMAIL_OAUTH_CLIENT_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/gmail-oauth-client.json
           echo "${{ secrets.GMAIL_TOKEN_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/gmail-token.json
 
+      - name: Suggest website mock opportunities
+        continue-on-error: true
+        env:
+          GOOGLE_SHEETS_CREDENTIALS_PATH: config/google-service-account.json
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          TIMEZONE: America/Los_Angeles
+        run: |
+          python scripts/suggest_website_mocks.py --write-sheet --include-ready-to-send --limit 40
+
       - name: Render website mocks
         id: render_mocks
         if: ${{ vars.WEBSITE_MOCK_BASE_URL != '' && vars.CLOUDFLARE_MOCKS_WORKER_NAME != '' }}

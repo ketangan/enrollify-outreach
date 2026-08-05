@@ -34,6 +34,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 PAGE_SIZE = 100
 IN_PROGRESS_DNC_ACTION = "in_progress_dnc"
 IN_PROGRESS_MOCK_ACTION = "in_progress_website_mock_candidate"
+IN_PROGRESS_MOCK_SKIP_ACTION = "in_progress_website_mock_skip"
 DEFAULT_DNC_REASON = "not_interested_or_unqualified_after_contact"
 
 
@@ -94,6 +95,8 @@ def _decorate_rows(rows: list[dict]) -> list[dict]:
             continue
         copied = dict(row)
         copied["_active_stage"] = outreach_state.active_stage(row)
+        copied["_mock_suggested"] = website_mocks.is_mock_suggested(copied)
+        copied["_mock_note_excerpt"] = website_mocks.latest_mock_note(copied)
         copied["_mock_type_default"] = website_mocks.normalize_mock_type(
             str(copied.get("website_mock_type", "")).strip(),
             category=str(copied.get("category", "")).strip(),
@@ -143,6 +146,7 @@ def in_progress_view(request: Request, q: str = "", page: int = 1):
     page = max(1, min(page, total_pages))
     start = (page - 1) * PAGE_SIZE
     page_rows = active_rows[start:start + PAGE_SIZE]
+    mock_suggestion_count = sum(1 for row in active_rows if row.get("_mock_suggested"))
 
     return templates.TemplateResponse(
         request,
@@ -156,6 +160,7 @@ def in_progress_view(request: Request, q: str = "", page: int = 1):
             "q": q,
             "active_start_date": outreach_state.active_start_date().isoformat(),
             "mock_type_options": website_mocks.MOCK_TYPE_OPTIONS,
+            "mock_suggestion_count": mock_suggestion_count,
         },
     )
 
@@ -195,6 +200,7 @@ def in_progress_mock(
     lead_id: str = Form(...),
     mock_type: str = Form(""),
     versions: str = Form("auto"),
+    action_type: str = Form("candidate"),
     q: str = Form(""),
     page: int = Form(1),
 ):
@@ -212,13 +218,20 @@ def in_progress_mock(
         header: row_values[idx] if idx < len(row_values) else ""
         for idx, header in enumerate(headers)
     }
-    updates = website_mocks.candidate_updates(
-        mock_type,
-        versions,
-        category=existing.get("category", ""),
-        existing_notes=existing.get("website_mock_notes", ""),
-    )
-    updates["last_action"] = IN_PROGRESS_MOCK_ACTION
+    if action_type == "skip":
+        updates = website_mocks.skip_updates(
+            existing_notes=existing.get("website_mock_notes", ""),
+            reason="manual_skip_from_in_progress",
+        )
+        updates["last_action"] = IN_PROGRESS_MOCK_SKIP_ACTION
+    else:
+        updates = website_mocks.candidate_updates(
+            mock_type,
+            versions,
+            category=existing.get("category", ""),
+            existing_notes=existing.get("website_mock_notes", ""),
+        )
+        updates["last_action"] = IN_PROGRESS_MOCK_ACTION
     batch = [
         {"range": rowcol_to_a1(row_idx, headers.index(key) + 1), "values": [[value]]}
         for key, value in updates.items()
