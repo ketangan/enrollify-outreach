@@ -104,6 +104,11 @@ After Cloudflare deployment is configured, use:
 python scripts/generate_website_mocks.py --base-url https://mocks.mypontora.com --write-sheet
 ```
 
+To regenerate already-created mocks without creating daily outreach drafts, run
+the GitHub Action named `Refresh Pontora Website Mocks` with `force=true`. This
+rebuilds the static mock site, deploys it to Cloudflare, and refreshes the mock
+metadata in the Leads sheet.
+
 Follow-up drafts include the mock addendum only when:
 
 ```text

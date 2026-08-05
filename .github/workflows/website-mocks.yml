@@ -1,0 +1,82 @@
+name: Refresh Pontora Website Mocks
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Regenerate mocks that are already marked generated"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+jobs:
+  refresh-mocks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Write Google service account JSON from secret
+        run: |
+          mkdir -p config
+          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/google-service-account.json
+
+      - name: Render website mocks
+        env:
+          GOOGLE_SHEETS_CREDENTIALS_PATH: config/google-service-account.json
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          WEBSITE_MOCK_BASE_URL: ${{ vars.WEBSITE_MOCK_BASE_URL }}
+          CLICK_LOGGER_URL: ${{ vars.CLICK_LOGGER_URL }}
+          TIMEZONE: America/Los_Angeles
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            python scripts/generate_website_mocks.py --base-url "$WEBSITE_MOCK_BASE_URL" --output-dir generated/website-mocks-site --force
+          else
+            python scripts/generate_website_mocks.py --base-url "$WEBSITE_MOCK_BASE_URL" --output-dir generated/website-mocks-site
+          fi
+
+      - name: Deploy website mocks to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --assets generated/website-mocks-site --name=${{ vars.CLOUDFLARE_MOCKS_WORKER_NAME }} --compatibility-date=2026-08-04
+
+      - name: Update website mock metadata in Sheet
+        env:
+          GOOGLE_SHEETS_CREDENTIALS_PATH: config/google-service-account.json
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          WEBSITE_MOCK_BASE_URL: ${{ vars.WEBSITE_MOCK_BASE_URL }}
+          CLICK_LOGGER_URL: ${{ vars.CLICK_LOGGER_URL }}
+          TIMEZONE: America/Los_Angeles
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            python scripts/generate_website_mocks.py --base-url "$WEBSITE_MOCK_BASE_URL" --output-dir generated/website-mocks-site --write-sheet --force
+          else
+            python scripts/generate_website_mocks.py --base-url "$WEBSITE_MOCK_BASE_URL" --output-dir generated/website-mocks-site --write-sheet
+          fi
+
+      - name: Cleanup credentials
+        if: always()
+        run: |
+          rm -f config/google-service-account.json

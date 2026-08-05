@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gspread.utils import rowcol_to_a1
 
-from src import config, sheets, website_mocks
+from src import config, fetcher, sheets, website_mocks
 from src.name_cleaner import clean_school_name
 
 logging.basicConfig(
@@ -82,15 +82,47 @@ def _programs_for(mock_type: str, category: str) -> list[str]:
 def _hero_headline(mock_type: str, variant_id: str, school_name: str) -> str:
     if mock_type == "preschool":
         if variant_id == "structured":
-            return f"A clearer first step for {school_name} families."
-        return f"A warmer welcome for new {school_name} families."
+            return "Tour, apply, and enroll without the paperwork chase."
+        return "A calmer first step for new families."
     if mock_type == "music":
         if variant_id == "performance":
-            return f"Lessons, programs, and performances in one clear path."
-        return f"Music lessons made easier to explore and book."
+            return "Lessons with a stage to grow toward."
+        return "Private lessons that fit real schedules."
     if variant_id == "trust":
-        return f"Training families can understand before they ever call."
-    return f"Classes, schedules, and signups without the confusion."
+        return "Confidence before the first class."
+    return "Try a class. Find your level. Keep moving."
+
+
+def _hero_intro(mock_type: str, variant_id: str, school_name: str) -> str:
+    if mock_type == "preschool":
+        if variant_id == "structured":
+            return (
+                f"At {school_name}, families can see age groups, "
+                "tour requests, application steps, and waitlist expectations in one flow."
+            )
+        return (
+            f"{school_name} gives parents a quick feel for the classroom "
+            "rhythm, teacher trust, openings, and how to ask about enrollment."
+        )
+    if mock_type == "music":
+        if variant_id == "performance":
+            return (
+                f"At {school_name}, students can see how lessons connect to "
+                "practice goals, recitals, and trial lesson requests."
+            )
+        return (
+            f"{school_name} helps families compare teacher fit, "
+            "student level, scheduling, and inquiry details grouped together."
+        )
+    if variant_id == "trust":
+        return (
+            f"{school_name} gives parents the context they need: coaches, safety "
+            "expectations, class levels, and what the first visit looks like."
+        )
+    return (
+        f"{school_name} puts classes, age ranges, "
+        "trial options, and signup momentum right up front."
+    )
 
 
 def _tracking_script() -> str:
@@ -153,6 +185,642 @@ def _tracking_script() -> str:
 """
 
 
+def _program_blurbs(
+    mock_type: str,
+    variant_id: str,
+    category: str,
+) -> list[tuple[str, str]]:
+    category = _clean(category).lower()
+    if mock_type == "preschool":
+        if variant_id == "structured":
+            return [
+                ("Age groups", "Ages, schedules, and readiness details are easy to compare before a family calls."),
+                ("Tour checklist", "Parents see what to expect, what to bring, and how the visit works."),
+                ("Application path", "Inquiry, tour, application, placement, and waitlist steps are laid out clearly."),
+                ("Openings", "Availability language and next steps are visible before the first follow-up."),
+            ]
+        return [
+            ("First visit", "A warm introduction that makes the school feel organized before a tour is scheduled."),
+            ("Daily rhythm", "Care, learning, meals, rest, and family updates are easy to understand."),
+            ("Teacher trust", "Staff, philosophy, safety, and classroom values are no longer buried."),
+            ("Openings", "Parents can ask about availability or start enrollment from one clear place."),
+        ]
+
+    if mock_type == "music":
+        if variant_id == "performance":
+            return [
+                ("Showcases", "Recitals, performances, and milestones become part of the first impression."),
+                ("Program tracks", "Beginner, advanced, and performance-prep paths are separated clearly."),
+                ("Events calendar", "Families can see what students are working toward after they enroll."),
+                ("Trial lesson", "Interested families move from browsing to a concrete first lesson request."),
+            ]
+        return [
+            ("Private lessons", "Instruments, levels, and scheduling options are easy to scan."),
+            ("Teacher fit", "Instructor experience and teaching approach sit where parents expect them."),
+            ("Fast inquiry", "Parent and student details are captured before the first phone call."),
+            ("Scheduling", "Available lesson paths are clear without making families dig."),
+        ]
+
+    if mock_type == "sports":
+        if variant_id == "trust":
+            return [
+                ("Coach confidence", "Families see who teaches, how students are supported, and what parents can expect."),
+                ("Safety and levels", "Beginner readiness, age groups, and progression feel clear."),
+                ("Parent FAQs", "Trial, gear, schedule, and commitment questions are answered early."),
+                ("Clean follow-up", "Interest turns into a tracked inquiry instead of a loose email thread."),
+            ]
+        if category == "martial_arts":
+            return [
+                ("Kids classes", "Age-based training options use beginner-friendly language."),
+                ("Trial class", "Families have a direct path to try a class before committing."),
+                ("Rank progress", "The path from first class to visible milestones is easy to understand."),
+                ("Schedule clarity", "Class times and next steps sit in one obvious place."),
+            ]
+        return [
+            ("Youth classes", "Programs are grouped by age, level, and family goal."),
+            ("Camps and clinics", "Seasonal offerings get a clean, high-energy presentation."),
+            ("Trial sessions", "Parents can request a first class without extra back-and-forth."),
+            ("Availability", "Capacity and waitlist language can be handled before follow-up."),
+        ]
+
+    return [(program, "Clear details, easy next steps, and a direct inquiry path for families.")
+            for program in _programs_for(mock_type, category)]
+
+
+def _render_cards(items: list[tuple[str, str]], class_name: str = "cards") -> str:
+    return "\n".join(
+        f'<article class="{class_name}__card"><span>{idx:02d}</span>'
+        f"<h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
+        for idx, (title, body) in enumerate(items, start=1)
+    )
+
+
+def _render_contact_link(phone: str, website: str) -> str:
+    phone = _clean(phone)
+    website = _clean(website)
+    pieces = []
+    if phone:
+        pieces.append(f"<strong>{html.escape(phone)}</strong>")
+    else:
+        pieces.append("<strong>Request information</strong>")
+    if website:
+        pieces.append(
+            f'<a href="{html.escape(website, quote=True)}" target="_blank" rel="noopener">Current site</a>'
+        )
+    return " ".join(pieces)
+
+
+def _visual_palette(variant: website_mocks.MockVariant) -> dict[str, str]:
+    palettes = {
+        ("music", "studio"): {
+            "accent": "#16b8aa",
+            "secondary": "#101a4f",
+            "ink": "#101a4f",
+            "muted": "#4e5d7d",
+            "paper": "#f7fbfb",
+            "soft": "#eaf8f6",
+            "line": "#d5e8e7",
+            "danger": "#e45858",
+            "hero_overlay_a": "rgba(16,26,79,.90)",
+            "hero_overlay_b": "rgba(22,184,170,.56)",
+            "hero_glow": "rgba(22,184,170,.30)",
+            "action_overlay_a": "rgba(16,26,79,.94)",
+            "action_overlay_b": "rgba(22,184,170,.72)",
+        },
+        ("music", "performance"): {
+            "accent": "#f2a93b",
+            "secondary": "#111827",
+            "ink": "#161b2f",
+            "muted": "#5b6175",
+            "paper": "#fffaf2",
+            "soft": "#fff2d9",
+            "line": "#ead9b8",
+            "danger": "#dd4b39",
+            "hero_overlay_a": "rgba(17,24,39,.96)",
+            "hero_overlay_b": "rgba(45,32,19,.88)",
+            "hero_glow": "rgba(242,169,59,.42)",
+            "action_overlay_a": "rgba(17,24,39,.94)",
+            "action_overlay_b": "rgba(242,169,59,.70)",
+        },
+        ("sports", "action"): {
+            "accent": "#ef4444",
+            "secondary": "#121212",
+            "ink": "#171717",
+            "muted": "#5a5f6f",
+            "paper": "#fff8f3",
+            "soft": "#fff0e6",
+            "line": "#f1d4c7",
+            "danger": "#dc2626",
+            "hero_overlay_a": "rgba(18,18,18,.96)",
+            "hero_overlay_b": "rgba(127,29,29,.78)",
+            "hero_glow": "rgba(239,68,68,.38)",
+            "action_overlay_a": "rgba(18,18,18,.96)",
+            "action_overlay_b": "rgba(239,68,68,.72)",
+        },
+        ("sports", "trust"): {
+            "accent": "#2fb07f",
+            "secondary": "#12312f",
+            "ink": "#12312f",
+            "muted": "#536663",
+            "paper": "#f7fbf7",
+            "soft": "#edf7f1",
+            "line": "#d8e8de",
+            "danger": "#d85d4a",
+            "hero_overlay_a": "rgba(18,49,47,.94)",
+            "hero_overlay_b": "rgba(47,176,127,.56)",
+            "hero_glow": "rgba(47,176,127,.32)",
+            "action_overlay_a": "rgba(18,49,47,.94)",
+            "action_overlay_b": "rgba(47,176,127,.70)",
+        },
+        ("preschool", "warm"): {
+            "accent": "#f97362",
+            "secondary": "#35513f",
+            "ink": "#243d35",
+            "muted": "#66736d",
+            "paper": "#fffaf7",
+            "soft": "#fff0eb",
+            "line": "#efd7ce",
+            "danger": "#d85d4a",
+            "hero_overlay_a": "rgba(36,61,53,.90)",
+            "hero_overlay_b": "rgba(249,115,98,.56)",
+            "hero_glow": "rgba(249,115,98,.30)",
+            "action_overlay_a": "rgba(36,61,53,.94)",
+            "action_overlay_b": "rgba(249,115,98,.70)",
+        },
+        ("preschool", "structured"): {
+            "accent": "#3b82f6",
+            "secondary": "#172554",
+            "ink": "#172554",
+            "muted": "#53627d",
+            "paper": "#f6f8ff",
+            "soft": "#eaf0ff",
+            "line": "#d8e0f5",
+            "danger": "#e45858",
+            "hero_overlay_a": "rgba(23,37,84,.95)",
+            "hero_overlay_b": "rgba(59,130,246,.60)",
+            "hero_glow": "rgba(59,130,246,.34)",
+            "action_overlay_a": "rgba(23,37,84,.95)",
+            "action_overlay_b": "rgba(59,130,246,.72)",
+        },
+    }
+    return palettes.get(
+        (variant.type_id, variant.version_id),
+        {
+            "accent": variant.accent,
+            "secondary": variant.secondary,
+            "ink": "#071048",
+            "muted": "#4b587c",
+            "paper": "#f6fbff",
+            "soft": "#eef8fb",
+            "line": "#d8e6f3",
+            "danger": "#ee5b4f",
+            "hero_overlay_a": "rgba(7,16,72,.95)",
+            "hero_overlay_b": "rgba(17,24,39,.90)",
+            "hero_glow": "rgba(15,93,184,.42)",
+            "action_overlay_a": "rgba(8,16,77,.96)",
+            "action_overlay_b": "rgba(15,93,184,.74)",
+        },
+    )
+
+
+PHOTO_SETS = {
+    "music": [
+        "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1525201548942-d8732f6617a0?auto=format&fit=crop&w=1400&q=80",
+    ],
+    "preschool": [
+        "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1587654780291-39c9404d746b?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1542810634-71277d95dcbb?auto=format&fit=crop&w=1400&q=80",
+    ],
+    "sports": [
+        "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1526232761682-d26e03ac148e?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1400&q=80",
+    ],
+    "martial_arts": [
+        "https://images.unsplash.com/photo-1555597673-b21d5c935865?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1549719386-74dfcbf7dbed?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1495555687398-3f50d6e79e1e?auto=format&fit=crop&w=1400&q=80",
+    ],
+    "swim": [
+        "https://images.unsplash.com/photo-1530549387789-4c1017266635?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1526232761682-d26e03ac148e?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1400&q=80",
+    ],
+}
+
+
+def _photo_urls(mock_type: str, category: str = "") -> list[str]:
+    category_key = _clean(category).lower()
+    if mock_type == "sports" and category_key in PHOTO_SETS:
+        return PHOTO_SETS[category_key]
+    return PHOTO_SETS.get(mock_type) or PHOTO_SETS["preschool"]
+
+
+def _photo_style(photo_url: str) -> str:
+    return f"style=\"--photo: url('{html.escape(photo_url, quote=True)}')\""
+
+
+def _hero_photo_style(photo_url: str) -> str:
+    return f"style=\"--hero-photo: url('{html.escape(photo_url, quote=True)}')\""
+
+
+def _photo_card(photo_url: str, label: str, extra_class: str = "") -> str:
+    class_name = f"photo-card {extra_class}".strip()
+    return (
+        f'<figure class="{html.escape(class_name, quote=True)}" {_photo_style(photo_url)}>'
+        f"<figcaption>{html.escape(label)}</figcaption></figure>"
+    )
+
+
+COMMON_SITE_ANCHOR_PATTERNS = [
+    (r"\bschedule\s+(?:a\s+)?tour\b|\bbook\s+(?:a\s+)?tour\b|\btours?\b", "Tour requests"),
+    (r"\btrial\s+(?:class|lesson|session)\b|\bfree\s+trial\b", "Trial requests"),
+    (r"\bwait\s*list\b|\bwaitlist\b", "Waitlist"),
+    (r"\bregistration\b|\benrollment\b|\bapplication\b", "Enrollment steps"),
+    (r"\bclass\s+times?\b|\bschedules?\b", "Schedule details"),
+    (r"\btuition\b|\bregistration\s+fees?\b|\bmonthly\s+fees?\b", "Tuition details"),
+]
+
+SITE_ANCHOR_PATTERNS = {
+    "music": [
+        (
+            r"\b(?:private|group|beginner|advanced|online|in-home)?\s*"
+            r"(?:guitar|piano|voice|vocal|violin|drum|bass|ukulele|theory|songwriting)"
+            r"\s+(?:lessons?|classes?|instruction)\b",
+            None,
+        ),
+        (r"\bprivate\s+lessons?\b", "Private lessons"),
+        (r"\bgroup\s+lessons?\b", "Group lessons"),
+        (r"\brecitals?\b|\bshowcases?\b|\bstudent\s+concerts?\b", "Recitals"),
+        (r"\btrial\s+lessons?\b", "Trial lessons"),
+        (r"\bperformance\s+prep\b|\baudition\s+prep\b", "Performance prep"),
+        (r"\bdance\s+classes?\b|\bballet\b|\bhip\s*hop\b|\bjazz\s+dance\b", "Dance classes"),
+        (r"\bart\s+classes?\b|\bdrawing\b|\bpainting\b", "Art classes"),
+    ],
+    "preschool": [
+        (r"\binfant\s+care\b|\binfants?\b", "Infant care"),
+        (r"\btoddler\s+(?:care|program|class(?:room)?)\b|\btoddlers?\b", "Toddler program"),
+        (r"\bpreschool\b", "Preschool"),
+        (r"\bpre[-\s]?k\b|\bprekindergarten\b", "Pre-K"),
+        (r"\bkindergarten\s+readiness\b", "Kindergarten readiness"),
+        (r"\bmontessori\b", "Montessori"),
+        (r"\bafter[-\s]?school\b", "After-school care"),
+        (r"\bsummer\s+camp\b", "Summer camp"),
+        (r"\boutdoor\s+play\b|\bplay[-\s]?based\b", "Play-based learning"),
+        (r"\bbilingual\b|\bspanish\s+immersion\b|\bmandarin\b", "Language exposure"),
+        (
+            r"\bages?\s+\d+(?:\s*(?:-|to|through)\s*\d+)?\s*"
+            r"(?:months?|years?|yrs?)?\b",
+            None,
+        ),
+    ],
+    "sports": [
+        (r"\bkids?\s+(?:classes?|programs?|training)\b", "Kids classes"),
+        (r"\bbeginner\s+(?:classes?|programs?|training)\b", "Beginner classes"),
+        (r"\btrial\s+classes?\b", "Trial classes"),
+        (r"\bmartial\s+arts\b|\bjiu[-\s]?jitsu\b|\bkarate\b|\btaekwondo\b", None),
+        (r"\bself[-\s]?defense\b", "Self-defense"),
+        (r"\bbelt\s+(?:testing|promotion|rank)\b|\brank\s+progress\b", "Rank progress"),
+        (r"\bswim\s+lessons?\b|\bwater\s+safety\b", None),
+        (r"\bgymnastics\b|\btumbling\b", None),
+        (r"\bsummer\s+camp\b|\bcamps?\s+and\s+clinics?\b", "Camps and clinics"),
+        (r"\bcompetitions?\b|\btournaments?\b", "Competition training"),
+    ],
+}
+
+GENERIC_SITE_ANCHORS = {
+    "home",
+    "about",
+    "contact",
+    "contact us",
+    "program",
+    "programs",
+    "classes",
+    "schedule",
+    "schedules",
+    "enroll",
+    "enrollment",
+    "registration",
+    "login",
+    "privacy",
+    "terms",
+}
+
+
+def _anchor_title_case(value: str) -> str:
+    label = _clean(value)
+    if not label:
+        return ""
+    label = re.sub(r"[\s|/:;]+", " ", label)
+    label = re.sub(r"[.,!?]+$", "", label).strip()
+    label = re.sub(r"\s+", " ", label)
+    label = label[:52].rsplit(" ", 1)[0] if len(label) > 52 and " " in label[:52] else label[:52]
+    label = label.lower()
+    replacements = {
+        "pre k": "Pre-K",
+        "pre-k": "Pre-K",
+        "jiu jitsu": "Jiu Jitsu",
+        "jiu-jitsu": "Jiu Jitsu",
+        "brazilian jiu jitsu": "Brazilian Jiu Jitsu",
+        "taekwondo": "Taekwondo",
+        "montessori": "Montessori",
+        "prekindergarten": "Pre-K",
+        "hip hop": "Hip hop",
+    }
+    if label in replacements:
+        return replacements[label]
+    words = []
+    for word in label.split():
+        words.append(replacements.get(word, word))
+    label = " ".join(words)
+    return label[:1].upper() + label[1:]
+
+
+def _anchor_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", _clean(value).lower()).strip()
+
+
+def _site_anchor_patterns(mock_type: str, category: str) -> list[tuple[str, str | None]]:
+    mock_type = _clean(mock_type)
+    category = _clean(category).lower()
+    patterns = list(SITE_ANCHOR_PATTERNS.get(mock_type, []))
+    if mock_type == "music" and category == "dance":
+        patterns.insert(0, (r"\b(?:ballet|jazz|tap|hip\s*hop|contemporary)\b", None))
+    if mock_type == "sports" and category in {"martial_arts", "swim", "gymnastics"}:
+        patterns.insert(0, (rf"\b{re.escape(category.replace('_', ' '))}\b", None))
+    patterns.extend(COMMON_SITE_ANCHOR_PATTERNS)
+    return patterns
+
+
+def _site_anchor_labels_from_text(
+    text: str,
+    *,
+    mock_type: str,
+    category: str,
+    school_name: str = "",
+    max_labels: int = 5,
+) -> list[str]:
+    signal = re.sub(r"\s+", " ", _clean(text))
+    if not signal:
+        return []
+
+    school_key = _anchor_key(school_name)
+    labels = []
+    seen = set()
+    for pattern, explicit_label in _site_anchor_patterns(mock_type, category):
+        for match in re.finditer(pattern, signal, flags=re.IGNORECASE):
+            label = _anchor_title_case(explicit_label or match.group(0))
+            key = _anchor_key(label)
+            if not key or key in seen or key in GENERIC_SITE_ANCHORS:
+                continue
+            if school_key and (key == school_key or key in school_key):
+                continue
+            seen.add(key)
+            labels.append(label)
+            if len(labels) >= max_labels:
+                return labels
+    return labels
+
+
+def _site_anchors_for_lead(lead: dict, variant: website_mocks.MockVariant) -> list[str]:
+    override = lead.get("_website_mock_site_anchors")
+    if isinstance(override, str):
+        return [_anchor_title_case(part) for part in override.split("|") if _clean(part)]
+    if isinstance(override, list):
+        return [_anchor_title_case(part) for part in override if _clean(part)]
+
+    website = _clean(lead.get("website"))
+    if not website:
+        return []
+
+    page = fetcher.fetch(website)
+    if page.error:
+        logger.info(
+            "Skipping site-detail anchors for %s: %s",
+            _clean(lead.get("id")) or _clean(lead.get("name")) or website,
+            page.error,
+        )
+        return []
+
+    link_text = " ".join(_clean(link.get("text")) for link in page.outbound_links)
+    signal = f"{page.text} {link_text}"
+    return _site_anchor_labels_from_text(
+        signal,
+        mock_type=variant.type_id,
+        category=_clean(lead.get("category")),
+        school_name=_clean(lead.get("name")),
+    )
+
+
+def _render_site_anchors(labels: list[str]) -> str:
+    clean_labels = [_anchor_title_case(label) for label in labels if _clean(label)]
+    clean_labels = clean_labels[:5]
+    if not clean_labels:
+        return ""
+    chips = "".join(f"<b>{html.escape(label)}</b>" for label in clean_labels)
+    return (
+        '<div class="site-anchors">'
+        "<span>Details brought forward from the current site</span>"
+        f"{chips}</div>"
+    )
+
+
+def _precomputed_site_anchors(lead: dict) -> list[str]:
+    anchors = lead.get("_website_mock_site_anchors")
+    if isinstance(anchors, str):
+        return [_anchor_title_case(part) for part in anchors.split("|") if _clean(part)]
+    if isinstance(anchors, list):
+        return [_anchor_title_case(part) for part in anchors if _clean(part)]
+    return []
+
+
+def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
+    name = ctx["name"]
+    category = ctx["category"]
+    city = ctx["city"]
+    headline = ctx["headline"]
+    intro = ctx["intro"]
+    contact = ctx["contact"]
+    photos = ctx["photos"]
+    site_anchors_html = ctx["site_anchors_html"]
+    cards = _render_cards(items)
+
+    if ctx["type_id"] == "music" and ctx["version_id"] == "performance":
+        showcase_cards = "\n".join(
+            f"<div><b>{html.escape(title)}</b><span>{html.escape(body)}</span></div>"
+            for title, body in items[:3]
+        )
+        return f"""
+    <main class="mock-layout mock-layout-music-performance">
+      <section class="stage-hero" {_hero_photo_style(photos[2])}>
+        <div class="stage-copy">
+          <p class="eyebrow">{category} in {city}</p>
+          <h1>{headline}</h1>
+          <p>{intro}</p>
+          {site_anchors_html}
+          <a class="primary light" href="#next-step">Book a trial lesson</a>
+        </div>
+        <aside class="showcase-calendar" aria-label="Showcase calendar">
+          <span>Upcoming</span>
+          <strong>Spring showcase</strong>
+          <p>Recital prep, student milestones, and trial lesson interest all point to one clear enrollment path.</p>
+        </aside>
+      </section>
+      <section class="showcase-strip">
+        {showcase_cards}
+      </section>
+      <section class="split-feature" id="programs">
+        <div>
+          <p class="section-kicker">Performance pathway</p>
+          <h2>Performance gives every lesson a destination.</h2>
+        </div>
+        <div class="cards">{cards}</div>
+      </section>
+      <section class="cta-band" id="next-step">
+        <h2>Ready for a first lesson?</h2>
+        <p>Parents can choose a lesson path, send student details, and ask questions before the school follows up.</p>
+        <div>{contact}</div>
+      </section>
+    </main>
+"""
+
+    if ctx["type_id"] == "music":
+        return f"""
+    <main class="mock-layout mock-layout-music-studio">
+      <section class="studio-hero">
+        <div>
+          <p class="eyebrow">{category} in {city}</p>
+          <h1>{headline}</h1>
+          <p>{intro}</p>
+          {site_anchors_html}
+          <div class="hero-actions">
+            <a class="primary" href="#next-step">Find the right lesson</a>
+            <a class="secondary-link" href="#programs">View programs</a>
+          </div>
+        </div>
+        <aside class="studio-side" id="next-step">
+          {_photo_card(photos[0], "Lesson paths, scheduling, and teacher fit in one place", "wide-photo")}
+          <div class="lesson-finder">
+            <h2>Lesson finder</h2>
+            <label>Student level</label><div>Beginner / returning / advanced</div>
+            <label>Instrument or focus</label><div>Guitar, voice, piano, theory, performance</div>
+            <label>Best next step</label><div>Request availability and teacher match</div>
+          </div>
+        </aside>
+      </section>
+      <section class="cards compact" id="programs">{cards}</section>
+      <section class="teacher-band">
+        <div><p class="section-kicker">Lesson path</p><h2>Lessons feel personal before the first call.</h2></div>
+        <p>Teacher credibility, scheduling options, and inquiry details live together, so parents do not have to piece together the process.</p>
+      </section>
+    </main>
+"""
+
+    if ctx["type_id"] == "sports" and ctx["version_id"] == "trust":
+        return f"""
+    <main class="mock-layout mock-layout-sports-trust">
+      <section class="trust-hero">
+        <div>
+          <p class="eyebrow">{category} in {city}</p>
+          <h1>{headline}</h1>
+          <p>{intro}</p>
+          {site_anchors_html}
+        </div>
+        <aside class="trust-side">
+          {_photo_card(photos[0], "Parent confidence before the first class", "trust-photo")}
+          <div class="parent-checklist">
+            <h2>Parent questions answered</h2>
+            <p>What age should my child start?</p>
+            <p>What happens in the first class?</p>
+            <p>How do levels and schedules work?</p>
+          </div>
+        </aside>
+      </section>
+      <section class="process-row">
+        <div><b>1</b><span>Pick a level</span></div>
+        <div><b>2</b><span>Request a trial</span></div>
+        <div><b>3</b><span>Get matched with the right class</span></div>
+      </section>
+      <section class="cards" id="programs">{cards}</section>
+      <section class="cta-band soft" id="next-step"><h2>Confidence before commitment.</h2><p>Parents get enough context to take action without calling three times first.</p><div>{contact}</div></section>
+    </main>
+"""
+
+    if ctx["type_id"] == "sports":
+        return f"""
+    <main class="mock-layout mock-layout-sports-action">
+      <section class="action-hero" {_hero_photo_style(photos[1])}>
+        <div class="action-card">
+          <p class="eyebrow">{category} in {city}</p>
+          <h1>{headline}</h1>
+          <p>{intro}</p>
+          {site_anchors_html}
+          <a class="primary light" href="#next-step">Claim a trial spot</a>
+        </div>
+        <div class="schedule-stack" id="next-step">
+          <div><span>Mon/Wed</span><b>Kids beginner</b></div>
+          <div><span>Friday</span><b>Trial class</b></div>
+          <div><span>Weekend</span><b>Clinics and camps</b></div>
+        </div>
+      </section>
+      <section class="cards angled" id="programs">{cards}</section>
+      <section class="impact-band"><h2>Make the first visit easy to say yes to.</h2><p>Families see the right class, the right level, and the next step immediately.</p></section>
+    </main>
+"""
+
+    if ctx["type_id"] == "preschool" and ctx["version_id"] == "structured":
+        return f"""
+    <main class="mock-layout mock-layout-preschool-structured">
+      <section class="admissions-hero">
+        <div>
+          <p class="eyebrow">{category} in {city}</p>
+          <h1>{headline}</h1>
+          <p>{intro}</p>
+          {site_anchors_html}
+        </div>
+        <aside class="admissions-side">
+          {_photo_card(photos[1], "Admissions steps without the guessing", "structured-photo")}
+          <div class="admissions-board">
+            <h2>Enrollment steps</h2>
+            <ol>
+              <li>Check age group and schedule</li>
+              <li>Request tour or availability</li>
+              <li>Submit application details</li>
+              <li>Confirm placement or waitlist</li>
+            </ol>
+          </div>
+        </aside>
+      </section>
+      <section class="cards process-cards" id="programs">{cards}</section>
+      <section class="comparison-band" id="next-step"><h2>Less mystery for parents, fewer loose ends for staff.</h2><p>Every call to action points to the same enrollment workflow.</p><div>{contact}</div></section>
+    </main>
+"""
+
+    return f"""
+    <main class="mock-layout mock-layout-preschool-warm">
+      <section class="warm-hero">
+        <div>
+          <p class="eyebrow">{category} in {city}</p>
+          <h1>{headline}</h1>
+          <p>{intro}</p>
+          {site_anchors_html}
+          <a class="primary" href="#next-step">Ask about openings</a>
+        </div>
+        <div class="classroom-collage">
+          <div {_photo_style(photos[0])}>Morning welcome</div>
+          <div {_photo_style(photos[1])}>Learning through play</div>
+          <div {_photo_style(photos[2])}>Parent updates</div>
+        </div>
+      </section>
+      <section class="cards rounded" id="programs">{cards}</section>
+      <section class="visit-band" id="next-step"><h2>A calmer way for parents to take the first step.</h2><p>Tour requests, openings, questions, and child details can start in one friendly flow.</p><div>{contact}</div></section>
+    </main>
+"""
+
+
 def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     school_name = clean_school_name(
         _clean(lead.get("name")),
@@ -163,23 +831,41 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     city = _clean(lead.get("city")) or "your area"
     phone = _clean(lead.get("phone"))
     website = _clean(lead.get("website"))
-    programs = _programs_for(variant.type_id, _clean(lead.get("category")))
     headline = _hero_headline(variant.type_id, variant.version_id, school_name)
-    accent = html.escape(variant.accent)
-    secondary = html.escape(variant.secondary)
+    intro = _hero_intro(variant.type_id, variant.version_id, school_name)
+    palette = {
+        key: html.escape(value, quote=True)
+        for key, value in _visual_palette(variant).items()
+    }
+    accent = palette["accent"]
+    secondary = palette["secondary"]
     escaped_name = html.escape(school_name)
     escaped_city = html.escape(city)
     escaped_category = html.escape(category)
-    escaped_tagline = html.escape(variant.tagline)
-    program_cards = "\n".join(
-        f"<article><span>{idx:02d}</span><h3>{html.escape(program)}</h3>"
-        "<p>Clear details, easy next steps, and a direct inquiry path for families.</p></article>"
-        for idx, program in enumerate(programs, start=1)
+    escaped_headline = html.escape(headline)
+    escaped_intro = html.escape(intro)
+    contact = _render_contact_link(phone, website)
+    site_anchors_html = _render_site_anchors(_precomputed_site_anchors(lead))
+    items = _program_blurbs(
+        variant.type_id,
+        variant.version_id,
+        _clean(lead.get("category")),
     )
-    contact_line = html.escape(phone) if phone else "Request information"
-    website_link = (
-        f'<a href="{html.escape(website, quote=True)}" target="_blank" rel="noopener">Current site</a>'
-        if website else ""
+    photos = _photo_urls(variant.type_id, _clean(lead.get("category")))
+    body = _render_variant_body(
+        {
+            "name": escaped_name,
+            "category": escaped_category,
+            "city": escaped_city,
+            "headline": escaped_headline,
+            "intro": escaped_intro,
+            "contact": contact,
+            "site_anchors_html": site_anchors_html,
+            "photos": photos,
+            "type_id": variant.type_id,
+            "version_id": variant.version_id,
+        },
+        items,
     )
 
     return f"""<!doctype html>
@@ -192,10 +878,17 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     :root {{
       --accent: {accent};
       --secondary: {secondary};
-      --ink: #071048;
-      --muted: #4b587c;
-      --paper: #f6fbff;
-      --line: #d8e6f3;
+      --ink: {palette["ink"]};
+      --muted: {palette["muted"]};
+      --paper: {palette["paper"]};
+      --soft: {palette["soft"]};
+      --line: {palette["line"]};
+      --danger: {palette["danger"]};
+      --hero-overlay-a: {palette["hero_overlay_a"]};
+      --hero-overlay-b: {palette["hero_overlay_b"]};
+      --hero-glow: {palette["hero_glow"]};
+      --action-overlay-a: {palette["action_overlay_a"]};
+      --action-overlay-b: {palette["action_overlay_b"]};
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -205,13 +898,13 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background: var(--paper);
     }}
     a {{ color: inherit; }}
-    .page {{ min-height: 100vh; }}
-    header {{
+    .page {{ min-height: 100vh; overflow: hidden; }}
+    .topbar {{
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 24px clamp(20px, 5vw, 72px);
-      background: rgba(255,255,255,.86);
+      padding: 22px clamp(20px, 5vw, 72px);
+      background: rgba(255,255,255,.9);
       border-bottom: 1px solid var(--line);
       position: sticky;
       top: 0;
@@ -222,46 +915,76 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       display: flex;
       gap: 12px;
       align-items: center;
-      font-weight: 800;
+      font-weight: 850;
       letter-spacing: 0;
       font-size: 20px;
     }}
     .brand-mark {{
-      width: 38px;
-      height: 38px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, var(--accent), #0f5db8 60%, var(--secondary));
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--secondary));
       display: grid;
       place-items: center;
       color: white;
       font-weight: 900;
     }}
     nav {{ display: flex; gap: 24px; align-items: center; color: var(--muted); font-weight: 650; }}
-    .nav-cta {{
+    nav a {{ text-decoration: none; }}
+    .nav-cta, .primary {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       color: white;
       text-decoration: none;
       background: var(--secondary);
-      padding: 12px 18px;
+      padding: 14px 18px;
       border-radius: 8px;
+      font-weight: 800;
     }}
-    .hero {{
-      display: grid;
-      grid-template-columns: minmax(0, 1.08fr) minmax(340px, .92fr);
-      gap: clamp(28px, 5vw, 74px);
-      padding: clamp(56px, 8vw, 120px) clamp(20px, 5vw, 72px) 42px;
+    .primary.light {{ background: white; color: var(--secondary); }}
+    .secondary-link {{
+      color: var(--secondary);
+      font-weight: 800;
+      text-decoration: none;
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 4px;
+    }}
+    .hero-actions {{ display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 28px; }}
+    .site-anchors {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 22px 0 4px;
+      max-width: 760px;
+    }}
+    .site-anchors span {{
+      flex-basis: 100%;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }}
+    .site-anchors b {{
+      display: inline-flex;
       align-items: center;
+      min-height: 34px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.86);
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.1;
     }}
     .eyebrow {{
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      padding: 8px 14px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
+      margin: 0 0 22px;
       color: var(--muted);
-      background: white;
-      font-weight: 700;
-      margin-bottom: 22px;
+      font-size: 15px;
+      font-weight: 800;
     }}
     .eyebrow::before {{
       content: "";
@@ -270,98 +993,332 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       border-radius: 999px;
       background: var(--accent);
     }}
-    h1 {{
-      font-size: clamp(46px, 7vw, 96px);
-      line-height: .94;
-      letter-spacing: 0;
-      margin: 0 0 24px;
-      max-width: 960px;
-    }}
-    .lead {{
-      font-size: clamp(19px, 2vw, 26px);
-      line-height: 1.55;
-      color: var(--muted);
-      max-width: 780px;
-      margin: 0 0 34px;
-    }}
-    .hero-actions {{ display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }}
-    .primary {{
-      display: inline-flex;
+    h1, h2, h3, p {{ letter-spacing: 0; }}
+    h1 {{ font-size: clamp(44px, 6.4vw, 92px); line-height: .96; margin: 0 0 24px; }}
+    h2 {{ font-size: clamp(30px, 4vw, 56px); line-height: 1; margin: 0 0 18px; }}
+    h3 {{ font-size: 23px; line-height: 1.1; margin: 16px 0 10px; }}
+    p {{ color: var(--muted); font-size: 18px; line-height: 1.58; margin: 0; }}
+    .mock-layout section {{ padding-inline: clamp(20px, 5vw, 72px); }}
+    .studio-hero, .trust-hero, .warm-hero, .admissions-hero {{
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
+      gap: clamp(28px, 5vw, 70px);
       align-items: center;
-      gap: 8px;
-      text-decoration: none;
-      background: var(--secondary);
-      color: white;
-      padding: 16px 22px;
-      border-radius: 8px;
-      font-weight: 800;
+      padding-top: clamp(58px, 8vw, 118px);
+      padding-bottom: 54px;
     }}
-    .secondary-link {{
-      color: var(--secondary);
-      font-weight: 800;
-      text-decoration: none;
-      border-bottom: 2px solid var(--accent);
-      padding-bottom: 4px;
+    figure {{ margin: 0; }}
+    .studio-side, .trust-side, .admissions-side {{
+      display: grid;
+      gap: 14px;
     }}
-    .panel {{
+    .lesson-finder, .parent-checklist, .admissions-board {{
       background: white;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 26px;
-      box-shadow: 0 24px 60px rgba(15, 40, 80, .12);
+      padding: 28px;
+      box-shadow: 0 24px 70px rgba(15, 40, 80, .12);
     }}
-    .panel h2 {{ margin: 0 0 18px; font-size: 28px; }}
-    .steps {{ display: grid; gap: 14px; }}
-    .step {{
-      display: grid;
-      grid-template-columns: 36px 1fr;
-      gap: 14px;
-      align-items: start;
-      padding: 16px;
-      background: #f8fbff;
+    .lesson-finder label {{
+      display: block;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 900;
+      margin-top: 18px;
+    }}
+    .lesson-finder div {{
+      margin-top: 8px;
+      padding: 14px;
       border: 1px solid var(--line);
       border-radius: 8px;
+      color: var(--ink);
+      background: #f8fbff;
+      font-weight: 750;
     }}
-    .step strong {{
-      width: 36px;
-      height: 36px;
-      display: grid;
-      place-items: center;
-      border-radius: 999px;
-      background: var(--accent);
+    .photo-card {{
+      min-height: 230px;
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      align-items: end;
+      overflow: hidden;
       color: white;
+      background-image:
+        linear-gradient(180deg, rgba(7,16,72,.06), rgba(7,16,72,.72)),
+        var(--photo);
+      background-size: cover;
+      background-position: center;
+      box-shadow: 0 24px 70px rgba(15, 40, 80, .12);
     }}
-    .programs {{
-      padding: 38px clamp(20px, 5vw, 72px) 76px;
+    .photo-card figcaption {{
+      max-width: 360px;
+      font-size: 22px;
+      font-weight: 900;
+      line-height: 1.12;
+    }}
+    .wide-photo {{ min-height: 260px; }}
+    .structured-photo, .trust-photo {{ min-height: 210px; }}
+    .cards {{
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 16px;
+      padding-top: 42px;
+      padding-bottom: 70px;
     }}
-    article {{
+    .cards__card {{
       background: white;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 22px;
-      min-height: 210px;
+      padding: 24px;
+      min-height: 218px;
     }}
-    article span {{
+    .cards__card span {{
       color: var(--accent);
       font-weight: 900;
       font-size: 13px;
     }}
-    article h3 {{ margin: 18px 0 10px; font-size: 24px; }}
-    article p {{ margin: 0; color: var(--muted); line-height: 1.55; }}
-    .footer-band {{
-      padding: 34px clamp(20px, 5vw, 72px);
+    .cards__card p {{ font-size: 16px; }}
+    .mock-layout-music-studio .cards {{
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      background: linear-gradient(180deg, var(--paper), #fff);
+    }}
+    .mock-layout-music-studio .cards__card {{
+      min-height: 170px;
+      border-left: 5px solid var(--accent);
+    }}
+    .mock-layout-music-performance .split-feature {{
       background: var(--secondary);
       color: white;
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      align-items: center;
-      flex-wrap: wrap;
     }}
-    .footer-band p {{ margin: 0; color: rgba(255,255,255,.78); }}
+    .mock-layout-music-performance .split-feature h2,
+    .mock-layout-music-performance .split-feature .section-kicker {{
+      color: white;
+    }}
+    .mock-layout-music-performance .split-feature .cards__card {{
+      background: rgba(255,255,255,.08);
+      border-color: rgba(255,255,255,.16);
+      color: white;
+    }}
+    .mock-layout-music-performance .split-feature .cards__card p {{
+      color: rgba(255,255,255,.72);
+    }}
+    .mock-layout-sports-action .cards {{
+      background: #171717;
+    }}
+    .mock-layout-sports-action .cards__card {{
+      background: #222;
+      border-color: rgba(255,255,255,.12);
+      color: white;
+      min-height: 178px;
+    }}
+    .mock-layout-sports-action .cards__card p {{
+      color: rgba(255,255,255,.72);
+    }}
+    .mock-layout-sports-trust .cards {{
+      background: #f5fbfb;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }}
+    .mock-layout-sports-trust .cards__card {{
+      min-height: 150px;
+      border: 0;
+      border-top: 5px solid var(--accent);
+      box-shadow: 0 18px 50px rgba(18, 49, 47, .08);
+    }}
+    .mock-layout-preschool-warm .cards {{
+      background: var(--soft);
+    }}
+    .mock-layout-preschool-warm .cards__card {{
+      background: white;
+      border: 0;
+      border-radius: 18px;
+      box-shadow: 0 18px 50px rgba(80, 44, 25, .08);
+    }}
+    .mock-layout-preschool-structured .cards {{
+      grid-template-columns: 1fr;
+      max-width: 940px;
+      margin-inline: auto;
+    }}
+    .mock-layout-preschool-structured .cards__card {{
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 70px 1fr;
+      gap: 18px;
+      align-items: start;
+      padding: 20px 24px;
+    }}
+    .mock-layout-preschool-structured .cards__card span {{
+      display: grid;
+      place-items: center;
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      background: var(--soft);
+      grid-row: 1 / span 2;
+    }}
+    .mock-layout-preschool-structured .cards__card h3 {{
+      grid-column: 2;
+      margin-top: 0;
+    }}
+    .mock-layout-preschool-structured .cards__card p {{
+      grid-column: 2;
+    }}
+    .teacher-band, .cta-band, .impact-band, .comparison-band, .visit-band {{
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(260px, .7fr);
+      gap: 30px;
+      align-items: center;
+      padding-top: 42px;
+      padding-bottom: 42px;
+      background: white;
+      border-top: 1px solid var(--line);
+    }}
+    .section-kicker {{
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 900;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }}
+    .stage-hero {{
+      min-height: 640px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 440px);
+      gap: 34px;
+      align-items: center;
+      padding-top: 78px;
+      padding-bottom: 72px;
+      background:
+        linear-gradient(135deg, var(--hero-overlay-a), var(--hero-overlay-b)),
+        radial-gradient(circle at 82% 18%, var(--hero-glow), transparent 34%),
+        var(--hero-photo);
+      background-size: cover;
+      background-position: center;
+      color: white;
+    }}
+    .stage-hero h1, .stage-hero p, .stage-hero .eyebrow {{ color: white; }}
+    .stage-copy p:not(.eyebrow) {{ max-width: 760px; color: rgba(255,255,255,.78); }}
+    .showcase-calendar {{
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.24);
+      border-radius: 8px;
+      padding: 26px;
+      backdrop-filter: blur(14px);
+    }}
+    .showcase-calendar span {{ color: var(--accent); font-weight: 900; }}
+    .showcase-calendar strong {{ display: block; font-size: 34px; margin: 12px 0; }}
+    .showcase-calendar p {{ color: rgba(255,255,255,.78); }}
+    .showcase-strip {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      padding-top: 0;
+      padding-bottom: 0;
+      background: var(--secondary);
+    }}
+    .showcase-strip div {{
+      padding: 28px;
+      background: white;
+    }}
+    .showcase-strip b {{ display: block; font-size: 22px; margin-bottom: 8px; }}
+    .showcase-strip span {{ color: var(--muted); line-height: 1.45; }}
+    .split-feature {{
+      display: grid;
+      grid-template-columns: minmax(240px, .5fr) minmax(0, 1fr);
+      gap: 26px;
+      padding-top: 68px;
+      padding-bottom: 68px;
+    }}
+    .split-feature .cards {{ padding: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+    .action-hero {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+      gap: 34px;
+      padding-top: 68px;
+      padding-bottom: 68px;
+      background:
+        linear-gradient(120deg, var(--action-overlay-a) 0 54%, var(--action-overlay-b) 54% 100%),
+        var(--hero-photo);
+      background-size: cover;
+      background-position: center;
+      color: white;
+    }}
+    .action-hero h1, .action-hero p, .action-hero .eyebrow {{ color: white; }}
+    .stage-hero .site-anchors span, .action-hero .site-anchors span {{ color: rgba(255,255,255,.72); }}
+    .stage-hero .site-anchors b, .action-hero .site-anchors b {{
+      color: white;
+      background: rgba(255,255,255,.14);
+      border-color: rgba(255,255,255,.28);
+    }}
+    .action-card {{ align-self: center; max-width: 820px; }}
+    .schedule-stack {{ display: grid; gap: 14px; align-content: center; }}
+    .schedule-stack div {{
+      background: white;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 22px;
+      box-shadow: 0 18px 60px rgba(7,16,72,.18);
+    }}
+    .schedule-stack span {{ color: var(--accent); font-weight: 900; }}
+    .schedule-stack b {{ display: block; font-size: 24px; margin-top: 8px; }}
+    .cards.angled {{ background: white; transform: skewY(-1deg); transform-origin: left top; }}
+    .cards.angled .cards__card {{ transform: skewY(1deg); }}
+    .trust-hero {{ background: #f5fbfb; }}
+    .parent-checklist p {{
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+      font-weight: 750;
+      color: var(--ink);
+    }}
+    .process-row {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      padding-top: 0;
+      padding-bottom: 42px;
+      background: #f5fbfb;
+    }}
+    .process-row div {{
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+    }}
+    .process-row b {{
+      display: inline-grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: white;
+      margin-right: 10px;
+    }}
+    .admissions-hero {{ background: linear-gradient(180deg, #f7fbff, #eef6ff); }}
+    .admissions-board ol {{ margin: 10px 0 0; padding-left: 22px; color: var(--ink); line-height: 1.8; font-weight: 750; }}
+    .warm-hero {{
+      background:
+        linear-gradient(90deg, #ffffff 0 58%, var(--soft) 58% 100%);
+    }}
+    .classroom-collage {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }}
+    .classroom-collage div {{
+      min-height: 160px;
+      border-radius: 8px;
+      padding: 18px;
+      display: flex;
+      align-items: end;
+      color: white;
+      font-weight: 850;
+      background-image:
+        linear-gradient(180deg, rgba(7,16,72,.04), rgba(7,16,72,.7)),
+        var(--photo);
+      background-size: cover;
+      background-position: center;
+    }}
+    .classroom-collage div:first-child {{ grid-row: span 2; min-height: 334px; }}
     .concept-note {{
       font-size: 13px;
       color: #667085;
@@ -369,65 +1326,37 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background: white;
       border-top: 1px solid var(--line);
     }}
-    @media (max-width: 860px) {{
-      header, nav {{ align-items: flex-start; }}
+    @media (max-width: 900px) {{
       nav {{ display: none; }}
-      .hero {{ grid-template-columns: 1fr; }}
-      .programs {{ grid-template-columns: 1fr 1fr; }}
+      .studio-hero, .trust-hero, .warm-hero, .admissions-hero,
+      .stage-hero, .action-hero, .split-feature,
+      .teacher-band, .cta-band, .impact-band, .comparison-band, .visit-band {{
+        grid-template-columns: 1fr;
+      }}
+      .cards {{ grid-template-columns: 1fr 1fr; }}
+      .showcase-strip, .process-row {{ grid-template-columns: 1fr; }}
     }}
-    @media (max-width: 560px) {{
-      .programs {{ grid-template-columns: 1fr; }}
+    @media (max-width: 580px) {{
+      .cards, .split-feature .cards {{ grid-template-columns: 1fr; }}
       .hero-actions {{ align-items: stretch; }}
-      .primary {{ justify-content: center; }}
+      .primary {{ width: 100%; }}
+      h1 {{ font-size: 44px; }}
     }}
   </style>
 </head>
 <body>
   <div class="page">
-    <header>
+    <header class="topbar">
       <div class="brand"><span class="brand-mark">{escaped_name[:1] or "P"}</span>{escaped_name}</div>
       <nav>
         <a href="#programs">Programs</a>
         <a href="#about">About</a>
-        <a href="#contact" class="nav-cta">Start enrollment</a>
+        <a href="#next-step" class="nav-cta">Start enrollment</a>
       </nav>
     </header>
-    <main>
-      <section class="hero">
-        <div>
-          <div class="eyebrow">{escaped_category} in {escaped_city}</div>
-          <h1>{html.escape(headline)}</h1>
-          <p class="lead">{escaped_tagline} Families can understand the programs, ask questions, and begin enrollment without digging through old pages or PDFs.</p>
-          <div class="hero-actions">
-            <a class="primary" href="#contact">Start enrollment -></a>
-            <a class="secondary-link" href="#programs">Explore programs</a>
-          </div>
-        </div>
-        <aside class="panel" id="contact">
-          <h2>Inquiry snapshot</h2>
-          <div class="steps">
-            <div class="step"><strong>1</strong><div><b>Choose a program</b><br>Parents see clear options before reaching out.</div></div>
-            <div class="step"><strong>2</strong><div><b>Send the details</b><br>Contact info, student info, and questions land in one place.</div></div>
-            <div class="step"><strong>3</strong><div><b>Follow up fast</b><br>The school can reply, approve, waitlist, or invite the family in.</div></div>
-          </div>
-        </aside>
-      </section>
-      <section class="programs" id="programs">
-        {program_cards}
-      </section>
-      <section class="footer-band" id="about">
-        <div>
-          <h2>Built around the first parent impression.</h2>
-          <p>{escaped_name} can keep its current process while giving families a cleaner way to take the next step.</p>
-        </div>
-        <div>
-          <strong>{contact_line}</strong>
-          {website_link}
-        </div>
-      </section>
-    </main>
-    <div class="concept-note">
-      Concept mock generated by Pontora for outreach preview. This is not the live website for {escaped_name}.
+{body}
+    <div class="concept-note" id="about">
+      Website concept prepared by Pontora for {escaped_name} after reviewing the current public site. This is a preview, not the live website.
     </div>
   </div>
   {_tracking_script()}
@@ -472,6 +1401,11 @@ def _render_candidate(lead: dict, output_dir: Path, base_url: str) -> list[dict]
         f"{variant.type_id}-{variant.version_id}": variant
         for variant in website_mocks.variants_for(mock_type, _clean(lead.get("website_mock_versions")))
     }
+    site_anchor_labels = []
+    if variants:
+        site_anchor_labels = _site_anchors_for_lead(lead, next(iter(variants.values())))
+    render_lead = dict(lead)
+    render_lead["_website_mock_site_anchors"] = site_anchor_labels
 
     for item in payload:
         variant_key = f"{item['type']}-{item['version']}"
@@ -480,7 +1414,7 @@ def _render_candidate(lead: dict, output_dir: Path, base_url: str) -> list[dict]
             continue
         page_dir = output_dir / "mocks" / _slug(lead_id) / variant_key
         page_dir.mkdir(parents=True, exist_ok=True)
-        (page_dir / "index.html").write_text(_render_mock_html(lead, variant), encoding="utf-8")
+        (page_dir / "index.html").write_text(_render_mock_html(render_lead, variant), encoding="utf-8")
     return payload
 
 
