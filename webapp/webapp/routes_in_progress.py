@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -110,10 +110,21 @@ def _decorate_rows(rows: list[dict]) -> list[dict]:
         "followup_pending": 3,
         "followup_scheduled": 4,
     }
+
+    def date_sort_value(row: dict, key: str) -> date:
+        raw = str(row.get(key, "") or "").strip()
+        if not raw:
+            return date.max
+        try:
+            return date.fromisoformat(raw[:10])
+        except ValueError:
+            return date.max
+
     decorated.sort(key=lambda r: (
+        0 if r.get("_mock_suggested") else 1,
+        date_sort_value(r, "follow_up_at"),
         stage_order.get(r["_active_stage"]["key"], 99),
-        str(r.get("follow_up_at", "")),
-        str(r.get("sent_at", "")),
+        date_sort_value(r, "sent_at"),
         str(r.get("name", "")).lower(),
     ))
     return decorated

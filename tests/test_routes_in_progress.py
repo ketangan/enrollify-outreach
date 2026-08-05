@@ -75,3 +75,41 @@ def test_decorate_rows_marks_mock_suggestions():
 
     assert decorated[0]["_mock_suggested"] is True
     assert decorated[0]["_mock_note_excerpt"] == "new suggestion"
+
+
+def test_decorate_rows_prioritizes_suggested_mocks_by_followup_date():
+    rows = [
+        {
+            "name": "Suggested later",
+            "status": "sent",
+            "sent_message_id": "<later@mypontora.com>",
+            "sent_at": "2026-07-30T07:40:06-07:00",
+            "follow_up_at": "2026-08-05",
+            "website_mock_candidate": "suggested",
+            "website_mock_status": "needs_review",
+        },
+        {
+            "name": "Unmocked due first",
+            "status": "sent",
+            "sent_message_id": "<due@mypontora.com>",
+            "sent_at": "2026-07-30T07:40:06-07:00",
+            "follow_up_at": "2026-08-03",
+        },
+        {
+            "name": "Suggested soon",
+            "status": "sent",
+            "sent_message_id": "<soon@mypontora.com>",
+            "sent_at": "2026-07-30T07:40:06-07:00",
+            "follow_up_at": "2026-08-04",
+            "website_mock_candidate": "suggested",
+            "website_mock_status": "needs_review",
+        },
+    ]
+
+    decorated = routes_in_progress._decorate_rows(rows)
+
+    assert [r["name"] for r in decorated] == [
+        "Suggested soon",
+        "Suggested later",
+        "Unmocked due first",
+    ]
