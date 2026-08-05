@@ -15,10 +15,10 @@ Important guardrail:
   distinct verified emails eligible unless we have stronger duplicate evidence.
 
 Status priority ladder (highest survives, others get demoted):
-  replied > sent > awaiting_approval > ready_to_send >
+  replied > sent > already_contacted > bounced > do_not_contact/manual-or-policy >
+  closed_no_reply > online_system_exclude > awaiting_approval > ready_to_send >
   ready_for_owner_lookup > needs_owner_review > needs_enrollment_system_classification >
-  needs_manual_review > pending_classify >
-  online_system_exclude > do_not_contact > closed_no_reply
+  needs_manual_review > pending_classify > internal_duplicate casualties
 
 Duplicate evidence:
   - same best_email
@@ -53,6 +53,11 @@ logger = logging.getLogger(__name__)
 STATUS_PRIORITY = [
     "replied",
     "sent",
+    "already_contacted",
+    "bounced",
+    "do_not_contact",
+    "closed_no_reply",
+    "online_system_exclude",
     "awaiting_approval",
     "ready_to_send",
     "ready_for_owner_lookup",
@@ -60,10 +65,15 @@ STATUS_PRIORITY = [
     "needs_enrollment_system_classification",
     "needs_manual_review",
     "pending_classify",
-    "online_system_exclude",
-    "do_not_contact",
-    "closed_no_reply",
 ]
+
+TERMINAL_STATUSES = {
+    "already_contacted",
+    "bounced",
+    "closed_no_reply",
+    "do_not_contact",
+    "online_system_exclude",
+}
 
 
 def _status_rank(status: str) -> int:
@@ -72,6 +82,19 @@ def _status_rank(status: str) -> int:
         return STATUS_PRIORITY.index(status)
     except ValueError:
         return len(STATUS_PRIORITY) + 1
+
+
+def _is_internal_duplicate_casualty(lead_row: dict) -> bool:
+    status = str(lead_row.get("status", "")).strip()
+    reason = str(lead_row.get("do_not_contact_reason", "")).strip()
+    return status == "do_not_contact" and reason.startswith("internal_duplicate:")
+
+
+def _keeper_rank(lead_row: dict) -> int:
+    """Rank rows for canonical selection within a duplicate cluster."""
+    if _is_internal_duplicate_casualty(lead_row):
+        return len(STATUS_PRIORITY)
+    return _status_rank(str(lead_row.get("status", "")).strip())
 
 
 def _normalize_url(url: str) -> str:
@@ -145,6 +168,12 @@ def _known_emails_conflict(left: dict, right: dict) -> bool:
     return bool(left_email and right_email and left_email != right_email)
 
 
+def _row_marker(lead: dict) -> int:
+    """Stable row identity for sheet rows and unit-test rows."""
+    row_idx = lead.get("_row_idx")
+    return int(row_idx) if row_idx else id(lead)
+
+
 def find_internal_duplicates(leads_rows: list[dict]) -> list[tuple[dict, dict]]:
     """
     Return list of (kept_lead, demoted_lead) pairs.
@@ -156,25 +185,58 @@ def find_internal_duplicates(leads_rows: list[dict]) -> list[tuple[dict, dict]]:
         for key in _dedupe_keys(lead):
             by_key[key].append(lead)
 
-    pairs = []
-    demoted_row_ids: set[int] = set()
-    for key, group in by_key.items():
+    parent: dict[int, int] = {}
+    rows_by_marker: dict[int, dict] = {}
+
+    def find(marker: int) -> int:
+        parent.setdefault(marker, marker)
+        while parent[marker] != marker:
+            parent[marker] = parent[parent[marker]]
+            marker = parent[marker]
+        return marker
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    for group in by_key.values():
         if len(group) < 2:
             continue
-        # Sort by status priority (most advanced first), then by discovered_date asc
+        first_marker = _row_marker(group[0])
+        rows_by_marker[first_marker] = group[0]
+        parent.setdefault(first_marker, first_marker)
+        for lead in group[1:]:
+            marker = _row_marker(lead)
+            rows_by_marker[marker] = lead
+            parent.setdefault(marker, marker)
+            union(first_marker, marker)
+
+    duplicate_groups: dict[int, list[dict]] = defaultdict(list)
+    for marker, row in rows_by_marker.items():
+        duplicate_groups[find(marker)].append(row)
+
+    pairs = []
+    demoted_row_ids: set[int] = set()
+    for group in duplicate_groups.values():
+        if len(group) < 2:
+            continue
+        # Choose the keeper once per connected duplicate group. Picking keepers
+        # separately per key can create impossible A<->B duplicate cycles.
         # so ties go to the oldest discovery (it's been in the pipeline longer)
         group.sort(key=lambda r: (
-            _status_rank(str(r.get("status", "")).strip()),
+            _keeper_rank(r),
             str(r.get("discovered_date", "")),
         ))
         kept = group[0]
         for demoted in group[1:]:
-            row_marker = demoted.get("_row_idx") or id(demoted)
+            row_marker = _row_marker(demoted)
             if row_marker in demoted_row_ids:
                 continue
             # Skip rows that are already in a terminal state — no point demoting
             demoted_status = str(demoted.get("status", "")).strip()
-            if demoted_status in ("do_not_contact", "closed_no_reply"):
+            if demoted_status in TERMINAL_STATUSES:
                 continue
             if _known_emails_conflict(kept, demoted):
                 logger.info(

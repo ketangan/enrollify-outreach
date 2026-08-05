@@ -69,6 +69,98 @@ def test_internal_dedupe_demotes_same_address():
     ]
 
 
+def test_internal_dedupe_uses_one_keeper_for_connected_duplicate_group():
+    leads = [
+        _lead(
+            id="best",
+            status="ready_to_send",
+            phone="(310) 555-0100",
+            address="123 Main St, Los Angeles, CA 90001",
+            best_email="",
+            _row_idx=2,
+        ),
+        _lead(
+            id="middle",
+            status="needs_manual_review",
+            phone="(310) 555-0100",
+            address="456 Oak St, Los Angeles, CA 90001",
+            best_email="shared@example.com",
+            _row_idx=3,
+        ),
+        _lead(
+            id="weak",
+            status="pending_classify",
+            phone="(310) 555-0200",
+            address="456 Oak St, Los Angeles, CA 90001",
+            best_email="shared@example.com",
+            _row_idx=4,
+        ),
+    ]
+
+    pairs = dedupe_within_leads.find_internal_duplicates(leads)
+
+    assert [(kept["id"], demoted["id"]) for kept, demoted in pairs] == [
+        ("best", "middle"),
+        ("best", "weak"),
+    ]
+
+
+def test_internal_dedupe_already_contacted_suppresses_fresh_duplicate():
+    leads = [
+        _lead(
+            id="contacted",
+            status="already_contacted",
+            best_email="director@example.com",
+            _row_idx=2,
+        ),
+        _lead(
+            id="fresh",
+            status="pending_classify",
+            best_email="director@example.com",
+            _row_idx=3,
+        ),
+    ]
+
+    pairs = dedupe_within_leads.find_internal_duplicates(leads)
+
+    assert [(kept["id"], demoted["id"]) for kept, demoted in pairs] == [
+        ("contacted", "fresh"),
+    ]
+
+
+def test_internal_dedupe_closed_no_reply_suppresses_fresh_duplicate():
+    leads = [
+        _lead(id="closed", status="closed_no_reply", _row_idx=2),
+        _lead(id="fresh", status="pending_classify", _row_idx=3),
+    ]
+
+    pairs = dedupe_within_leads.find_internal_duplicates(leads)
+
+    assert [(kept["id"], demoted["id"]) for kept, demoted in pairs] == [
+        ("closed", "fresh"),
+    ]
+
+
+def test_internal_dedupe_internal_duplicate_casualty_is_not_keeper():
+    leads = [
+        _lead(
+            id="bad_old_casualty",
+            status="do_not_contact",
+            do_not_contact_reason="internal_duplicate:missing-survivor",
+            discovered_date="2026-06-01",
+            _row_idx=2,
+        ),
+        _lead(
+            id="fresh",
+            status="pending_classify",
+            discovered_date="2026-07-01",
+            _row_idx=3,
+        ),
+    ]
+
+    assert dedupe_within_leads.find_internal_duplicates(leads) == []
+
+
 def test_internal_dedupe_keeps_different_known_emails():
     leads = [
         _lead(id="one", best_email="director-one@example.com", _row_idx=2),
