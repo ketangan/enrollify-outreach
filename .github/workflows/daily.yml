@@ -60,7 +60,7 @@ jobs:
           CLICK_LOGGER_URL: ${{ vars.CLICK_LOGGER_URL }}
           TIMEZONE: America/Los_Angeles
         run: |
-          python scripts/generate_website_mocks.py --base-url "$WEBSITE_MOCK_BASE_URL" --output-dir generated/website-mocks-site
+          python scripts/generate_website_mocks.py --base-url "$WEBSITE_MOCK_BASE_URL" --output-dir generated/website-mocks-site --force
 
       - name: Deploy website mocks to Cloudflare Workers
         id: deploy_mocks
