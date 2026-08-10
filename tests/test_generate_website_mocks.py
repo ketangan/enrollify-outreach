@@ -134,6 +134,55 @@ def test_rendered_mock_includes_precomputed_site_detail_anchors():
     assert "<b>Trial lessons</b>" in rendered
 
 
+def test_rendered_mock_uses_site_details_in_enrollment_flow_and_strategy_note():
+    lead = _lead()
+    lead["_website_mock_site_anchors"] = [
+        "private guitar lessons",
+        "recitals",
+        "trial lessons",
+    ]
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
+
+    assert rendered.count('id="next-step"') == 1
+    assert rendered.count('id="about"') == 1
+    assert '<div class="mock-form" aria-label="Sample inquiry flow">' in rendered
+    assert '<label>Program interest</label>' in rendered
+    assert '<span class="option-pill">Private guitar lessons</span>' in rendered
+    assert '<span class="option-pill">Recitals</span>' in rendered
+    assert '<span class="option-pill">Trial lessons</span>' in rendered
+    assert "What I tightened" in rendered
+    assert "Built around the current parent path at Mark Fitchett&#x27;s Guitar School." in rendered
+    assert "Brought forward: Private guitar lessons, Recitals, Trial lessons" in rendered
+
+
+def test_swim_mock_uses_swim_specific_enrollment_flow():
+    lead = {
+        "id": "90221-5bfd2a",
+        "name": "Teddi Bear Swim School",
+        "category": "swim",
+        "city": "South Gate",
+        "website": "https://example.com",
+        "_website_mock_site_anchors": ["swim lessons", "water safety", "trial classes"],
+    }
+
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("sports", "action"))
+
+    assert "Swim lesson interest turns into a level-aware request." in rendered
+    assert "<label>Swimmer age</label>" in rendered
+    assert "<label>Water comfort</label>" in rendered
+    assert "Request swim evaluation" in rendered
+    assert "Level-aware trial path" in rendered
+
+
+def test_mock_tracking_payload_includes_school_context():
+    rendered = generate_website_mocks._render_mock_html(_lead(), _variant("music", "studio"))
+
+    assert 'const SCHOOL_NAME = "Mark Fitchett\'s Guitar School";' in rendered
+    assert 'const WEBSITE = "http://www.theguitarschool.com/";' in rendered
+    assert "school_name: params.get('school_name') || SCHOOL_NAME" in rendered
+    assert "website: params.get('website') || WEBSITE" in rendered
+
+
 def test_structured_preschool_cards_keep_body_in_text_column():
     lead = {
         "id": "90073-867167",

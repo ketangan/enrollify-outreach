@@ -125,12 +125,16 @@ def _hero_intro(mock_type: str, variant_id: str, school_name: str) -> str:
     )
 
 
-def _tracking_script() -> str:
+def _tracking_script(school_name: str = "", website: str = "") -> str:
     logger_url = json.dumps(config.CLICK_LOGGER_URL)
+    school_name_json = json.dumps(_clean(school_name))
+    website_json = json.dumps(_clean(website))
     return f"""
 <script>
   (function() {{
     const LOGGER_URL = {logger_url};
+    const SCHOOL_NAME = {school_name_json};
+    const WEBSITE = {website_json};
     const HUMAN_TIMEOUT_MS = 8000;
     const STORAGE_KEY = 'pontora_mock_logged_v1';
     const params = new URLSearchParams(window.location.search);
@@ -155,6 +159,8 @@ def _tracking_script() -> str:
         utm_source: utmSource,
         utm_medium: utmMedium,
         utm_campaign: utmCampaign,
+        school_name: params.get('school_name') || SCHOOL_NAME,
+        website: params.get('website') || WEBSITE,
         tracking_kind: leadId.indexOf('campaign:') === 0 ? 'campaign' : 'lead',
         user_agent: navigator.userAgent || '',
         referer: document.referrer || '',
@@ -637,6 +643,210 @@ def _precomputed_site_anchors(lead: dict) -> list[str]:
     return []
 
 
+def _choice_labels(site_anchors: list[str], items: list[tuple[str, str]], max_labels: int = 4) -> list[str]:
+    labels: list[str] = []
+    seen: set[str] = set()
+    for raw_label in list(site_anchors) + [title for title, _body in items]:
+        label = _anchor_title_case(raw_label)
+        key = _anchor_key(label)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        labels.append(label)
+        if len(labels) >= max_labels:
+            return labels
+    return labels
+
+
+def _render_option_pills(labels: list[str]) -> str:
+    if not labels:
+        labels = ["Program fit", "Schedule", "Availability"]
+    return "".join(
+        f'<span class="option-pill">{html.escape(label)}</span>'
+        for label in labels[:4]
+    )
+
+
+def _flow_config(ctx: dict) -> dict:
+    type_id = ctx["type_id"]
+    version_id = ctx["version_id"]
+    category = _clean(ctx.get("raw_category")).lower()
+
+    if type_id == "preschool":
+        return {
+            "kicker": "Enrollment-ready flow",
+            "headline": "Tours, openings, and family details start in one place.",
+            "intro": (
+                "Instead of sending parents into email back-and-forth, the page gathers "
+                "the details staff need before the first response."
+            ),
+            "fields": [
+                ("Child age", "Toddler / Preschool / Pre-K"),
+                ("Preferred start", "Now / Fall / Flexible"),
+                ("Parent question", "Tour, openings, schedule, or application"),
+            ],
+            "button": "Request tour or openings",
+            "next_step": "Staff receives a clean inquiry with the child's age, timing, and program interest.",
+        }
+
+    if type_id == "music":
+        if version_id == "performance":
+            headline = "Trial requests connect to goals, not just contact info."
+            button = "Request a trial lesson"
+        else:
+            headline = "Lesson inquiries capture fit before the callback."
+            button = "Find a lesson match"
+        return {
+            "kicker": "Enrollment-ready flow",
+            "headline": headline,
+            "intro": (
+                "Parents can share level, focus, and schedule constraints before anyone "
+                "has to chase details over email."
+            ),
+            "fields": [
+                ("Student level", "Beginner / returning / advanced"),
+                ("Lesson goal", "Start lessons / change teacher / performance prep"),
+                ("Schedule window", "Weekdays / weekends / flexible"),
+            ],
+            "button": button,
+            "next_step": "The school gets a useful lead, not a blank contact-form message.",
+        }
+
+    if type_id == "sports":
+        if category == "swim":
+            return {
+                "kicker": "Enrollment-ready flow",
+                "headline": "Swim lesson interest turns into a level-aware request.",
+                "intro": (
+                    "Parents can share swimmer age, water comfort, and timing before "
+                    "staff recommends the right class."
+                ),
+                "fields": [
+                    ("Swimmer age", "Toddler / child / teen"),
+                    ("Water comfort", "New swimmer / some experience / stroke work"),
+                    ("Preferred days", "Weekdays / weekends / flexible"),
+                ],
+                "button": "Request swim evaluation",
+                "next_step": "Staff can reply with the right level, schedule, and next available opening.",
+            }
+        if category == "martial_arts":
+            return {
+                "kicker": "Enrollment-ready flow",
+                "headline": "A trial-class path that answers parent questions early.",
+                "intro": (
+                    "Families choose age group, experience, and schedule preference before "
+                    "the first class is booked."
+                ),
+                "fields": [
+                    ("Student age", "Kids / teens / adults"),
+                    ("Experience", "First class / returning / belt rank"),
+                    ("Training goal", "Confidence, fitness, competition, or self-defense"),
+                ],
+                "button": "Request trial class",
+                "next_step": "The academy can match the family to the right class without extra sorting.",
+            }
+        return {
+            "kicker": "Enrollment-ready flow",
+            "headline": "Program interest becomes a clear trial request.",
+            "intro": (
+                "Families can share age, level, and availability up front so the first "
+                "reply is specific."
+            ),
+            "fields": [
+                ("Participant age", "Child / teen / adult"),
+                ("Experience", "Beginner / returning / competitive"),
+                ("Best timing", "After school / evenings / weekend"),
+            ],
+            "button": "Request first session",
+            "next_step": "Staff can respond with the right program and next available slot.",
+        }
+
+    return {
+        "kicker": "Enrollment-ready flow",
+        "headline": "Every interested family gets one clear next step.",
+        "intro": "The page captures program interest, timing, and questions before staff follows up.",
+        "fields": [
+            ("Student age", "Child / teen / adult"),
+            ("Program interest", "Class / trial / enrollment"),
+            ("Best timing", "Weekday / weekend / flexible"),
+        ],
+        "button": "Request information",
+        "next_step": "Staff gets the context needed to reply clearly.",
+    }
+
+
+def _render_enrollment_panel(ctx: dict, items: list[tuple[str, str]]) -> str:
+    flow = _flow_config(ctx)
+    choices = _choice_labels(ctx.get("site_anchor_labels", []), items)
+    field_rows = "\n".join(
+        f'<div class="mock-field"><label>{html.escape(label)}</label>'
+        f'<div class="input-line">{html.escape(value)}</div></div>'
+        for label, value in flow["fields"]
+    )
+    return f"""
+      <section class="enrollment-section" id="next-step">
+        <div class="enrollment-panel">
+          <div class="enrollment-copy">
+            <p class="section-kicker">{html.escape(flow["kicker"])}</p>
+            <h2>{html.escape(flow["headline"])}</h2>
+            <p>{html.escape(flow["intro"])}</p>
+            <div class="next-step-note"><b>After submit</b><span>{html.escape(flow["next_step"])}</span></div>
+          </div>
+          <div class="mock-form" aria-label="Sample inquiry flow">
+            <div class="mock-field option-field">
+              <label>Program interest</label>
+              <div class="option-pills">{_render_option_pills(choices)}</div>
+            </div>
+            {field_rows}
+            <button type="button">{html.escape(flow["button"])}</button>
+          </div>
+        </div>
+      </section>
+"""
+
+
+def _strategy_focus(ctx: dict) -> str:
+    type_id = ctx["type_id"]
+    version_id = ctx["version_id"]
+    raw_category = _clean(ctx.get("raw_category")).lower()
+    if type_id == "preschool" and version_id == "structured":
+        return "Admissions clarity"
+    if type_id == "preschool":
+        return "Parent trust"
+    if type_id == "music" and version_id == "performance":
+        return "Student milestones"
+    if type_id == "music":
+        return "Lesson fit"
+    if type_id == "sports" and raw_category == "swim":
+        return "Level-aware trial path"
+    if type_id == "sports" and version_id == "trust":
+        return "Parent confidence"
+    return "Trial-class momentum"
+
+
+def _render_strategy_note(ctx: dict, items: list[tuple[str, str]]) -> str:
+    site_labels = _choice_labels(ctx.get("site_anchor_labels", []), items, max_labels=3)
+    detail_text = (
+        "Brought forward: " + ", ".join(site_labels)
+        if site_labels
+        else "Brought the strongest program paths into the first screen."
+    )
+    focus = _strategy_focus(ctx)
+    return f"""
+    <section class="strategy-note" id="about">
+      <div>
+        <p class="section-kicker">What I tightened</p>
+        <h2>Built around the current parent path at {ctx["name"]}.</h2>
+      </div>
+      <div class="strategy-grid">
+        <article><span>01</span><b>{html.escape(focus)}</b><p>{html.escape(detail_text)}</p></article>
+        <article><span>02</span><b>One next step</b><p>Every call to action points families into the same inquiry flow instead of scattering them across the page.</p></article>
+        <article><span>03</span><b>Cleaner handoff</b><p>The form captures age, level, timing, and intent so staff can respond with less manual follow-up.</p></article>
+      </div>
+    </section>
+"""
+
+
 def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
     name = ctx["name"]
     category = ctx["category"]
@@ -647,6 +857,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
     photos = ctx["photos"]
     site_anchors_html = ctx["site_anchors_html"]
     cards = _render_cards(items)
+    enrollment_panel = _render_enrollment_panel(ctx, items)
 
     if ctx["type_id"] == "music" and ctx["version_id"] == "performance":
         showcase_cards = "\n".join(
@@ -679,11 +890,12 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         </div>
         <div class="cards">{cards}</div>
       </section>
-      <section class="cta-band" id="next-step">
+      <section class="cta-band">
         <h2>Ready for a first lesson?</h2>
         <p>Parents can choose a lesson path, send student details, and ask questions before the school follows up.</p>
         <div>{contact}</div>
       </section>
+      {enrollment_panel}
     </main>
 """
 
@@ -701,7 +913,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
             <a class="secondary-link" href="#programs">View programs</a>
           </div>
         </div>
-        <aside class="studio-side" id="next-step">
+        <aside class="studio-side">
           {_photo_card(photos[0], "Lesson paths, scheduling, and teacher fit in one place", "wide-photo")}
           <div class="lesson-finder">
             <h2>Lesson finder</h2>
@@ -716,6 +928,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         <div><p class="section-kicker">Lesson path</p><h2>Lessons feel personal before the first call.</h2></div>
         <p>Teacher credibility, scheduling options, and inquiry details live together, so parents do not have to piece together the process.</p>
       </section>
+      {enrollment_panel}
     </main>
 """
 
@@ -745,7 +958,8 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         <div><b>3</b><span>Get matched with the right class</span></div>
       </section>
       <section class="cards" id="programs">{cards}</section>
-      <section class="cta-band soft" id="next-step"><h2>Confidence before commitment.</h2><p>Parents get enough context to take action without calling three times first.</p><div>{contact}</div></section>
+      <section class="cta-band soft"><h2>Confidence before commitment.</h2><p>Parents get enough context to take action without calling three times first.</p><div>{contact}</div></section>
+      {enrollment_panel}
     </main>
 """
 
@@ -760,7 +974,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
           {site_anchors_html}
           <a class="primary light" href="#next-step">Claim a trial spot</a>
         </div>
-        <div class="schedule-stack" id="next-step">
+        <div class="schedule-stack">
           <div><span>Mon/Wed</span><b>Kids beginner</b></div>
           <div><span>Friday</span><b>Trial class</b></div>
           <div><span>Weekend</span><b>Clinics and camps</b></div>
@@ -768,6 +982,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
       </section>
       <section class="cards angled" id="programs">{cards}</section>
       <section class="impact-band"><h2>Make the first visit easy to say yes to.</h2><p>Families see the right class, the right level, and the next step immediately.</p></section>
+      {enrollment_panel}
     </main>
 """
 
@@ -795,7 +1010,8 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         </aside>
       </section>
       <section class="cards process-cards" id="programs">{cards}</section>
-      <section class="comparison-band" id="next-step"><h2>Less mystery for parents, fewer loose ends for staff.</h2><p>Every call to action points to the same enrollment workflow.</p><div>{contact}</div></section>
+      <section class="comparison-band"><h2>Less mystery for parents, fewer loose ends for staff.</h2><p>Every call to action points to the same enrollment workflow.</p><div>{contact}</div></section>
+      {enrollment_panel}
     </main>
 """
 
@@ -816,7 +1032,8 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         </div>
       </section>
       <section class="cards rounded" id="programs">{cards}</section>
-      <section class="visit-band" id="next-step"><h2>A calmer way for parents to take the first step.</h2><p>Tour requests, openings, questions, and child details can start in one friendly flow.</p><div>{contact}</div></section>
+      <section class="visit-band"><h2>A calmer way for parents to take the first step.</h2><p>Tour requests, openings, questions, and child details can start in one friendly flow.</p><div>{contact}</div></section>
+      {enrollment_panel}
     </main>
 """
 
@@ -845,7 +1062,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     escaped_headline = html.escape(headline)
     escaped_intro = html.escape(intro)
     contact = _render_contact_link(phone, website)
-    site_anchors_html = _render_site_anchors(_precomputed_site_anchors(lead))
+    site_anchor_labels = _precomputed_site_anchors(lead)
+    site_anchors_html = _render_site_anchors(site_anchor_labels)
     items = _program_blurbs(
         variant.type_id,
         variant.version_id,
@@ -861,9 +1079,21 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
             "intro": escaped_intro,
             "contact": contact,
             "site_anchors_html": site_anchors_html,
+            "site_anchor_labels": site_anchor_labels,
             "photos": photos,
             "type_id": variant.type_id,
             "version_id": variant.version_id,
+            "raw_category": _clean(lead.get("category")),
+        },
+        items,
+    )
+    strategy_note = _render_strategy_note(
+        {
+            "name": escaped_name,
+            "site_anchor_labels": site_anchor_labels,
+            "type_id": variant.type_id,
+            "version_id": variant.version_id,
+            "raw_category": _clean(lead.get("category")),
         },
         items,
     )
@@ -1179,6 +1409,130 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       text-transform: uppercase;
       margin-bottom: 12px;
     }}
+    .enrollment-section {{
+      padding-top: 54px;
+      padding-bottom: 54px;
+      background: linear-gradient(180deg, var(--paper), var(--soft));
+      border-top: 1px solid var(--line);
+    }}
+    .enrollment-panel {{
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(320px, .72fr);
+      gap: clamp(24px, 5vw, 58px);
+      align-items: stretch;
+      max-width: 1180px;
+      margin: 0 auto;
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: clamp(24px, 4vw, 44px);
+      box-shadow: 0 24px 70px rgba(15, 40, 80, .12);
+    }}
+    .enrollment-copy h2 {{ font-size: clamp(30px, 4vw, 52px); }}
+    .next-step-note {{
+      display: grid;
+      gap: 6px;
+      margin-top: 28px;
+      padding: 18px;
+      border-left: 5px solid var(--accent);
+      background: var(--paper);
+      border-radius: 8px;
+    }}
+    .next-step-note b {{ color: var(--ink); }}
+    .next-step-note span {{ color: var(--muted); line-height: 1.45; }}
+    .mock-form {{
+      display: grid;
+      gap: 14px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+    }}
+    .mock-field {{
+      display: grid;
+      gap: 8px;
+    }}
+    .mock-field label {{
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }}
+    .input-line {{
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+      color: var(--muted);
+      font-weight: 700;
+    }}
+    .option-pills {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .option-pill {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      background: white;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.1;
+    }}
+    .mock-form button {{
+      min-height: 50px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--secondary);
+      color: white;
+      font-weight: 900;
+      font-size: 15px;
+      cursor: default;
+    }}
+    .strategy-note {{
+      display: grid;
+      grid-template-columns: minmax(280px, .55fr) minmax(0, 1fr);
+      gap: clamp(22px, 4vw, 48px);
+      align-items: start;
+      padding: 58px clamp(20px, 5vw, 72px);
+      background: white;
+      border-top: 1px solid var(--line);
+    }}
+    .strategy-note h2 {{ font-size: clamp(28px, 3.6vw, 48px); }}
+    .strategy-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }}
+    .strategy-grid article {{
+      min-height: 190px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      background: var(--paper);
+    }}
+    .strategy-grid span {{
+      display: block;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 900;
+      margin-bottom: 18px;
+    }}
+    .strategy-grid b {{
+      display: block;
+      margin-bottom: 10px;
+      font-size: 20px;
+      line-height: 1.12;
+    }}
+    .strategy-grid p {{ font-size: 15px; line-height: 1.48; }}
     .stage-hero {{
       min-height: 640px;
       display: grid;
@@ -1330,10 +1684,12 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       nav {{ display: none; }}
       .studio-hero, .trust-hero, .warm-hero, .admissions-hero,
       .stage-hero, .action-hero, .split-feature,
-      .teacher-band, .cta-band, .impact-band, .comparison-band, .visit-band {{
+      .teacher-band, .cta-band, .impact-band, .comparison-band, .visit-band,
+      .enrollment-panel, .strategy-note {{
         grid-template-columns: 1fr;
       }}
       .cards {{ grid-template-columns: 1fr 1fr; }}
+      .strategy-grid {{ grid-template-columns: 1fr; }}
       .showcase-strip, .process-row {{ grid-template-columns: 1fr; }}
     }}
     @media (max-width: 580px) {{
@@ -1350,16 +1706,17 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       <div class="brand"><span class="brand-mark">{escaped_name[:1] or "P"}</span>{escaped_name}</div>
       <nav>
         <a href="#programs">Programs</a>
-        <a href="#about">About</a>
+        <a href="#about">What changed</a>
         <a href="#next-step" class="nav-cta">Start enrollment</a>
       </nav>
     </header>
 {body}
-    <div class="concept-note" id="about">
+{strategy_note}
+    <div class="concept-note">
       Website concept prepared by Pontora for {escaped_name} after reviewing the current public site. This is a preview, not the live website.
     </div>
   </div>
-  {_tracking_script()}
+  {_tracking_script(school_name, website)}
 </body>
 </html>
 """
