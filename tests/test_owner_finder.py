@@ -326,6 +326,76 @@ def test_stage2_owner_keeps_stage1_email_and_receives_profile_links(monkeypatch)
     ]
 
 
+def test_stage2_owner_keeps_email_from_contact_page_reached_from_home(monkeypatch):
+    captured = {}
+
+    def fake_fetch(url):
+        if url.rstrip("/") == "https://www.premieretutoringlosangeles.com":
+            return FetchedPage(
+                url="https://www.premieretutoringlosangeles.com/",
+                status_code=200,
+                text="Private tutoring homepage",
+                outbound_links=[
+                    {
+                        "href": "https://www.premieretutoringlosangeles.com/about-premiere-tutoring-",
+                        "text": "ABOUT",
+                    },
+                    {
+                        "href": "https://www.premieretutoringlosangeles.com/contact",
+                        "text": "CONTACT",
+                    },
+                ],
+            )
+        if url.rstrip("/") == "https://www.premieretutoringlosangeles.com/contact":
+            text = (
+                "Contact Premiere Tutoring Los Angeles "
+                "info@premieretutoringlosangeles.com Tel: 323-638-9739"
+            )
+            return FetchedPage(
+                url="https://www.premieretutoringlosangeles.com/contact",
+                status_code=200,
+                text=text,
+                raw_html_snippet=text.lower(),
+            )
+        if url.rstrip("/") == "https://www.premieretutoringlosangeles.com/about-premiere-tutoring-":
+            return FetchedPage(
+                url="https://www.premieretutoringlosangeles.com/about-premiere-tutoring-",
+                status_code=200,
+                text="About our tutoring approach and customized academic support.",
+                raw_html_snippet="about our tutoring approach and customized academic support.",
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    def fake_stage2(**kwargs):
+        captured.update(kwargs)
+        return owner_finder.owner_web_search.Stage2Result(
+            owner_name="Shane Zeranski",
+            owner_title="Founder",
+            owner_source_url="https://www.premieretutoringlosangeles.com/about-premiere-tutoring-",
+            best_email="",
+            email_confidence="low",
+            reason="web_search:owner_found_no_email",
+        )
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+    monkeypatch.setattr(owner_finder.owner_web_search, "find_owner_via_web", fake_stage2)
+
+    result = owner_finder.find_owner(
+        "https://www.premieretutoringlosangeles.com/",
+        _FakeClient(),
+        name="Premiere Tutoring Los Angeles",
+        category="tutoring",
+        city="Beverly Hills",
+        state="CA",
+    )
+
+    assert result.owner_name == "Shane Zeranski"
+    assert result.best_email == "info@premieretutoringlosangeles.com"
+    assert result.email_confidence == "medium"
+    assert "kept_stage1_email" in result.reason
+    assert captured["known_profile_urls"] == []
+
+
 def test_stage2_email_search_runs_when_stage1_finds_owner_without_email(monkeypatch):
     captured = {}
 
