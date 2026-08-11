@@ -1775,20 +1775,85 @@ def _render_candidate(lead: dict, output_dir: Path, base_url: str) -> list[dict]
     return payload
 
 
+def _mock_send_status(lead: dict) -> dict[str, str]:
+    follow_up_sent_at = _clean(lead.get("follow_up_sent_at"))
+    last_action = _clean(lead.get("last_action"))
+    follow_up_at = _clean(lead.get("follow_up_at"))
+    status = _clean(lead.get("status"))
+
+    if follow_up_sent_at:
+        return {
+            "key": "sent",
+            "label": "Sent",
+            "detail": f"Follow-up sent {follow_up_sent_at[:10]}",
+        }
+    if last_action == "phase6_followup_drafted":
+        return {
+            "key": "drafted",
+            "label": "Draft ready",
+            "detail": "Review Gmail draft before sending",
+        }
+    if status == "sent":
+        detail = f"Follow-up due {follow_up_at[:10]}" if follow_up_at else "Awaiting follow-up"
+        return {
+            "key": "not-sent",
+            "label": "Not sent",
+            "detail": detail,
+        }
+    if status == "awaiting_approval":
+        return {
+            "key": "initial-draft",
+            "label": "Initial draft",
+            "detail": "Initial email waiting for approval",
+        }
+    return {
+        "key": "pending",
+        "label": "Not sent",
+        "detail": status.replace("_", " ") or "No outreach status",
+    }
+
+
 def _write_index(output_dir: Path, rendered: list[dict]) -> None:
     rows = "\n".join(
-        f"<li><a href=\"{html.escape(item['url'], quote=True)}\">"
-        f"{html.escape(item['school'])} - {html.escape(item['label'])}</a></li>"
+        "<tr>"
+        f"<td><strong>{html.escape(item['school'])}</strong>"
+        + (
+            f"<a class=\"site-link\" href=\"{html.escape(item['website'], quote=True)}\" "
+            "target=\"_blank\" rel=\"noopener\">Current site</a>"
+            if item.get("website") else ""
+        )
+        + "</td>"
+        f"<td><a href=\"{html.escape(item['preview_url'], quote=True)}\">"
+        f"{html.escape(item['label'])}</a></td>"
+        f"<td><span class=\"status status-{html.escape(item['send_status_key'])}\">"
+        f"{html.escape(item['send_status'])}</span>"
+        f"<small>{html.escape(item['send_status_detail'])}</small></td>"
+        "</tr>"
         for item in rendered
     )
-    rows = rows or "<li>No mock pages generated.</li>"
+    rows = rows or (
+        "<tr><td colspan=\"3\" class=\"empty\">No mock pages generated.</td></tr>"
+    )
     (output_dir / "index.html").write_text(
         "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
         "content=\"width=device-width, initial-scale=1\"><title>Pontora website mocks</title>"
-        "<style>body{font-family:system-ui,sans-serif;max-width:900px;margin:48px auto;"
-        "padding:0 20px;color:#071048}li{margin:10px 0}</style></head><body>"
-        "<h1>Pontora website mocks</h1><ul>"
-        f"{rows}</ul></body></html>",
+        "<style>body{font-family:system-ui,sans-serif;max-width:1040px;margin:48px auto;"
+        "padding:0 20px;color:#071048;background:#fbfaf7}h1{margin-bottom:6px}"
+        "p{color:#5d6475;margin-top:0}table{width:100%;border-collapse:collapse;"
+        "background:white;border:1px solid #e4dece}th,td{padding:12px 14px;"
+        "border-bottom:1px solid #eee7d8;text-align:left;vertical-align:top}"
+        "th{font-size:13px;text-transform:uppercase;color:#59606f;background:#f3ede1}"
+        "a{color:#0f5db8;font-weight:700}.site-link{display:block;margin-top:5px;"
+        "font-size:13px;font-weight:600}.status{display:inline-flex;padding:4px 8px;"
+        "border-radius:999px;font-size:12px;font-weight:800;background:#eceff5;color:#344054}"
+        ".status-sent{background:#e8f5ee;color:#20724c}.status-drafted{background:#fff3d8;"
+        "color:#8a560d}.status-not-sent{background:#eef4ff;color:#2453a6}"
+        ".status-initial-draft{background:#f4edff;color:#6941c6}small{display:block;"
+        "margin-top:5px;color:#667085}.empty{color:#667085;font-style:italic}</style>"
+        "</head><body><h1>Pontora website mocks</h1>"
+        "<p>Preview links on this page are clean review links and do not include tracking parameters.</p>"
+        "<table><thead><tr><th>School</th><th>Mock preview</th><th>Send status</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></body></html>",
         encoding="utf-8",
     )
 
@@ -1868,11 +1933,17 @@ def main() -> None:
             continue
 
         logger.info("Rendered %s (%s): %d version(s)", school_name, lead_id, len(payload))
+        send_status = _mock_send_status(lead)
         for item in payload:
             rendered_for_index.append({
                 "school": school_name,
                 "label": item["label"],
                 "url": item["url"],
+                "preview_url": item.get("preview_url") or website_mocks.preview_mock_url_from_tracked(item["url"]),
+                "website": _clean(lead.get("website")),
+                "send_status": send_status["label"],
+                "send_status_key": send_status["key"],
+                "send_status_detail": send_status["detail"],
             })
 
         existing_notes = _clean(lead.get("website_mock_notes"))

@@ -17,7 +17,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from src import config
@@ -201,22 +201,38 @@ def parse_payload(raw_payload: str | list | None) -> list[dict]:
         url = _clean(item.get("url"))
         if not url:
             continue
+        preview_url = _clean(item.get("preview_url")) or preview_mock_url_from_tracked(url)
         cleaned.append({
             "type": _clean(item.get("type")),
             "version": _clean(item.get("version")),
             "label": _clean(item.get("label")) or "Website mock",
             "url": url,
-            "preview_url": _clean(item.get("preview_url")),
+            "preview_url": preview_url,
         })
     return cleaned
 
 
-def public_mock_url(base_url: str, lead_id: str, variant: MockVariant) -> str:
+def preview_mock_url(base_url: str, lead_id: str, variant: MockVariant) -> str:
     base = _clean(base_url).rstrip("/")
     clean_lead_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", _clean(lead_id)).strip("-")
     if not base or not clean_lead_id:
         return ""
-    path_url = f"{base}/mocks/{clean_lead_id}/{variant.type_id}-{variant.version_id}/"
+    return f"{base}/mocks/{clean_lead_id}/{variant.type_id}-{variant.version_id}/"
+
+
+def preview_mock_url_from_tracked(url: str) -> str:
+    clean_url = _clean(url)
+    if not clean_url:
+        return ""
+    parsed = urlsplit(clean_url)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", parsed.fragment))
+
+
+def public_mock_url(base_url: str, lead_id: str, variant: MockVariant) -> str:
+    path_url = preview_mock_url(base_url, lead_id, variant)
+    if not path_url:
+        return ""
+    clean_lead_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", _clean(lead_id)).strip("-")
     params = {
         "utm_source": "mock_followup",
         "utm_medium": "email",
@@ -236,6 +252,7 @@ def build_payload(lead: dict, base_url: str) -> list[dict]:
     payload = []
     for variant in variants_for(mock_type, _clean(lead.get("website_mock_versions"))):
         url = public_mock_url(base_url, lead_id, variant)
+        preview_url = preview_mock_url(base_url, lead_id, variant)
         if not url:
             continue
         payload.append({
@@ -243,7 +260,7 @@ def build_payload(lead: dict, base_url: str) -> list[dict]:
             "version": variant.version_id,
             "label": variant.label,
             "url": url,
-            "preview_url": "",
+            "preview_url": preview_url,
         })
     return payload
 
@@ -252,6 +269,19 @@ def generated_mock_links(lead: dict) -> list[dict]:
     if not mock_generated(lead):
         return []
     return parse_payload(lead.get("website_mock_payload"))
+
+
+def generated_mock_preview_links(lead: dict) -> list[dict]:
+    preview_links = []
+    for item in generated_mock_links(lead):
+        preview = item.get("preview_url") or preview_mock_url_from_tracked(item.get("url", ""))
+        if not preview:
+            continue
+        preview_item = dict(item)
+        preview_item["url"] = preview
+        preview_item["preview_url"] = preview
+        preview_links.append(preview_item)
+    return preview_links
 
 
 def render_followup_addendum(

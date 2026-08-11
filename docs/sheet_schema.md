@@ -37,7 +37,7 @@ id | name | website | category | city | state | zip | phone | address | discover
 - `website_mock_type` → `preschool`, `music`, or `sports`
 - `website_mock_versions` → `auto` or comma-separated version ids; `auto` currently creates 2 versions per type
 - `website_mock_status` → `needs_review`, `not_started`, `generated`, `failed`, or `skip`
-- `website_mock_payload` → JSON list of generated mock URLs; supports more versions without adding more columns
+- `website_mock_payload` → JSON list of generated mock URLs; each item stores tracked customer `url` and clean internal `preview_url`
 - `website_mock_generated_at` → ISO date/time when mock metadata was generated
 - `website_mock_notes` → free text for mock workflow decisions
 

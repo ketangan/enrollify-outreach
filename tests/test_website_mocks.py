@@ -24,6 +24,48 @@ def test_build_payload_creates_two_default_versions_with_tracking_params():
     assert "utm_campaign=website_mock" in payload[0]["url"]
     assert "utm_content=90277-abc123" in payload[0]["url"]
     assert "mock_version=music-" in payload[0]["url"]
+    assert payload[0]["preview_url"].startswith(
+        "https://mocks.mypontora.com/mocks/90277-abc123/music-"
+    )
+    assert "utm_" not in payload[0]["preview_url"]
+    assert "mock_version" not in payload[0]["preview_url"]
+
+
+def test_parse_payload_backfills_clean_preview_url_from_legacy_tracked_url():
+    payload = website_mocks.parse_payload(
+        '[{"type":"music","version":"studio","label":"Studio concept",'
+        '"url":"https://mocks.mypontora.com/mocks/lead-1/music-studio/'
+        '?utm_source=mock_followup&utm_campaign=website_mock&utm_content=lead-1"}]'
+    )
+
+    assert payload[0]["preview_url"] == (
+        "https://mocks.mypontora.com/mocks/lead-1/music-studio/"
+    )
+
+
+def test_generated_mock_preview_links_use_clean_urls():
+    lead = {
+        "id": "lead-1",
+        "name": "Lincoln Dance Academy",
+        "website_mock_status": "generated",
+        "website_mock_payload": (
+            '[{"type":"music","version":"studio","label":"Studio concept",'
+            '"url":"https://mocks.mypontora.com/mocks/lead-1/music-studio/'
+            '?utm_source=mock_followup&utm_campaign=website_mock&utm_content=lead-1"}]'
+        ),
+    }
+
+    links = website_mocks.generated_mock_preview_links(lead)
+
+    assert links == [
+        {
+            "type": "music",
+            "version": "studio",
+            "label": "Studio concept",
+            "url": "https://mocks.mypontora.com/mocks/lead-1/music-studio/",
+            "preview_url": "https://mocks.mypontora.com/mocks/lead-1/music-studio/",
+        }
+    ]
 
 
 def test_render_followup_addendum_requires_generated_payload():

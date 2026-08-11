@@ -183,6 +183,51 @@ def test_mock_tracking_payload_includes_school_context():
     assert "website: params.get('website') || WEBSITE" in rendered
 
 
+def test_mock_index_uses_preview_links_and_send_status(tmp_path):
+    generate_website_mocks._write_index(
+        tmp_path,
+        [
+            {
+                "school": "Example Music School",
+                "label": "Modern studio concept",
+                "url": (
+                    "https://mocks.mypontora.com/mocks/lead-1/music-studio/"
+                    "?utm_campaign=website_mock&utm_content=lead-1"
+                ),
+                "preview_url": "https://mocks.mypontora.com/mocks/lead-1/music-studio/",
+                "website": "https://example.com",
+                "send_status": "Sent",
+                "send_status_key": "sent",
+                "send_status_detail": "Follow-up sent 2026-08-10",
+            }
+        ],
+    )
+
+    rendered = (tmp_path / "index.html").read_text()
+
+    assert 'href="https://mocks.mypontora.com/mocks/lead-1/music-studio/"' in rendered
+    assert "utm_campaign" not in rendered
+    assert "utm_content" not in rendered
+    assert "Sent" in rendered
+    assert "Follow-up sent 2026-08-10" in rendered
+
+
+def test_mock_send_status_marks_followup_states():
+    assert generate_website_mocks._mock_send_status(
+        {"follow_up_sent_at": "2026-08-10T09:00:00-07:00"}
+    )["label"] == "Sent"
+    assert generate_website_mocks._mock_send_status(
+        {"last_action": "phase6_followup_drafted"}
+    )["label"] == "Draft ready"
+    assert generate_website_mocks._mock_send_status(
+        {"status": "sent", "follow_up_at": "2026-08-12"}
+    ) == {
+        "key": "not-sent",
+        "label": "Not sent",
+        "detail": "Follow-up due 2026-08-12",
+    }
+
+
 def test_structured_preschool_cards_keep_body_in_text_column():
     lead = {
         "id": "90073-867167",

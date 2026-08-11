@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import html
 import logging
 import sys
 import time
@@ -32,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from gspread.utils import rowcol_to_a1
 
 from scripts import audit_drafts
-from src import config, sheets, drafter, gmail_client, brand_guard
+from src import config, sheets, drafter, gmail_client, brand_guard, website_mocks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,30 +67,61 @@ def _send_summary_email(subject: str, summary_html: str) -> None:
         logger.error("Failed to send follow-up summary email: %s", err)
 
 
+def _mock_review_links(lead: dict) -> list[dict]:
+    return [
+        {
+            "label": item.get("label") or "Website mock",
+            "url": item.get("preview_url") or item.get("url", ""),
+        }
+        for item in website_mocks.generated_mock_preview_links(lead)
+    ]
+
+
+def _mock_review_cell(links: list[dict]) -> str:
+    if not links:
+        return "<span style='color:#7a746b;'>No mock</span>"
+
+    link_items = "\n".join(
+        "<li style='margin:4px 0;'>"
+        f"<a href='{html.escape(link['url'], quote=True)}'>"
+        f"{html.escape(link['label'])}</a></li>"
+        for link in links
+    )
+    return (
+        "<strong style='color:#3d5a3a;'>Review before send</strong>"
+        "<ul style='margin:6px 0 0 18px;padding:0;'>"
+        f"{link_items}</ul>"
+    )
+
+
 def _build_summary_html(
     drafts: list[dict],
     failures: list[dict],
     skipped: list[dict],
 ) -> str:
     rows_html = "\n".join(
-        f"<tr><td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{d['school']}</td>"
-        f"<td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{d['email']}</td>"
-        f"<td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{d['subject']}</td></tr>"
+        f"<tr><td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{html.escape(d['school'])}</td>"
+        f"<td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{html.escape(d['email'])}</td>"
+        f"<td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{html.escape(d['subject'])}</td>"
+        f"<td style='padding:8px;border-bottom:1px solid #e6dfd0;'>{_mock_review_cell(d.get('mock_links', []))}</td></tr>"
         for d in drafts
     )
     rows_html = rows_html or (
-        "<tr><td colspan='3' style='padding:8px;'><em>No follow-up drafts created</em></td></tr>"
+        "<tr><td colspan='4' style='padding:8px;'><em>No follow-up drafts created</em></td></tr>"
     )
 
     failure_html = ""
     if failures:
-        fail_list = "\n".join(f"<li>{f['school']}: {f['error']}</li>" for f in failures)
+        fail_list = "\n".join(
+            f"<li>{html.escape(f['school'])}: {html.escape(f['error'])}</li>"
+            for f in failures
+        )
         failure_html = f"<h3 style='color:#9a2a1d;'>Failures</h3><ul>{fail_list}</ul>"
 
     skipped_html = ""
     if skipped:
         skipped_list = "\n".join(
-            f"<li>{s['school']} ({s['email']}): {s['reason']}</li>"
+            f"<li>{html.escape(s['school'])} ({html.escape(s['email'])}): {html.escape(s['reason'])}</li>"
             for s in skipped
         )
         skipped_html = f"<h3 style='color:#c47a18;'>Skipped</h3><ul>{skipped_list}</ul>"
@@ -99,11 +131,16 @@ def _build_summary_html(
       <h2 style="color:#3d5a3a;">{config.BRAND_NAME} — {len(drafts)} follow-up draft(s) ready</h2>
       <p>Generated {datetime.now().strftime('%A %b %d at %I:%M %p')}.
          Review and send from <a href="{gmail_client.GMAIL_DRAFTS_WEB_URL}">Gmail Drafts</a>.</p>
+      <p style="font-size:13px;color:#54504a;">
+         Mock review links below are clean preview links, so your checks do not write to Click_Log.
+         The customer-facing draft links stay tracked.
+      </p>
       <table style="border-collapse:collapse;width:100%;font-size:14px;">
         <thead><tr style="background:#f3ede1;">
           <th style="padding:8px;text-align:left;">School</th>
           <th style="padding:8px;text-align:left;">Email</th>
           <th style="padding:8px;text-align:left;">Subject</th>
+          <th style="padding:8px;text-align:left;">Mock review</th>
         </tr></thead>
         <tbody>{rows_html}</tbody>
       </table>
@@ -298,6 +335,7 @@ def main():
                 "school": lead.get("name", ""),
                 "email": lead.get("best_email", ""),
                 "subject": rendered.subject,
+                "mock_links": _mock_review_links(lead),
             })
             continue
 
@@ -338,6 +376,7 @@ def main():
             "school": lead.get("name", ""),
             "email": lead.get("best_email", ""),
             "subject": rendered.subject,
+            "mock_links": _mock_review_links(lead),
         })
         existing_drafts.append(
             audit_drafts.candidate_draft(

@@ -38,6 +38,23 @@ jobs:
           echo "${{ secrets.GMAIL_OAUTH_CLIENT_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/gmail-oauth-client.json
           echo "${{ secrets.GMAIL_TOKEN_JSON_B64 }}" | tr -d ' \n\r' | base64 -d > config/gmail-token.json
 
+      - name: Sync Gmail state
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          GOOGLE_SHEETS_CREDENTIALS_PATH: config/google-service-account.json
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          BRAND_NAME: Pontora
+          PRODUCT_DOMAIN: mypontora.com
+          PRODUCT_URL: https://mypontora.com
+          DEMO_URL: https://mypontora.com/demo
+          OUTREACH_EMAIL: ketan@mypontora.com
+          GMAIL_OAUTH_CLIENT_PATH: config/gmail-oauth-client.json
+          GMAIL_TOKEN_PATH: config/gmail-token.json
+          TIMEZONE: America/Los_Angeles
+        run: |
+          python scripts/run_phase_6_sync.py
+
       - name: Suggest website mock opportunities
         continue-on-error: true
         env:
@@ -107,7 +124,7 @@ jobs:
           TIMEZONE: America/Los_Angeles
           HOME_ZIP: 90045
         run: |
-          python scripts/run_daily.py
+          python scripts/run_daily.py --skip-sync
 
       - name: Cleanup credentials
         if: always()

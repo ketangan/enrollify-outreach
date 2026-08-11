@@ -117,10 +117,15 @@ website_mock_status=generated
 website_mock_payload contains at least one URL
 ```
 
-In GitHub Actions, the suggestion scan, mock rendering, and mock deployment are
-intentionally non-blocking for the core daily outreach run. If Cloudflare
-deployment fails, daily Gmail draft generation still continues, and mock URLs
-are not written back to the Sheet.
+`website_mock_payload` stores two URLs per mock: `url` is the tracked link used
+inside customer follow-up drafts, while `preview_url` is the clean internal
+review link used on `mocks.mypontora.com` and in the follow-up summary email.
+
+In GitHub Actions, Gmail sync runs before the mock site is rendered so
+`mocks.mypontora.com` can show current sent/draft status. The suggestion scan,
+mock rendering, and mock deployment are intentionally non-blocking for the core
+daily outreach run. If Cloudflare deployment fails, daily Gmail draft generation
+still continues, and mock URLs are not written back to the Sheet.
 
 The daily order is:
 
