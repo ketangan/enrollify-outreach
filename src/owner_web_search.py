@@ -136,7 +136,7 @@ Location: {city}, {state}
 Known profile/review links found on the school's own website:
 {profile_links}
 
-Use the web_search tool ONCE to find an email. Prefer this person's direct email, but if that is not visible, an official school contact email is acceptable. Useful queries:
+Use the web_search tool ONCE to find an email. Useful queries:
 - If known profile/review links are listed above, inspect or search those exact Facebook/Instagram/Yelp/LinkedIn URLs first because the school itself linked them.
 - "{owner_name}" "{name}" email contact
 - "{owner_name}" "{domain}"
@@ -154,11 +154,13 @@ Return JSON ONLY:
 
 Rules:
 - Only return an email you actually SEE in search results. Don't synthesize firstname@domain.
-- Prefer an owner-specific email. If none is visible, return a generic official school contact email only when the source clearly ties that email to THIS specific school.
+- Prefer the current official school contact email from the school's own site or from a known profile/review link above.
+- If an official linked Facebook/Instagram/Yelp/LinkedIn page lists a school contact email, prefer that over an older owner-specific email from a third-party article or directory.
+- Use an owner-specific email when it appears on the school's own site, an official linked profile, or when no official school contact email is visible.
 - Only return the email if the source clearly ties this person or official school contact email to THIS specific school, using at least one of: matching school domain, exact school name plus city/state, a known profile/review link above, or the same owner source URL above.
 - If the email belongs to someone with the same name at another school, another city/state, or an unrelated business, set found=false.
 - If you see an email but the source does not connect it to this exact school, set found=false.
-- "high": owner-specific email is on the school's site, this person's LinkedIn, or an official profile linked from the school's site.
+- "high": email is on the school's own site or an official profile linked from the school's site.
 - "medium": generic official school email, or owner-specific email in a directory, press release, or third-party listing.
 - "low": you're uncertain the email belongs to this person.
 - Prefer emails at "{domain}" over personal gmail/yahoo/etc.

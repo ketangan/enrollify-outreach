@@ -384,10 +384,10 @@ def test_stage2_email_search_runs_when_stage1_finds_owner_without_email(monkeypa
             owner_name="Miles Lewis",
             owner_title="Director",
             owner_source_url="https://www.facebook.com/Valleyartworkshop/",
-            best_email="miles.h.lewis@gmail.com",
+            best_email="valleyartworkshop@gmail.com",
             email_confidence="medium",
             reason="web_search:2B_email_only|web_conf_b:high|domain_match:false",
-            all_emails_found=["miles.h.lewis@gmail.com"],
+            all_emails_found=["valleyartworkshop@gmail.com"],
         )
 
     monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
@@ -405,12 +405,50 @@ def test_stage2_email_search_runs_when_stage1_finds_owner_without_email(monkeypa
     assert result.owner_name == "Miles Lewis"
     assert result.owner_title == "Director"
     assert result.owner_source_url == "https://www.valleyartworkshop.com/director"
-    assert result.best_email == "miles.h.lewis@gmail.com"
+    assert result.best_email == "valleyartworkshop@gmail.com"
     assert result.email_confidence == "medium"
     assert "stage2_email:" in result.reason
     assert captured["known_profile_urls"] == [
         "https://www.facebook.com/Valleyartworkshop/"
     ]
+
+
+def test_stage2_email_search_prefers_official_linked_profile_email(monkeypatch):
+    captured = {}
+
+    def fake_run_web_search(prompt, client, max_retries=3, tool=None):
+        captured["prompt"] = prompt
+        return {
+            "found": True,
+            "email": "valleyartworkshop@gmail.com",
+            "source_url": "https://www.facebook.com/Valleyartworkshop/",
+            "confidence": "high",
+            "reasoning": "Official linked Facebook profile lists the school contact email.",
+        }
+
+    monkeypatch.setattr(
+        owner_finder.owner_web_search,
+        "_run_web_search",
+        fake_run_web_search,
+    )
+
+    result = owner_finder.owner_web_search.find_email_via_web(
+        owner_name="Miles Lewis",
+        owner_title="Director",
+        owner_source_url="https://www.valleyartworkshop.com/director",
+        name="Valley Art Workshop",
+        website="https://www.valleyartworkshop.com/",
+        category="art",
+        city="Woodland Hills",
+        state="CA",
+        client=_FakeClient(),
+        known_profile_urls=["https://www.facebook.com/Valleyartworkshop/"],
+    )
+
+    assert result.best_email == "valleyartworkshop@gmail.com"
+    assert result.email_confidence == "medium"
+    assert "https://www.facebook.com/Valleyartworkshop/" in captured["prompt"]
+    assert "prefer that over an older owner-specific email" in captured["prompt"]
 
 
 def test_profile_links_require_real_profile_hosts():
