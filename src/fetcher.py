@@ -8,6 +8,7 @@ plus a list of outbound links.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -65,6 +66,12 @@ NOISE_TAGS = [
 
 MAX_TEXT_PER_PAGE = 8000  # chars
 
+# Canva exported sites render visible text from a large JavaScript bootstrap
+# payload. The static HTML body can look almost empty after scripts are stripped.
+CANVA_TEXT_RE = re.compile(
+    r'"a":\{"A":\[\{"A\?":"A","A":"((?:\\.|[^"\\])*)"'
+)
+
 # Cloudflare email protection — decodes /cdn-cgi/l/email-protection#<hex>
 # The hex string is XOR-encrypted with its own first byte as the key.
 # e.g. "83f4eaefefecf4efe4e6edc3e6ede4e6edeaf6f0efe6e2f1edeaede4ade0ecee"
@@ -107,6 +114,34 @@ def _extract_cloudflare_emails(html: str) -> list[str]:
         if decoded and decoded not in emails:
             emails.append(decoded)
     return emails
+
+
+def _extract_canva_bootstrap_text(html: str) -> str:
+    """Extract visible text chunks from Canva-exported site bootstrap data."""
+    if "__canva" not in html and "window['bootstrap']" not in html:
+        return ""
+
+    chunks: list[str] = []
+    seen: set[str] = set()
+    for match in CANVA_TEXT_RE.finditer(html):
+        raw = match.group(1)
+        try:
+            value = json.loads(f'"{raw}"')
+        except json.JSONDecodeError:
+            continue
+
+        value = value.replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t")
+        clean = re.sub(r"\s+", " ", value).strip()
+        if not clean:
+            continue
+        if "@" not in clean and sum(ch.isalpha() for ch in clean) < 2:
+            continue
+        if clean in seen:
+            continue
+        seen.add(clean)
+        chunks.append(clean)
+
+    return " ".join(chunks)
 
 
 @dataclass
@@ -195,6 +230,8 @@ def fetch(url: str) -> FetchedPage:
     # which is useless to us; decoding recovers the real address.
     cf_emails = _extract_cloudflare_emails(html)
 
+    canva_text = _extract_canva_bootstrap_text(html)
+
     soup = BeautifulSoup(html, "html.parser")
 
     # Strip noise tags
@@ -225,6 +262,8 @@ def fetch(url: str) -> FetchedPage:
 
     # Extract text
     text = soup.get_text(" ", strip=True)
+    if canva_text:
+        text = f"{text} {canva_text}".strip()
     text = re.sub(r"\s+", " ", text)
     if len(text) > MAX_TEXT_PER_PAGE:
         text = text[:MAX_TEXT_PER_PAGE]

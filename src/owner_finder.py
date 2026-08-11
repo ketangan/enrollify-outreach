@@ -139,10 +139,11 @@ OWNER_TITLES = (
     "Principal",
     "Head of School",
     "Executive Director",
+    "Provider",
 )
 OWNER_CONTEXT_RE = re.compile(
     r"\b("
-    r"about me|teacher|educator|director|owner|founder|principal|"
+    r"about me|teacher|educator|provider|director|owner|founder|principal|"
     r"head of school|opened|opening|started|founded|licensed child care|"
     r"licensed childcare|preschool|school|studio|academy|program"
     r")\b",
@@ -150,7 +151,7 @@ OWNER_CONTEXT_RE = re.compile(
 )
 OWNER_EXCERPT_RE = re.compile(
     r"\b("
-    r"about me|meet|owner|director|founder|principal|head of school|"
+    r"about me|meet|owner|provider|director|founder|principal|head of school|"
     r"executive director|teacher|parents|families|prospective family|"
     r"sincerely|welcome|my name is|i am|i'm|i’m|contact|email"
     r")\b",
@@ -178,6 +179,7 @@ NON_PERSON_NAME_WORDS = {
     "just",
     "learn",
     "my",
+    "our",
     "preschool",
     "program",
     "principal",
@@ -264,6 +266,7 @@ def _infer_owner_title(context: str) -> str:
         ("executive director", "Executive Director"),
         ("head of school", "Head of School"),
         ("principal", "Principal"),
+        ("provider", "Provider"),
         ("teacher/director", "Director"),
         ("director/teacher", "Director"),
         ("director", "Director"),
@@ -325,14 +328,25 @@ def _extract_name_after_title_anchor(text: str, title_end: int) -> str:
         flags=re.IGNORECASE,
     )[0]
 
+    honorific_name_pattern = re.compile(
+        rf"\b((?:Mr|Mrs|Ms|Miss|Dr)\.?\s+{NAME_WORD})\b",
+        re.IGNORECASE,
+    )
+    for match in honorific_name_pattern.finditer(window):
+        name = _clean_owner_name(match.group(1))
+        if name:
+            return name
+
     anchor_name_pattern = re.compile(
         rf"\b({NAME_WORD}(?:\s+{NAME_WORD}){{1,2}})\b",
         re.IGNORECASE,
     )
     for match in anchor_name_pattern.finditer(window):
-        name = _clean_owner_name(match.group(1))
-        if name:
-            return name
+        candidate_words = match.group(1).split()
+        for word_count in range(len(candidate_words), 1, -1):
+            name = _clean_owner_name(" ".join(candidate_words[:word_count]))
+            if name:
+                return name
     return ""
 
 
@@ -349,7 +363,7 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
         rf"{PERSON_NAME_PATTERN})"
     )
     strong_title_anchor_pattern = re.compile(
-        r"\b(?P<title>owner|founder|director|principal|head\s+of\s+school)\b",
+        r"\b(?P<title>owner|provider|founder|director|principal|head\s+of\s+school)\b",
         re.IGNORECASE,
     )
     compound_director_patterns = [

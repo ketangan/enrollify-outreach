@@ -228,6 +228,24 @@ def test_title_anchor_skips_assistant_director_for_real_director():
     assert candidate.reason == "title_anchor_owner_pattern"
 
 
+def test_title_anchor_recovers_family_childcare_provider_name():
+    page = FetchedPage(
+        url="https://martinezfcc.com/",
+        status_code=200,
+        text=(
+            "Growing Minds Academy Licensed and Insured under Martinez Family "
+            "Childcare. Welcome to Growing Minds Academy Learning Center LLC "
+            "Provider Ms. Jasmine childrenfirsthappyhearts@gmail.com"
+        ),
+    )
+
+    candidate = owner_finder._extract_owner_candidate([page])
+
+    assert candidate.name == "Ms. Jasmine"
+    assert candidate.title == "Provider"
+    assert candidate.reason == "title_anchor_owner_pattern"
+
+
 def test_find_owner_pages_treats_parents_and_teachers_as_owner_pages():
     home = FetchedPage(
         url="https://example-school.test/",
