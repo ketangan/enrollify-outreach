@@ -326,6 +326,93 @@ def test_stage2_owner_keeps_stage1_email_and_receives_profile_links(monkeypatch)
     ]
 
 
+def test_stage2_email_search_runs_when_stage1_finds_owner_without_email(monkeypatch):
+    captured = {}
+
+    class FakeOwnerBlock:
+        text = (
+            '{"owner_name":"Miles Lewis","owner_title":"Director",'
+            '"best_email":"","confidence":"low",'
+            '"reason":"Miles Lewis is identified as director but no email was found."}'
+        )
+
+    class FakeOwnerResponse:
+        content = [FakeOwnerBlock()]
+
+    class FakeOwnerMessages:
+        def create(self, **_kwargs):
+            return FakeOwnerResponse()
+
+    class FakeOwnerClient:
+        messages = FakeOwnerMessages()
+
+    def fake_fetch(url):
+        if url.rstrip("/") == "https://www.valleyartworkshop.com":
+            return FetchedPage(
+                url="https://www.valleyartworkshop.com/",
+                status_code=200,
+                text="Valley Art Workshop",
+                outbound_links=[
+                    {
+                        "href": "https://www.valleyartworkshop.com/director",
+                        "text": "Director",
+                    },
+                    {
+                        "href": "https://www.facebook.com/Valleyartworkshop/",
+                        "text": "Facebook",
+                    },
+                ],
+            )
+        if url.rstrip("/") == "https://www.valleyartworkshop.com/director":
+            return FetchedPage(
+                url="https://www.valleyartworkshop.com/director",
+                status_code=200,
+                text="DIRECTOR Miles Lewis founded Valley Art Workshop.",
+                raw_html_snippet="director miles lewis founded valley art workshop.",
+                outbound_links=[
+                    {
+                        "href": "https://www.facebook.com/Valleyartworkshop/",
+                        "text": "Facebook",
+                    }
+                ],
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    def fake_email_search(**kwargs):
+        captured.update(kwargs)
+        return owner_finder.owner_web_search.Stage2Result(
+            owner_name="Miles Lewis",
+            owner_title="Director",
+            owner_source_url="https://www.facebook.com/Valleyartworkshop/",
+            best_email="miles.h.lewis@gmail.com",
+            email_confidence="medium",
+            reason="web_search:2B_email_only|web_conf_b:high|domain_match:false",
+            all_emails_found=["miles.h.lewis@gmail.com"],
+        )
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+    monkeypatch.setattr(owner_finder.owner_web_search, "find_email_via_web", fake_email_search)
+
+    result = owner_finder.find_owner(
+        "https://www.valleyartworkshop.com/",
+        FakeOwnerClient(),
+        name="Valley Art Workshop",
+        category="art",
+        city="Woodland Hills",
+        state="CA",
+    )
+
+    assert result.owner_name == "Miles Lewis"
+    assert result.owner_title == "Director"
+    assert result.owner_source_url == "https://www.valleyartworkshop.com/director"
+    assert result.best_email == "miles.h.lewis@gmail.com"
+    assert result.email_confidence == "medium"
+    assert "stage2_email:" in result.reason
+    assert captured["known_profile_urls"] == [
+        "https://www.facebook.com/Valleyartworkshop/"
+    ]
+
+
 def test_profile_links_require_real_profile_hosts():
     page = FetchedPage(
         url="https://example.com",

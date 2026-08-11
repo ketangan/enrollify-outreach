@@ -948,9 +948,52 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
         all_emails_found=unique_emails,
     )
 
-    # Stage 2 fallback: web search ONLY when Stage 1 found no owner name.
-    # If Stage 1 found a name but no email, we leave it for manual review —
-    # web search rarely surfaces emails that the school's own site doesn't expose.
+    # Stage 2 email fallback: Stage 1 sometimes finds the owner on the site,
+    # while the public email lives on a linked Facebook/Instagram/Yelp page.
+    if stage1.owner_name and not stage1.best_email and name:
+        logger.info(
+            "    Stage 1 found owner but no email — trying Stage 2 email search"
+        )
+        s2_email = owner_web_search.find_email_via_web(
+            owner_name=stage1.owner_name,
+            owner_title=stage1.owner_title,
+            owner_source_url=stage1.owner_source_url,
+            name=name,
+            website=website,
+            category=category,
+            city=city,
+            state=state,
+            client=client,
+            known_profile_urls=known_profile_urls,
+        )
+        if s2_email.best_email:
+            logger.info(
+                "    Stage 2 email found: %s (conf=%s)",
+                s2_email.best_email, s2_email.email_confidence,
+            )
+            merged_reason = (
+                f"{stage1.reason}|stage2_email:{s2_email.reason}"
+                if stage1.reason else f"stage2_email:{s2_email.reason}"
+            )
+            return OwnerResult(
+                owner_name=stage1.owner_name,
+                owner_title=stage1.owner_title,
+                owner_source_url=stage1.owner_source_url,
+                best_email=s2_email.best_email,
+                email_confidence=s2_email.email_confidence,
+                reason=merged_reason,
+                pages_fetched=stage1.pages_fetched,
+                used_llm=True,
+                all_emails_found=s2_email.all_emails_found or stage1.all_emails_found,
+            )
+
+        logger.info("    Stage 2 email search failed: %s", s2_email.reason)
+        stage1.reason = (
+            f"{stage1.reason}|stage2_email_tried:{s2_email.reason}"
+            if stage1.reason else f"stage2_email_tried:{s2_email.reason}"
+        )
+
+    # Stage 2 owner fallback: web search when Stage 1 found no owner name.
     if not stage1.owner_name and name:
         logger.info("    Stage 1 found no owner name — trying Stage 2 web search")
         s2 = owner_web_search.find_owner_via_web(

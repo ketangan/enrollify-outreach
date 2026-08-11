@@ -124,7 +124,7 @@ Rules:
 - Try harder to find a named person, but being wrong is worse than returning found=false."""
 
 
-EMAIL_SEARCH_PROMPT = """You are helping find the email address of a specific person at a small school.
+EMAIL_SEARCH_PROMPT = """You are helping find the best contact email for a small school.
 
 Person: {owner_name}
 Title: {owner_title}
@@ -133,9 +133,14 @@ School domain: {domain}
 Owner source URL: {owner_source_url}
 Location: {city}, {state}
 
-Use the web_search tool ONCE to find this person's email. Useful queries:
+Known profile/review links found on the school's own website:
+{profile_links}
+
+Use the web_search tool ONCE to find an email. Prefer this person's direct email, but if that is not visible, an official school contact email is acceptable. Useful queries:
+- If known profile/review links are listed above, inspect or search those exact Facebook/Instagram/Yelp/LinkedIn URLs first because the school itself linked them.
 - "{owner_name}" "{name}" email contact
 - "{owner_name}" "{domain}"
+- "{name}" contact email
 
 Return JSON ONLY:
 
@@ -149,11 +154,12 @@ Return JSON ONLY:
 
 Rules:
 - Only return an email you actually SEE in search results. Don't synthesize firstname@domain.
-- Only return the email if the source clearly ties this person/email to THIS specific school, using at least one of: matching school domain, exact school name plus city/state, or the same owner source URL above.
+- Prefer an owner-specific email. If none is visible, return a generic official school contact email only when the source clearly ties that email to THIS specific school.
+- Only return the email if the source clearly ties this person or official school contact email to THIS specific school, using at least one of: matching school domain, exact school name plus city/state, a known profile/review link above, or the same owner source URL above.
 - If the email belongs to someone with the same name at another school, another city/state, or an unrelated business, set found=false.
-- If you see an email but the source does not connect it to both the person and this school, set found=false.
-- "high": email is on the school's site or this person's LinkedIn.
-- "medium": email is in a directory, press release, or third-party listing.
+- If you see an email but the source does not connect it to this exact school, set found=false.
+- "high": owner-specific email is on the school's site, this person's LinkedIn, or an official profile linked from the school's site.
+- "medium": generic official school email, or owner-specific email in a directory, press release, or third-party listing.
 - "low": you're uncertain the email belongs to this person.
 - Prefer emails at "{domain}" over personal gmail/yahoo/etc.
 - If you find no email, set found=false."""
@@ -188,6 +194,90 @@ def _domain_from_url(url: str) -> str:
     except Exception:
         return ""
 
+
+def _profile_links_text(known_profile_urls: list[str] | None) -> str:
+    links = [
+        str(url or "").strip()
+        for url in (known_profile_urls or [])
+        if str(url or "").strip()
+    ]
+    return "\n".join(f"- {url}" for url in links[:8]) or "(none provided)"
+
+
+def _search_email_for_owner(
+    result: Stage2Result,
+    *,
+    owner_name: str,
+    owner_title: str,
+    owner_source_url: str,
+    name: str,
+    website: str,
+    city: str,
+    state: str,
+    client: Anthropic,
+    known_profile_urls: list[str] | None = None,
+) -> Stage2Result:
+    domain = _domain_from_url(website)
+    if not domain:
+        result.reason = "web_search:owner_found_no_domain"
+        result.email_confidence = "low"
+        return result
+
+    prompt_b = EMAIL_SEARCH_PROMPT.format(
+        owner_name=owner_name,
+        owner_title=owner_title or "owner",
+        name=name,
+        domain=domain,
+        owner_source_url=owner_source_url or "",
+        city=city or "",
+        state=state or "",
+        profile_links=_profile_links_text(known_profile_urls),
+    )
+    parsed_b = _run_web_search(prompt_b, client)
+
+    if not parsed_b or not parsed_b.get("found"):
+        result.reason = "web_search:owner_found_no_email"
+        result.email_confidence = "low"
+        result.stage += "|2B_no_email"
+        return result
+
+    found_email = (parsed_b.get("email") or "").strip().lower()
+    if not found_email or "@" not in found_email:
+        result.reason = "web_search:invalid_email_returned"
+        result.email_confidence = "low"
+        result.stage += "|2B_invalid"
+        return result
+
+    email_source_url = (parsed_b.get("source_url") or "").strip()
+    if not email_source_url:
+        result.reason = "web_search:email_found_without_source"
+        result.email_confidence = "low"
+        result.stage += "|2B_no_source"
+        return result
+
+    result.best_email = found_email
+    result.all_emails_found = [found_email]
+
+    # Confidence ladder (no SMTP, so we lean conservatively):
+    # - high   = on-domain email + web reported "high"
+    # - medium = on-domain (any web confidence) OR off-domain + web "high"
+    # - low    = off-domain + web "medium"/"low"
+    web_conf_b = (parsed_b.get("confidence") or "low").strip()
+    email_domain = found_email.split("@", 1)[1] if "@" in found_email else ""
+    domain_matches = email_domain == domain
+
+    if domain_matches and web_conf_b == "high":
+        result.email_confidence = "high"
+    elif domain_matches or web_conf_b == "high":
+        result.email_confidence = "medium"
+    else:
+        result.email_confidence = "low"
+
+    result.reason = (
+        f"web_search:{result.stage}|web_conf_b:{web_conf_b}|domain_match:{domain_matches}"
+    )
+    result.stage += f"|2B_found_{web_conf_b}"
+    return result
 
 
 def _run_web_search(
@@ -282,8 +372,6 @@ def find_owner_via_web(
         result.email_confidence = "low"
         return result
 
-    domain = _domain_from_url(website)
-
     # ---- Stage 2A: web search for owner name ----
     prompt_a = OWNER_SEARCH_PROMPT.format(
         name=name,
@@ -291,10 +379,7 @@ def find_owner_via_web(
         category=category or "",
         city=city or "",
         state=state or "",
-        profile_links=(
-            "\n".join(f"- {url}" for url in (known_profile_urls or [])[:8])
-            or "(none provided)"
-        ),
+        profile_links=_profile_links_text(known_profile_urls),
     )
     parsed = _run_web_search(prompt_a, client, tool=OWNER_WEB_SEARCH_TOOL)
 
@@ -324,62 +409,58 @@ def find_owner_via_web(
     result.stage = f"2A_found_{conf_a}"
 
     # ---- Stage 2B: web search for the owner's email ----
-    if not domain:
-        result.reason = "web_search:owner_found_no_domain"
-        result.email_confidence = "low"
-        return result
-
-    prompt_b = EMAIL_SEARCH_PROMPT.format(
+    return _search_email_for_owner(
+        result,
         owner_name=owner_name,
-        owner_title=result.owner_title or "owner",
+        owner_title=result.owner_title,
+        owner_source_url=result.owner_source_url,
         name=name,
-        domain=domain,
-        owner_source_url=result.owner_source_url or "",
-        city=city or "",
-        state=state or "",
+        website=website,
+        city=city,
+        state=state,
+        client=client,
+        known_profile_urls=known_profile_urls,
     )
-    parsed_b = _run_web_search(prompt_b, client)
 
-    if not parsed_b or not parsed_b.get("found"):
-        result.reason = "web_search:owner_found_no_email"
-        result.email_confidence = "low"
-        result.stage += "|2B_no_email"
-        return result
 
-    found_email = (parsed_b.get("email") or "").strip().lower()
-    if not found_email or "@" not in found_email:
-        result.reason = "web_search:invalid_email_returned"
-        result.email_confidence = "low"
-        result.stage += "|2B_invalid"
-        return result
-
-    email_source_url = (parsed_b.get("source_url") or "").strip()
-    if not email_source_url:
-        result.reason = "web_search:email_found_without_source"
-        result.email_confidence = "low"
-        result.stage += "|2B_no_source"
-        return result
-
-    result.best_email = found_email
-    result.all_emails_found = [found_email]
-
-    # Confidence ladder (no SMTP, so we lean conservatively):
-    # - high   = on-domain email + web reported "high"
-    # - medium = on-domain (any web confidence) OR off-domain + web "high"
-    # - low    = off-domain + web "medium"/"low"
-    web_conf_b = (parsed_b.get("confidence") or "low").strip()
-    email_domain = found_email.split("@", 1)[1] if "@" in found_email else ""
-    domain_matches = email_domain == domain
-
-    if domain_matches and web_conf_b == "high":
-        result.email_confidence = "high"
-    elif domain_matches or web_conf_b == "high":
-        result.email_confidence = "medium"
-    else:
-        result.email_confidence = "low"
-
-    result.reason = (
-        f"web_search:{result.stage}|web_conf_b:{web_conf_b}|domain_match:{domain_matches}"
+def find_email_via_web(
+    *,
+    owner_name: str,
+    owner_title: str,
+    owner_source_url: str,
+    name: str,
+    website: str,
+    category: str,
+    city: str,
+    state: str,
+    client: Anthropic,
+    known_profile_urls: list[str] | None = None,
+) -> Stage2Result:
+    """Run a one-shot email search when Stage 1 already found the owner."""
+    result = Stage2Result(
+        owner_name=(owner_name or "").strip(),
+        owner_title=(owner_title or "").strip(),
+        owner_source_url=(owner_source_url or "").strip(),
+        email_confidence="low",
+        stage="2B_email_only",
     )
-    result.stage += f"|2B_found_{web_conf_b}"
-    return result
+
+    if not result.owner_name:
+        result.reason = "web_search:no_owner_name_for_email_search"
+        return result
+    if not name:
+        result.reason = "web_search:no_school_name"
+        return result
+
+    return _search_email_for_owner(
+        result,
+        owner_name=result.owner_name,
+        owner_title=result.owner_title,
+        owner_source_url=result.owner_source_url,
+        name=name,
+        website=website,
+        city=city,
+        state=state,
+        client=client,
+        known_profile_urls=known_profile_urls,
+    )
