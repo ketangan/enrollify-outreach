@@ -31,6 +31,10 @@ def test_clean_school_name_removes_trailing_location_suffixes():
         == "CODELA Preschool"
     )
     assert (
+        clean_school_name("Le Petit Gan International Preschool West Hollywood")
+        == "Le Petit Gan International Preschool"
+    )
+    assert (
         clean_school_name("Bessie Pregerson Child Development Center", city="Los Angeles", state="CA")
         == "Bessie Pregerson Child Development Center"
     )

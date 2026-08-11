@@ -2,9 +2,10 @@
 """
 Backfill school_name and website columns in the Click_Log tab.
 
-Click_Log rows arrive with just lead_id (via UTM param) and click metadata.
-This script walks Click_Log, looks up each lead in Leads + Archive, and
-writes school name + website into the repurposed columns.
+Click_Log rows can arrive with just lead_id (via UTM param) and click metadata.
+The preferred no-deploy view is Click_Log_View, created by
+scripts/setup_click_log_view.py. This script is still useful when you want to
+physically write school name + website back into the raw Click_Log tab.
 
 Only touches rows where either column is blank — safe to run repeatedly.
 
@@ -25,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gspread.utils import rowcol_to_a1
 
-from src import config, sheets
+from src import click_log, config, sheets
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,8 +34,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("backfill_clicks")
-
-CLICK_LOG_TAB = "Click_Log"
 
 # Sheets quota: 60 writes/min per user. Each row we touch is one batch_update.
 # 1.2s throttle keeps us under 50/min with headroom.
@@ -51,22 +50,8 @@ def main():
 
     config.validate()
 
-    ws = sheets.get_tab(CLICK_LOG_TAB)
+    ws = sheets.get_tab(click_log.CLICK_LOG_TAB)
     all_rows = ws.get_all_values()
-    if not all_rows:
-        logger.error("Click_Log is empty")
-        sys.exit(1)
-
-    headers = all_rows[0]
-    try:
-        lead_id_col = headers.index("lead_id")
-        school_name_col = headers.index("school_name")
-        website_col = headers.index("website")
-    except ValueError as e:
-        logger.error("Missing column in Click_Log: %s", e)
-        logger.error("Expected headers include: lead_id, school_name, website")
-        logger.error("Current headers: %s", headers)
-        sys.exit(1)
 
     # Build id -> (name, website) index from Leads + Archive
     logger.info("Loading Leads + Archive for lookup...")
@@ -75,102 +60,70 @@ def main():
         archive = sheets.read_all_rows(config.TAB_ARCHIVE)
     except Exception:
         archive = []  # archive tab optional
-    all_leads = leads + archive
-    by_id: dict[str, tuple[str, str]] = {}
-    for r in all_leads:
-        lid = str(r.get("id", "")).strip()
-        if not lid:
-            continue
-        by_id[lid] = (
-            str(r.get("name", "")).strip(),
-            str(r.get("website", "")).strip(),
-        )
+    by_id = click_log.build_lead_lookup(leads + archive)
     logger.info("  indexed %d leads (leads + archive)", len(by_id))
 
-    # Walk Click_Log rows, decide which need updating
-    to_update = []
-    not_found = []
-    already_good = 0
+    try:
+        plan = click_log.plan_click_log_backfill(
+            all_rows,
+            lead_lookup=by_id,
+            force=args.force,
+        )
+    except ValueError as exc:
+        logger.error(str(exc))
+        logger.error("Current headers: %s", all_rows[0] if all_rows else [])
+        sys.exit(1)
 
-    for i, row in enumerate(all_rows[1:], start=2):
-        if len(row) <= max(lead_id_col, school_name_col, website_col):
-            # Row is shorter than expected — pad in memory for lookup
-            row = row + [""] * (max(lead_id_col, school_name_col, website_col) + 1 - len(row))
-
-        lead_id = row[lead_id_col].strip()
-        if not lead_id:
-            continue
-
-        existing_school = row[school_name_col].strip()
-        existing_website = row[website_col].strip()
-
-        # Skip already-populated rows unless --force
-        if not args.force and existing_school and existing_website:
-            already_good += 1
-            continue
-
-        lookup = by_id.get(lead_id)
-        if not lookup:
-            not_found.append((i, lead_id))
-            continue
-
-        school, website = lookup
-        # Only include if there's actually something to write
-        if not school and not website:
-            continue
-
-        # If school and website already match what we'd write, skip
-        if not args.force and existing_school == school and existing_website == website:
-            already_good += 1
-            continue
-
-        to_update.append((i, lead_id, school, website))
+    headers = all_rows[0]
+    school_name_col = headers.index("school_name")
+    website_col = headers.index("website")
 
     logger.info("")
-    logger.info("Click_Log rows: %d total", len(all_rows) - 1)
-    logger.info("  already populated correctly: %d", already_good)
-    logger.info("  need update:                 %d", len(to_update))
-    logger.info("  lead_id not found in sheet:  %d", len(not_found))
+    logger.info("Click_Log rows: %d total", plan.total_rows)
+    logger.info("  already populated correctly: %d", plan.already_good)
+    logger.info("  need update:                 %d", len(plan.updates))
+    logger.info("  lead_id not found in sheet:  %d", len(plan.not_found))
 
-    if not_found:
+    if plan.not_found:
         logger.info("")
         logger.info("Not found (sample of up to 10):")
-        for row_idx, lid in not_found[:10]:
+        for row_idx, lid in plan.not_found[:10]:
             logger.info("  row %d: lead_id=%s", row_idx, lid)
 
-    if not to_update:
+    if not plan.updates:
         logger.info("Nothing to update.")
         return
 
     if args.dry_run:
         logger.info("")
         logger.info("DRY RUN — would update (sample of up to 20):")
-        for row_idx, lid, school, website in to_update[:20]:
+        for update in plan.updates[:20]:
             logger.info("  row %d: %s -> school=%r website=%r",
-                        row_idx, lid, school[:40], website[:40])
-        if len(to_update) > 20:
-            logger.info("  ... and %d more", len(to_update) - 20)
+                        update.row_idx, update.lead_id,
+                        update.school_name[:40], update.website[:40])
+        if len(plan.updates) > 20:
+            logger.info("  ... and %d more", len(plan.updates) - 20)
         return
 
     # Apply updates
     logger.info("")
-    logger.info("Applying %d updates...", len(to_update))
-    for idx, (row_idx, lid, school, website) in enumerate(to_update, start=1):
+    logger.info("Applying %d updates...", len(plan.updates))
+    for idx, update in enumerate(plan.updates, start=1):
         ws.batch_update(
             [
-                {"range": rowcol_to_a1(row_idx, school_name_col + 1),
-                 "values": [[school]]},
-                {"range": rowcol_to_a1(row_idx, website_col + 1),
-                 "values": [[website]]},
+                {"range": rowcol_to_a1(update.row_idx, school_name_col + 1),
+                 "values": [[update.school_name]]},
+                {"range": rowcol_to_a1(update.row_idx, website_col + 1),
+                 "values": [[update.website]]},
             ],
             value_input_option="USER_ENTERED",
         )
         time.sleep(SHEET_WRITE_THROTTLE_SEC)
         if idx % 10 == 0:
-            logger.info("  updated %d/%d", idx, len(to_update))
+            logger.info("  updated %d/%d", idx, len(plan.updates))
 
     logger.info("")
-    logger.info("DONE. Updated %d rows.", len(to_update))
+    logger.info("DONE. Updated %d rows.", len(plan.updates))
 
 
 if __name__ == "__main__":

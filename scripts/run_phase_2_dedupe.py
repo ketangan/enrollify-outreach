@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from gspread.utils import rowcol_to_a1
 from rapidfuzz import fuzz
 
-from src import config, sheets
+from src import config, dedupe_within_leads, sheets
 
 logging.basicConfig(
     level=logging.INFO,
@@ -226,6 +226,17 @@ def find_match(
     return False, ""
 
 
+def _run_internal_duplicate_guard(*, commit: bool) -> None:
+    logger.info("Running internal Leads duplicate guard...")
+    summary = dedupe_within_leads.dedupe_within_leads(dry_run=not commit)
+    logger.info(
+        "Internal duplicate guard: checked=%d duplicates_found=%d rows_demoted=%d",
+        summary.get("checked", 0),
+        summary.get("duplicates_found", 0),
+        summary.get("rows_demoted", 0),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--commit", action="store_true",
@@ -305,29 +316,30 @@ def main():
 
     if not args.commit:
         logger.info("DRY RUN. Pass --commit to apply.")
+        _run_internal_duplicate_guard(commit=False)
         return
 
-    if not matches:
-        return
+    if matches:
+        # Build batched cell updates. Each match = 2 cells.
+        # batch_update sends many cell-updates in a single API call → avoids rate limits.
+        logger.info("Applying status=already_contacted to %d rows in batches...", len(matches))
+        updates = []
+        for row_idx, _, reason in matches:
+            updates.append({
+                "range": rowcol_to_a1(row_idx, status_col),
+                "values": [["already_contacted"]],
+            })
+            updates.append({
+                "range": rowcol_to_a1(row_idx, last_action_col),
+                "values": [[f"dedupe:{reason}"]],
+            })
 
-    # Build batched cell updates. Each match = 2 cells.
-    # batch_update sends many cell-updates in a single API call → avoids rate limits.
-    logger.info("Applying status=already_contacted to %d rows in batches...", len(matches))
-    updates = []
-    for row_idx, _, reason in matches:
-        updates.append({
-            "range": rowcol_to_a1(row_idx, status_col),
-            "values": [["already_contacted"]],
-        })
-        updates.append({
-            "range": rowcol_to_a1(row_idx, last_action_col),
-            "values": [[f"dedupe:{reason}"]],
-        })
+        for i in range(0, len(updates), BATCH_SIZE):
+            chunk = updates[i:i + BATCH_SIZE]
+            leads_ws.batch_update(chunk, value_input_option="USER_ENTERED")
+            logger.info("  applied %d/%d updates", min(i + BATCH_SIZE, len(updates)), len(updates))
 
-    for i in range(0, len(updates), BATCH_SIZE):
-        chunk = updates[i:i + BATCH_SIZE]
-        leads_ws.batch_update(chunk, value_input_option="USER_ENTERED")
-        logger.info("  applied %d/%d updates", min(i + BATCH_SIZE, len(updates)), len(updates))
+    _run_internal_duplicate_guard(commit=True)
 
     logger.info("Done.")
 

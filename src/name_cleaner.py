@@ -73,6 +73,7 @@ LOCATION_SUFFIXES = {
     "south los angeles",
     "west la",
     "west los angeles",
+    "west hollywood",
 }
 
 TRAILING_ORG_SUFFIX_RE = re.compile(

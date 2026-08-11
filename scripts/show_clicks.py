@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import config, sheets
+from src import click_log, config, sheets
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,9 +31,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("show_clicks")
-
-CLICK_LOG_TAB = "Click_Log"
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -47,7 +44,7 @@ def main():
 
     # Read clicks
     try:
-        clicks = sheets.read_all_rows(CLICK_LOG_TAB)
+        clicks = sheets.read_all_rows(click_log.CLICK_LOG_TAB)
     except Exception as e:
         logger.error("Couldn't read Click_Log tab: %s", e)
         logger.info("Has the tab been created with headers? (timestamp | lead_id | utm_source | utm_campaign | user_agent | referer | path)")

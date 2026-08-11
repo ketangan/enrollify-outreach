@@ -128,6 +128,44 @@ def test_grid_owner_review_save_with_email_promotes_even_without_owner(monkeypat
     assert captured["updates"]["best_email"] == "admin@a1collegeprep.com"
 
 
+def test_review_duplicate_guard_demotes_stale_review_duplicate(monkeypatch):
+    captured = []
+
+    def fake_update(lead_id, updates):
+        captured.append((lead_id, updates))
+        return True
+
+    monkeypatch.setattr(routes_review, "_update_lead_fields", fake_update)
+
+    repaired = routes_review._demote_duplicate_review_rows([
+        {
+            "id": "drafted-row",
+            "name": "Le Petit Gan International Preschool",
+            "website": "https://lepetitganpreschool.com/",
+            "status": "awaiting_approval",
+            "best_email": "infolepetitgan@gmail.com",
+            "city": "Los Angeles",
+            "zip": "90079",
+        },
+        {
+            "id": "stale-review",
+            "name": "Le Petit Gan International Preschool Los Angeles",
+            "website": "https://lepetitganpreschool.com/",
+            "status": "needs_enrollment_system_classification",
+            "best_email": "infolepetitgan@gmail.com",
+            "city": "Los Angeles",
+            "zip": "90079",
+            "notes": "existing",
+        },
+    ])
+
+    assert repaired == 1
+    assert captured[0][0] == "stale-review"
+    assert captured[0][1]["status"] == "do_not_contact"
+    assert captured[0][1]["do_not_contact_reason"] == "internal_duplicate:drafted-row"
+    assert captured[0][1]["last_action"] == routes_review.DUPLICATE_GUARD_LAST_ACTION
+
+
 def test_review_mock_update_marks_candidate_without_status_change(monkeypatch):
     captured = {}
     monkeypatch.setattr(routes_review, "_ensure_mock_headers", lambda: None)

@@ -38,7 +38,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from gspread.utils import rowcol_to_a1
 
 from scripts import audit_drafts
-from src import config, sheets, drafter, gmail_client, brand_guard, classifier
+from src import (
+    brand_guard,
+    classifier,
+    config,
+    dedupe_within_leads,
+    drafter,
+    gmail_client,
+    sheets,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -108,6 +116,43 @@ def _collect_ready_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
     # Oldest discovery first
     ready.sort(key=lambda l: l.get("discovered_date", ""))
     return ready
+
+
+def _collect_all_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
+    """Return all Leads rows as dicts with sheet row numbers attached."""
+    leads = []
+    for i, row in enumerate(all_rows[1:], start=2):
+        lead = {
+            header: row[idx] if idx < len(row) else ""
+            for header, idx in col.items()
+        }
+        lead["_row_idx"] = i
+        leads.append(lead)
+    return leads
+
+
+def _duplicate_reroute_for_lead(
+    lead: dict,
+    duplicate_demotions: dict[str, dict],
+) -> dict | None:
+    lead_id = str(lead.get("id", "")).strip()
+    kept = duplicate_demotions.get(lead_id)
+    if not kept:
+        return None
+    kept_id = str(kept.get("id", "")).strip()
+    kept_status = str(kept.get("status", "")).strip()
+    return {
+        "school": lead.get("name", ""),
+        "enrollment_method": f"internal_duplicate:{kept_id or '(unknown)'}",
+        "_row_idx": lead["_row_idx"],
+        "reroute_status": "do_not_contact",
+        "wipe_owner": False,
+        "do_not_contact_reason": f"internal_duplicate:{kept_id}",
+        "notes_update": (
+            "phase5: duplicate blocked before draft; "
+            f"kept={kept_id or '(unknown)'} status={kept_status or '(unknown)'}"
+        ),
+    }
 
 
 def _compute_pipeline_status(all_rows: list[list[str]], col: dict) -> dict:
@@ -297,7 +342,7 @@ def main():
 
     col = {h: headers.index(h) for h in headers}
     required = [
-        "status", "website", "name", "zip", "category", "owner_name",
+        "id", "status", "website", "name", "zip", "category", "owner_name",
         "best_email", "enrollment_method", "discovered_date", "notes", "last_action",
     ]
     missing = [c for c in required if c not in col]
@@ -306,6 +351,9 @@ def main():
         sys.exit(1)
 
     ready = _collect_ready_leads(col, all_rows)
+    duplicate_demotions = dedupe_within_leads.duplicate_demotions_by_id(
+        _collect_all_leads(col, all_rows)
+    )
     cap = args.limit if args.limit is not None else config.DEFAULT_DAILY_EMAIL_CAP
 
     # ── Pre-flight: reroute leads with invalid enrollment_method ───────
@@ -316,6 +364,11 @@ def main():
     rerouted = []
     eligible = []
     for lead in ready:
+        duplicate_reroute = _duplicate_reroute_for_lead(lead, duplicate_demotions)
+        if duplicate_reroute:
+            rerouted.append(duplicate_reroute)
+            continue
+
         em = (lead.get("enrollment_method") or "").strip()
         owner_name = (lead.get("owner_name") or "").strip()
 
@@ -369,7 +422,7 @@ def main():
 
     if rerouted:
         logger.warning(
-            "Found %d ready_to_send lead(s) with problems — rerouting to Review",
+            "Found %d ready_to_send lead(s) with problems — blocking/rerouting",
             len(rerouted),
         )
         for r in rerouted:
@@ -384,8 +437,13 @@ def main():
                 {"range": rowcol_to_a1(r["_row_idx"], col["last_action"] + 1),
                  "values": [["phase5_reroute"]]},
                 {"range": rowcol_to_a1(r["_row_idx"], col["notes"] + 1),
-                 "values": [[f"phase5: rerouted, {r['enrollment_method']}"]]},
+                 "values": [[r.get("notes_update") or f"phase5: rerouted, {r['enrollment_method']}"]]},
             ]
+            if r.get("do_not_contact_reason") and "do_not_contact_reason" in col:
+                updates.append({
+                    "range": rowcol_to_a1(r["_row_idx"], col["do_not_contact_reason"] + 1),
+                    "values": [[r["do_not_contact_reason"]]],
+                })
             if r["wipe_owner"]:
                 # Clear owner_name so Phase 4 retry or manual review starts fresh.
                 updates.append({

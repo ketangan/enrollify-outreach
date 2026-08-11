@@ -35,7 +35,7 @@ from fastapi.templating import Jinja2Templates
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src import config, sheets, website_mocks
+from src import config, dedupe_within_leads, sheets, website_mocks
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,7 @@ MANUAL_CONTACT_FORM_LAST_ACTION = "manual_contact_form_submitted"
 APPROVE_WITHOUT_OWNER_ACTION = "approve_without_owner"
 WEBSITE_MOCK_CANDIDATE_ACTION = "website_mock_candidate"
 WEBSITE_MOCK_SKIP_ACTION = "website_mock_skip"
+DUPLICATE_GUARD_LAST_ACTION = "review_duplicate_guard"
 
 
 # ─── Cookie helpers ────────────────────────────────────────────────────
@@ -244,6 +245,46 @@ def _manual_contact_form_updates(
     }
 
 
+def _demote_duplicate_review_rows(rows: list[dict]) -> int:
+    """
+    Hide and repair stale review rows when another duplicate row has already
+    moved farther through outreach.
+
+    This intentionally writes to the sheet from the Review page. The page is an
+    internal work queue; leaving known duplicates visible costs manual attention
+    and can create duplicate outreach.
+    """
+    demoted = 0
+    for kept, duplicate in dedupe_within_leads.find_internal_duplicates(rows):
+        duplicate_id = str(duplicate.get("id", "")).strip()
+        kept_id = str(kept.get("id", "")).strip()
+        if not duplicate_id or not kept_id:
+            continue
+        if str(duplicate.get("status", "")).strip() not in dedupe_within_leads.REVIEW_STATUSES:
+            continue
+        updates = {
+            "status": "do_not_contact",
+            "do_not_contact_reason": f"internal_duplicate:{kept_id}",
+            "last_action": DUPLICATE_GUARD_LAST_ACTION,
+            "notes": _append_note(
+                str(duplicate.get("notes", "")),
+                (
+                    "Review duplicate guard: hidden from manual review; "
+                    f"kept {kept_id} ({str(kept.get('status', '')).strip() or 'unknown'})."
+                ),
+            ),
+        }
+        if _update_lead_fields(duplicate_id, updates):
+            demoted += 1
+        else:
+            logger.warning(
+                "review duplicate guard: lead %s not found while keeping %s",
+                duplicate_id,
+                kept_id,
+            )
+    return demoted
+
+
 def _redirect_with_mode(path: str, mode: str) -> RedirectResponse:
     sep = "&" if "?" in path else "?"
     return RedirectResponse(f"{path}{sep}mode={mode}", status_code=303)
@@ -267,6 +308,10 @@ def review_view(
     history = _load_history(review_history)
     skipped = _load_skipped(review_skipped)
     rows = sheets.read_all_rows(config.TAB_LEADS)
+    duplicate_repairs = _demote_duplicate_review_rows(rows)
+    if duplicate_repairs:
+        logger.info("review duplicate guard repaired %d row(s)", duplicate_repairs)
+        rows = sheets.read_all_rows(config.TAB_LEADS)
     counts = _queue_counts(rows)
 
     # If user came here via /review?id=... (e.g. from /leads Edit link),

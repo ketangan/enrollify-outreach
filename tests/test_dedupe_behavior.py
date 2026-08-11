@@ -170,6 +170,55 @@ def test_internal_dedupe_keeps_different_known_emails():
     assert dedupe_within_leads.find_internal_duplicates(leads) == []
 
 
+def test_internal_dedupe_demotes_same_root_site_when_cleaned_names_match():
+    leads = [
+        _lead(
+            id="drafted",
+            name="Le Petit Gan International Preschool",
+            website="https://lepetitganpreschool.com/",
+            status="awaiting_approval",
+            phone="",
+            address="",
+            zip="90079",
+            city="Los Angeles",
+            _row_idx=2,
+        ),
+        _lead(
+            id="stale_review",
+            name="Le Petit Gan International Preschool Los Angeles",
+            website="https://lepetitganpreschool.com/",
+            status="needs_enrollment_system_classification",
+            phone="",
+            address="",
+            zip="90079",
+            city="Los Angeles",
+            _row_idx=3,
+        ),
+    ]
+
+    pairs = dedupe_within_leads.find_internal_duplicates(leads)
+
+    assert [(kept["id"], demoted["id"]) for kept, demoted in pairs] == [
+        ("drafted", "stale_review"),
+    ]
+
+
+def test_duplicate_demotions_by_id_returns_keeper_by_demoted_id():
+    leads = [
+        _lead(id="sent", status="sent", best_email="director@example.com", _row_idx=2),
+        _lead(
+            id="ready",
+            status="ready_to_send",
+            best_email="director@example.com",
+            _row_idx=3,
+        ),
+    ]
+
+    demotions = dedupe_within_leads.duplicate_demotions_by_id(leads)
+
+    assert demotions["ready"]["id"] == "sent"
+
+
 def test_phase2_exact_email_match_is_already_contacted():
     contacted = phase2.build_contacted_index([
         {"school_name": "Example Preschool", "email": "director@example.com"}

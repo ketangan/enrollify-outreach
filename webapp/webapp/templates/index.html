@@ -179,7 +179,10 @@ python scripts/show_clicks.py --campaign initial --since-days 30</code></pre>
 
     <div class="task">
       <h4>Update school names or websites for click tracking</h4>
-      <p>To populate <code>school_name</code> and <code>website</code> on the <code>Click_Log</code> Google Sheet tab, run:</p>
+      <p>To see click rows with school names and websites without redeploying the logger, create the auto-updating view tab:</p>
+      <pre><code>python scripts/setup_click_log_view.py</code></pre>
+      <p>Then use the <code>Click_Log_View</code> tab for review. It joins raw click rows against <code>Leads</code> and <code>Archive</code> automatically.</p>
+      <p>If you still want to physically write names back into the raw <code>Click_Log</code> tab, run:</p>
       <pre><code>python scripts/backfill_click_log.py</code></pre>
       <p>Preview the changes first with dry-run:</p>
       <pre><code>python scripts/backfill_click_log.py --dry-run</code></pre>

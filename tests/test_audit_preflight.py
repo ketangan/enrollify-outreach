@@ -115,6 +115,28 @@ def test_followup_candidate_flags_prior_followup_sent():
     ]
 
 
+def test_phase5_duplicate_reroute_blocks_ready_duplicate_before_draft():
+    lead = {
+        "id": "stale-ready",
+        "name": "Le Petit Gan International Preschool Los Angeles",
+        "_row_idx": 42,
+    }
+    kept = {
+        "id": "drafted-row",
+        "name": "Le Petit Gan International Preschool",
+        "status": "awaiting_approval",
+    }
+
+    reroute = run_phase_5._duplicate_reroute_for_lead(
+        lead,
+        {"stale-ready": kept},
+    )
+
+    assert reroute["reroute_status"] == "do_not_contact"
+    assert reroute["do_not_contact_reason"] == "internal_duplicate:drafted-row"
+    assert "duplicate blocked before draft" in reroute["notes_update"]
+
+
 def test_followup_candidate_flags_existing_followup_draft():
     context = _context()
     existing = [

@@ -25,6 +25,8 @@ Duplicate evidence:
   - same normalized street address
   - same phone
   - same exact non-root URL path
+  - same root website plus same cleaned school name, unless known location or
+    email fields conflict
 
 Root-domain-only matches are intentionally ignored.
 
@@ -44,7 +46,7 @@ from collections import defaultdict
 
 from gspread.utils import rowcol_to_a1
 
-from src import config, sheets
+from src import config, name_cleaner, sheets
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,12 @@ TERMINAL_STATUSES = {
     "closed_no_reply",
     "do_not_contact",
     "online_system_exclude",
+}
+
+REVIEW_STATUSES = {
+    "needs_enrollment_system_classification",
+    "needs_owner_review",
+    "needs_manual_review",
 }
 
 
@@ -114,6 +122,11 @@ def _url_has_path(normalized_url: str) -> bool:
     return "/" in normalized_url
 
 
+def _root_domain(normalized_url: str) -> str:
+    """Return host/domain portion from a normalized URL."""
+    return normalized_url.split("/", 1)[0] if normalized_url else ""
+
+
 def _normalize_phone(phone: str) -> str:
     """Strip all non-digit characters."""
     if not phone:
@@ -136,6 +149,30 @@ def _normalize_address(address: str) -> str:
     address = re.sub(r"\b(usa|united states)\b", " ", address)
     address = re.sub(r"[^a-z0-9]+", " ", address)
     return re.sub(r"\s+", " ", address).strip()
+
+
+def _normalize_zip(zip_code: str) -> str:
+    digits = re.sub(r"\D", "", str(zip_code or ""))
+    return digits[:5]
+
+
+def _normalize_city(city: str) -> str:
+    city = str(city or "").strip().lower()
+    city = re.sub(r"[^a-z0-9]+", " ", city)
+    return re.sub(r"\s+", " ", city).strip()
+
+
+def _normalize_name_key(lead_row: dict) -> str:
+    """Normalize a school name enough for duplicate comparisons."""
+    cleaned = name_cleaner.clean_school_name(
+        str(lead_row.get("name", "")),
+        city=str(lead_row.get("city", "")),
+        state=str(lead_row.get("state", "")),
+    )
+    cleaned = cleaned.lower()
+    cleaned = re.sub(r"[^\w\s]", " ", cleaned)
+    cleaned = re.sub(r"\b(llc|inc|incorporated|ltd|corp|corporation|the)\b", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 def _dedupe_keys(lead_row: dict) -> list[str]:
@@ -161,6 +198,48 @@ def _dedupe_keys(lead_row: dict) -> list[str]:
     return keys
 
 
+def _same_root_site_and_name(left: dict, right: dict) -> bool:
+    """
+    Root-domain matches are dangerous by themselves because franchises and
+    multi-location schools may share a site. They become strong evidence when
+    the cleaned school name also matches and known emails do not conflict.
+    """
+    left_url = _normalize_url(str(left.get("website", "")))
+    right_url = _normalize_url(str(right.get("website", "")))
+    if not left_url or not right_url:
+        return False
+    if _root_domain(left_url) != _root_domain(right_url):
+        return False
+    if _known_emails_conflict(left, right):
+        return False
+
+    # Do not collapse likely branches/locations just because they share a
+    # corporate/root website and brand name.
+    left_phone = _normalize_phone(str(left.get("phone", "")))
+    right_phone = _normalize_phone(str(right.get("phone", "")))
+    if left_phone and right_phone and left_phone != right_phone:
+        return False
+
+    left_address = _normalize_address(str(left.get("address", "")))
+    right_address = _normalize_address(str(right.get("address", "")))
+    if left_address and right_address and left_address != right_address:
+        return False
+
+    left_zip = _normalize_zip(str(left.get("zip", "")))
+    right_zip = _normalize_zip(str(right.get("zip", "")))
+    if left_zip and right_zip and left_zip != right_zip:
+        return False
+
+    left_city = _normalize_city(str(left.get("city", "")))
+    right_city = _normalize_city(str(right.get("city", "")))
+    if left_city and right_city and left_city != right_city:
+        return False
+
+    left_name = _normalize_name_key(left)
+    right_name = _normalize_name_key(right)
+    return bool(left_name and right_name and left_name == right_name)
+
+
 def _known_emails_conflict(left: dict, right: dict) -> bool:
     """Different known emails are a reason to keep both outreach options."""
     left_email = _normalize_email(str(left.get("best_email", "")))
@@ -180,11 +259,6 @@ def find_internal_duplicates(leads_rows: list[dict]) -> list[tuple[dict, dict]]:
     For each duplicate group, one lead (most advanced) is kept; the rest are
     yielded as demoted_lead with kept_lead for the reason string.
     """
-    by_key: dict[str, list[dict]] = defaultdict(list)
-    for lead in leads_rows:
-        for key in _dedupe_keys(lead):
-            by_key[key].append(lead)
-
     parent: dict[int, int] = {}
     rows_by_marker: dict[int, dict] = {}
 
@@ -201,17 +275,42 @@ def find_internal_duplicates(leads_rows: list[dict]) -> list[tuple[dict, dict]]:
         if left_root != right_root:
             parent[right_root] = left_root
 
+    def register(lead: dict) -> int:
+        marker = _row_marker(lead)
+        rows_by_marker[marker] = lead
+        parent.setdefault(marker, marker)
+        return marker
+
+    by_key: dict[str, list[dict]] = defaultdict(list)
+    for lead in leads_rows:
+        register(lead)
+        for key in _dedupe_keys(lead):
+            by_key[key].append(lead)
+
     for group in by_key.values():
         if len(group) < 2:
             continue
-        first_marker = _row_marker(group[0])
-        rows_by_marker[first_marker] = group[0]
-        parent.setdefault(first_marker, first_marker)
+        first_marker = register(group[0])
         for lead in group[1:]:
-            marker = _row_marker(lead)
-            rows_by_marker[marker] = lead
-            parent.setdefault(marker, marker)
-            union(first_marker, marker)
+            union(first_marker, register(lead))
+
+    # Secondary pass: same root website + same cleaned school name. This catches
+    # rows like "Le Petit Gan International Preschool Los Angeles" and
+    # "Le Petit Gan International Preschool West Hollywood" when the names
+    # collapse to the same canonical school.
+    by_root_domain: dict[str, list[dict]] = defaultdict(list)
+    for lead in leads_rows:
+        root = _root_domain(_normalize_url(str(lead.get("website", ""))))
+        if root:
+            by_root_domain[root].append(lead)
+
+    for group in by_root_domain.values():
+        if len(group) < 2:
+            continue
+        for i, left in enumerate(group):
+            for right in group[i + 1:]:
+                if _same_root_site_and_name(left, right):
+                    union(register(left), register(right))
 
     duplicate_groups: dict[int, list[dict]] = defaultdict(list)
     for marker, row in rows_by_marker.items():
@@ -248,6 +347,16 @@ def find_internal_duplicates(leads_rows: list[dict]) -> list[tuple[dict, dict]]:
             pairs.append((kept, demoted))
             demoted_row_ids.add(row_marker)
     return pairs
+
+
+def duplicate_demotions_by_id(leads_rows: list[dict]) -> dict[str, dict]:
+    """Return {demoted_lead_id: kept_lead} for internal duplicate pairs."""
+    demotions: dict[str, dict] = {}
+    for kept, demoted in find_internal_duplicates(leads_rows):
+        demoted_id = str(demoted.get("id", "")).strip()
+        if demoted_id:
+            demotions[demoted_id] = kept
+    return demotions
 
 
 def dedupe_within_leads(dry_run: bool = False) -> dict:
