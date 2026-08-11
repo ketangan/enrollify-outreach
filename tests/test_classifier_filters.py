@@ -267,7 +267,14 @@ def test_skip_lists_exclude_recent_bad_lead_names():
         "Big 5 Sporting Goods",
         "Dick's Sporting Goods",
         "Lakeshore Learning",
+        "LAUSD Arts Education Branch",
+        "LA Unified School",
+        "Los Angeles Unified School District",
+        "Los Angeles Technology Center",
+        "Maxine Waters Employment Preparation Center",
         "Shiekh",
+        "SpaceX",
+        "Westwood Charter Elementary",
     ]:
         skipped, reason = skip_lists.is_skipped_by_name(name)
         assert skipped, name
@@ -281,14 +288,18 @@ def test_skip_lists_exclude_public_chain_and_shopping_domains():
         "https://drewcdc.org/",
         "https://www.ecenglish.com/en/school-locations/usa/learn-english-in-los-angeles",
         "https://enterprise.lacountypools.com/",
+        "https://achieve.lausd.net/",
         "https://evanscas.lausd.org/",
+        "http://latcdace.com/",
         "https://grattseec-lausd-ca.schoolloop.com/",
+        "https://lausdschoology.azurewebsites.net/",
         "https://www.lakeshorelearning.com/",
         "https://www.myeyelevel.com/US/center/torrance",
         "https://www.pacela.org/",
         "https://cms3.revize.com/revize/carsonca/services/aquatics.php",
         "https://www.shiekh.com/stores/compton",
         "https://www.shopgatewaytownecenter.com/",
+        "https://www.spacex.com/",
         "https://www.ymca.org/locations/fairfield-family-branch-ymca-0",
     ]:
         skipped, reason = skip_lists.is_skipped_by_domain(website)
@@ -303,6 +314,10 @@ def test_name_prefilter_excludes_public_schools_and_large_chains():
         "Downey High School Aquatic Center",
         "Evans Community Adult School",
         "Kaplan",
+        "LAUSD Arts Education Branch",
+        "Los Angeles Unified School District",
+        "Los Angeles Technology Center",
+        "SpaceX",
         "The Tutoring Center",
     ]:
         result = classifier.classify_lead(
