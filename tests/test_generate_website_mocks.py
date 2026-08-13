@@ -25,12 +25,11 @@ def test_music_mock_versions_use_distinct_page_strategies():
     performance_html = generate_website_mocks._render_mock_html(_lead(), _variant("music", "performance"))
 
     assert "mock-layout-music-studio" in studio_html
-    assert '<aside class="studio-side"' in studio_html
-    assert '<div class="lesson-finder"' in studio_html
+    assert '<div class="lesson-scroll__track"' in studio_html
     assert "mock-layout-music-performance" in performance_html
-    assert '<aside class="showcase-calendar"' in performance_html
-    assert '<div class="lesson-finder"' not in performance_html
-    assert '<aside class="showcase-calendar"' not in studio_html
+    assert '<div class="showcase-marquee__row"' in performance_html
+    assert '<div class="lesson-scroll__track"' not in performance_html
+    assert '<div class="showcase-marquee__row"' not in studio_html
 
 
 def test_sports_mock_versions_use_distinct_page_strategies():
@@ -44,12 +43,56 @@ def test_sports_mock_versions_use_distinct_page_strategies():
     )
 
     assert "mock-layout-sports-action" in action_html
-    assert '<div class="schedule-stack"' in action_html
+    assert '<div class="stat-block__row"' in action_html
     assert "mock-layout-sports-trust" in trust_html
-    assert '<aside class="trust-side"' in trust_html
-    assert '<div class="parent-checklist"' in trust_html
-    assert '<div class="schedule-stack"' not in trust_html
-    assert '<div class="parent-checklist"' not in action_html
+    assert '<div class="parent-qa__grid"' in trust_html
+    assert '<div class="stat-block__row"' not in trust_html
+    assert '<div class="parent-qa__grid"' not in action_html
+
+
+def test_preschool_mock_versions_use_distinct_page_strategies():
+    warm_html = generate_website_mocks._render_mock_html(_lead(category="preschool"), _variant("preschool", "warm"))
+    structured_html = generate_website_mocks._render_mock_html(_lead(category="preschool"), _variant("preschool", "structured"))
+    explorer_html = generate_website_mocks._render_mock_html(_lead(category="preschool"), _variant("preschool", "explorer"))
+    community_html = generate_website_mocks._render_mock_html(_lead(category="preschool"), _variant("preschool", "community"))
+
+    signature_markers = {
+        "warm": '<div class="day-timeline__strip"',
+        "structured": '<ol class="admissions-path__steps">',
+        "explorer": '<div class="explorer-spotlight__layout"',
+        "community": '<div class="community-reasons__row"',
+    }
+    rendered = {
+        "warm": warm_html,
+        "structured": structured_html,
+        "explorer": explorer_html,
+        "community": community_html,
+    }
+    for name, html_out in rendered.items():
+        assert f"mock-layout-preschool-{name}" in html_out
+        assert signature_markers[name] in html_out
+        for other_name, other_marker in signature_markers.items():
+            if other_name != name:
+                assert other_marker not in html_out
+
+
+def test_all_four_variants_per_category_render_without_error():
+    lead_by_type = {
+        "preschool": _lead(category="preschool"),
+        "music": _lead(category="music"),
+        "sports": _lead(category="martial_arts"),
+    }
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        assert len(variants) == 4
+        lead = lead_by_type[mock_type]
+        seen_layout_classes = set()
+        for variant in variants:
+            rendered = generate_website_mocks._render_mock_html(lead, variant)
+            assert "<h1>" in rendered
+            layout_class = f"mock-layout-{mock_type}-{variant.version_id}"
+            assert layout_class in rendered
+            seen_layout_classes.add(layout_class)
+        assert len(seen_layout_classes) == 4
 
 
 def test_mock_copy_avoids_meta_template_language():
@@ -96,10 +139,10 @@ def test_mock_versions_use_distinct_visual_palettes():
         _variant("sports", "trust"),
     )
 
-    assert "--accent: #ef4444;" in action
-    assert "--accent: #2fb07f;" in trust
-    assert "--paper: #fff8f3;" in action
-    assert "--paper: #f7fbf7;" in trust
+    assert "--accent: #ef7b32;" in action
+    assert "--accent: #2e9c73;" in trust
+    assert "--paper: #f8f7f4;" in action
+    assert "--paper: #f6faf6;" in trust
 
 
 def test_site_anchor_labels_extract_factual_program_details():
@@ -134,7 +177,7 @@ def test_rendered_mock_includes_precomputed_site_detail_anchors():
     assert "<b>Trial lessons</b>" in rendered
 
 
-def test_rendered_mock_uses_site_details_in_enrollment_flow_and_strategy_note():
+def test_rendered_mock_uses_site_details_in_enrollment_flow():
     lead = _lead()
     lead["_website_mock_site_anchors"] = [
         "private guitar lessons",
@@ -144,15 +187,41 @@ def test_rendered_mock_uses_site_details_in_enrollment_flow_and_strategy_note():
     rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
 
     assert rendered.count('id="next-step"') == 1
-    assert rendered.count('id="about"') == 1
+    assert rendered.count('id="programs"') == 1
     assert '<div class="mock-form" aria-label="Sample inquiry flow">' in rendered
     assert '<label>Program interest</label>' in rendered
     assert '<span class="option-pill">Private guitar lessons</span>' in rendered
     assert '<span class="option-pill">Recitals</span>' in rendered
     assert '<span class="option-pill">Trial lessons</span>' in rendered
-    assert "What I tightened" in rendered
-    assert "Built around the current parent path at Mark Fitchett&#x27;s Guitar School." in rendered
-    assert "Brought forward: Private guitar lessons, Recitals, Trial lessons" in rendered
+    # Real program names from the current site should replace the generic
+    # card titles in the lesson-path signature section, not just the pills.
+    assert "<h3>Private guitar lessons</h3>" in rendered
+
+
+def test_rendered_mock_quotes_real_site_copy_in_hero():
+    lead = _lead()
+    lead["_website_mock_site_quote"] = (
+        "Every student gets a custom practice plan built around their own goals."
+    )
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
+
+    assert '<blockquote class="site-quote">' in rendered
+    assert "Every student gets a custom practice plan built around their own goals." in rendered
+    assert "From theguitarschool.com, their current site" in rendered
+
+
+def test_personalize_items_uses_real_labels_but_keeps_generic_body():
+    generic = [("Private lessons", "benefit copy one"), ("Teacher fit", "benefit copy two")]
+    personalized = generate_website_mocks._personalize_items(
+        generic, ["Piano Lessons", "Voice Lessons"]
+    )
+    assert personalized == [
+        ("Piano Lessons", "benefit copy one"),
+        ("Voice Lessons", "benefit copy two"),
+    ]
+
+    # Too little real signal to be confident, fall back to the generic titles.
+    assert generate_website_mocks._personalize_items(generic, ["Piano Lessons"]) == generic
 
 
 def test_swim_mock_uses_swim_specific_enrollment_flow():
@@ -171,7 +240,6 @@ def test_swim_mock_uses_swim_specific_enrollment_flow():
     assert "<label>Swimmer age</label>" in rendered
     assert "<label>Water comfort</label>" in rendered
     assert "Request swim evaluation" in rendered
-    assert "Level-aware trial path" in rendered
 
 
 def test_mock_tracking_payload_includes_school_context():
@@ -228,7 +296,7 @@ def test_mock_send_status_marks_followup_states():
     }
 
 
-def test_structured_preschool_cards_keep_body_in_text_column():
+def test_structured_preschool_admissions_path_is_a_real_sequence():
     lead = {
         "id": "90073-867167",
         "name": "Pacific Sage Preschool",
@@ -242,8 +310,9 @@ def test_structured_preschool_cards_keep_body_in_text_column():
         _variant("preschool", "structured"),
     )
 
-    assert ".mock-layout-preschool-structured .cards__card span" in rendered
-    assert "grid-row: 1 / span 2;" in rendered
-    assert ".mock-layout-preschool-structured .cards__card h3" in rendered
-    assert ".mock-layout-preschool-structured .cards__card p" in rendered
-    assert rendered.count("grid-column: 2;") >= 2
+    # Numbering here is legitimate: admissions steps are a real sequence,
+    # unlike the generic 4-up feature grids elsewhere.
+    assert '<ol class="admissions-path__steps">' in rendered
+    assert "<span>01</span>" in rendered
+    assert "<span>04</span>" in rendered
+    assert rendered.count("<figure") == 1

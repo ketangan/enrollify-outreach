@@ -203,7 +203,7 @@ python scripts/setup_website_mock_sheet.py
 python scripts/generate_website_mocks.py --base-url https://mocks.mypontora.com --write-sheet
 ```
 
-The generator creates two versions by default for each mock type (`preschool`, `music`, `sports`) and stores both customer-tracked `url` values and clean internal `preview_url` values in `website_mock_payload` as JSON. Follow-up drafts append the `website_mock_followup_addendum` template only when `website_mock_status=generated` and at least one mock URL exists.
+The generator creates four versions by default for each mock type (`preschool`, `music`, `sports`) and stores both customer-tracked `url` values and clean internal `preview_url` values in `website_mock_payload` as JSON. Follow-up drafts append the `website_mock_followup_addendum` template only when `website_mock_status=generated` and at least one mock URL exists.
 
 Do not deploy these files into the manually managed main `mypontora.com` website project unless the full marketing site is also in the same deploy directory. Use a separate Cloudflare Workers static-assets app/subdomain such as `mocks.mypontora.com` for this workflow.
 

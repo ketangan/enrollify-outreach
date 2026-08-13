@@ -7,7 +7,7 @@ def test_normalize_mock_type_defaults_from_category():
     assert website_mocks.normalize_mock_type("", category="martial_arts") == "sports"
 
 
-def test_build_payload_creates_two_default_versions_with_tracking_params():
+def test_build_payload_creates_four_default_versions_with_tracking_params():
     payload = website_mocks.build_payload(
         {
             "id": "90277-abc123",
@@ -19,7 +19,7 @@ def test_build_payload_creates_two_default_versions_with_tracking_params():
         "https://mocks.mypontora.com",
     )
 
-    assert len(payload) == 2
+    assert len(payload) == 4
     assert payload[0]["type"] == "music"
     assert "utm_campaign=website_mock" in payload[0]["url"]
     assert "utm_content=90277-abc123" in payload[0]["url"]

@@ -31,3 +31,6 @@ logs/
 .vscode/
 .idea/
 *.swp
+
+# Claude Code local overrides
+.claude/settings.local.json

@@ -23,6 +23,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -83,14 +84,28 @@ def _hero_headline(mock_type: str, variant_id: str, school_name: str) -> str:
     if mock_type == "preschool":
         if variant_id == "structured":
             return "Tour, apply, and enroll without the paperwork chase."
+        if variant_id == "explorer":
+            return "A new theme to discover every week."
+        if variant_id == "community":
+            return "A school families stick with for years."
         return "A calmer first step for new families."
     if mock_type == "music":
         if variant_id == "performance":
             return "Lessons with a stage to grow toward."
+        if variant_id == "collective":
+            return "Music that sounds better together."
+        if variant_id == "academy":
+            return "A clear path from first note to first recital."
         return "Private lessons that fit real schedules."
-    if variant_id == "trust":
-        return "Confidence before the first class."
-    return "Try a class. Find your level. Keep moving."
+    if mock_type == "sports":
+        if variant_id == "trust":
+            return "Confidence before the first class."
+        if variant_id == "camp":
+            return "This season's lineup, ready to join."
+        if variant_id == "team":
+            return "Where committed athletes go to compete."
+        return "Try a class. Find your level. Keep moving."
+    return "A clearer front door for new families."
 
 
 def _hero_intro(mock_type: str, variant_id: str, school_name: str) -> str:
@@ -99,6 +114,16 @@ def _hero_intro(mock_type: str, variant_id: str, school_name: str) -> str:
             return (
                 f"At {school_name}, families can see age groups, "
                 "tour requests, application steps, and waitlist expectations in one flow."
+            )
+        if variant_id == "explorer":
+            return (
+                f"{school_name} makes the current unit, activity, and hands-on project "
+                "visible before a family ever books a tour."
+            )
+        if variant_id == "community":
+            return (
+                f"{school_name} leads with what keeps families around for years: "
+                "the people, the routine, and the sense of belonging."
             )
         return (
             f"{school_name} gives parents a quick feel for the classroom "
@@ -110,14 +135,39 @@ def _hero_intro(mock_type: str, variant_id: str, school_name: str) -> str:
                 f"At {school_name}, students can see how lessons connect to "
                 "practice goals, recitals, and trial lesson requests."
             )
+        if variant_id == "collective":
+            return (
+                f"{school_name} puts group classes and ensemble playing front and center, "
+                "not just one-on-one lesson slots."
+            )
+        if variant_id == "academy":
+            return (
+                f"{school_name} lays out a real curriculum: where a student starts, "
+                "what comes next, and what counts as progress."
+            )
         return (
             f"{school_name} helps families compare teacher fit, "
             "student level, scheduling, and inquiry details grouped together."
         )
-    if variant_id == "trust":
+    if mock_type == "sports":
+        if variant_id == "trust":
+            return (
+                f"{school_name} gives parents the context they need: coaches, safety "
+                "expectations, class levels, and what the first visit looks like."
+            )
+        if variant_id == "camp":
+            return (
+                f"{school_name} puts this season's camps and clinics on the homepage, "
+                "with real dates instead of a generic program list."
+            )
+        if variant_id == "team":
+            return (
+                f"{school_name} speaks directly to families chasing the competitive path: "
+                "levels, tryouts, and what it takes to make the roster."
+            )
         return (
-            f"{school_name} gives parents the context they need: coaches, safety "
-            "expectations, class levels, and what the first visit looks like."
+            f"{school_name} puts classes, age ranges, "
+            "trial options, and signup momentum right up front."
         )
     return (
         f"{school_name} puts classes, age ranges, "
@@ -205,6 +255,20 @@ def _program_blurbs(
                 ("Application path", "Inquiry, tour, application, placement, and waitlist steps are laid out clearly."),
                 ("Openings", "Availability language and next steps are visible before the first follow-up."),
             ]
+        if variant_id == "explorer":
+            return [
+                ("This week's theme", "The current unit is visible before a tour, not a mystery until day one."),
+                ("Hands-on projects", "What kids are actually building and exploring shows up on the homepage."),
+                ("Outdoor time", "Nature-based learning is treated as a program, not an afterthought."),
+                ("Openings", "Parents can ask about availability without digging through a brochure site."),
+            ]
+        if variant_id == "community":
+            return [
+                ("Long-term families", "Multi-year families and staff longevity are the trust signal, not a slogan."),
+                ("Daily rhythm", "Care, learning, meals, rest, and family updates are easy to understand."),
+                ("Parent involvement", "Ways to be part of the school, not just drop off and pick up."),
+                ("Openings", "Parents can ask about availability or start enrollment from one clear place."),
+            ]
         return [
             ("First visit", "A warm introduction that makes the school feel organized before a tour is scheduled."),
             ("Daily rhythm", "Care, learning, meals, rest, and family updates are easy to understand."),
@@ -220,6 +284,20 @@ def _program_blurbs(
                 ("Events calendar", "Families can see what students are working toward after they enroll."),
                 ("Trial lesson", "Interested families move from browsing to a concrete first lesson request."),
             ]
+        if variant_id == "collective":
+            return [
+                ("Group classes", "Ensemble and group options are as visible as private lessons."),
+                ("Play-along sessions", "Students can see what playing with others actually looks like."),
+                ("Teacher fit", "Instructor experience and teaching approach sit where parents expect them."),
+                ("Fast inquiry", "Parent and student details are captured before the first phone call."),
+            ]
+        if variant_id == "academy":
+            return [
+                ("Curriculum path", "What comes after the first lesson is visible, not a surprise."),
+                ("Grade milestones", "Progress is framed around real milestones, not vague encouragement."),
+                ("Teacher fit", "Instructor experience and teaching approach sit where parents expect them."),
+                ("Fast inquiry", "Parent and student details are captured before the first phone call."),
+            ]
         return [
             ("Private lessons", "Instruments, levels, and scheduling options are easy to scan."),
             ("Teacher fit", "Instructor experience and teaching approach sit where parents expect them."),
@@ -234,6 +312,20 @@ def _program_blurbs(
                 ("Safety and levels", "Beginner readiness, age groups, and progression feel clear."),
                 ("Parent FAQs", "Trial, gear, schedule, and commitment questions are answered early."),
                 ("Clean follow-up", "Interest turns into a tracked inquiry instead of a loose email thread."),
+            ]
+        if variant_id == "camp":
+            return [
+                ("Seasonal calendar", "This season's camps and clinics are dated, not a generic year-round list."),
+                ("Age groups", "Sessions are grouped by age so parents can find the right week fast."),
+                ("Trial sessions", "Parents can request a first class without extra back-and-forth."),
+                ("Availability", "Capacity and waitlist language can be handled before follow-up."),
+            ]
+        if variant_id == "team":
+            return [
+                ("Competitive levels", "The path from beginner to competitive team is laid out, not implied."),
+                ("Tryout process", "What it takes to make the roster is visible before someone has to ask."),
+                ("Coach confidence", "Families see who teaches, how students are supported, and what parents can expect."),
+                ("Trial sessions", "Parents can request a first class without extra back-and-forth."),
             ]
         if category == "martial_arts":
             return [
@@ -253,12 +345,20 @@ def _program_blurbs(
             for program in _programs_for(mock_type, category)]
 
 
-def _render_cards(items: list[tuple[str, str]], class_name: str = "cards") -> str:
-    return "\n".join(
-        f'<article class="{class_name}__card"><span>{idx:02d}</span>'
-        f"<h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
-        for idx, (title, body) in enumerate(items, start=1)
-    )
+def _personalize_items(
+    items: list[tuple[str, str]],
+    site_labels: list[str],
+) -> list[tuple[str, str]]:
+    """Swap in the school's own program names, pulled from their current site,
+    while keeping our benefit-framed copy. Falls back to generic titles when
+    there isn't enough real signal to work with."""
+    if len(site_labels) < 2:
+        return items
+    titles = site_labels[: len(items)]
+    return [
+        (titles[i] if i < len(titles) else items[i][0], items[i][1])
+        for i in range(len(items))
+    ]
 
 
 def _render_contact_link(phone: str, website: str) -> str:
@@ -277,96 +377,166 @@ def _render_contact_link(phone: str, website: str) -> str:
 
 
 def _visual_palette(variant: website_mocks.MockVariant) -> dict[str, str]:
+    # Each variant gets its own accent/ground pairing and corner radius so the
+    # eight concepts read as distinct identities, not one template re-skinned.
+    # Palettes are deliberately steered off common defaults (Tailwind blue-500,
+    # near-black + red, uniform 8px radius) toward subject-specific pairings.
     palettes = {
         ("music", "studio"): {
-            "accent": "#16b8aa",
-            "secondary": "#101a4f",
-            "ink": "#101a4f",
-            "muted": "#4e5d7d",
-            "paper": "#f7fbfb",
-            "soft": "#eaf8f6",
-            "line": "#d5e8e7",
-            "danger": "#e45858",
-            "hero_overlay_a": "rgba(16,26,79,.90)",
-            "hero_overlay_b": "rgba(22,184,170,.56)",
-            "hero_glow": "rgba(22,184,170,.30)",
-            "action_overlay_a": "rgba(16,26,79,.94)",
-            "action_overlay_b": "rgba(22,184,170,.72)",
+            "accent": "#d99a4e",
+            "secondary": "#2b2140",
+            "ink": "#2b2140",
+            "muted": "#63587c",
+            "paper": "#f8f4f6",
+            "soft": "#ece2ee",
+            "line": "#d9c9dd",
+            "danger": "#c85a4a",
+            "radius": "10px",
+            "hero_overlay_a": "rgba(43,33,64,.92)",
+            "hero_overlay_b": "rgba(217,154,78,.50)",
         },
         ("music", "performance"): {
-            "accent": "#f2a93b",
-            "secondary": "#111827",
-            "ink": "#161b2f",
-            "muted": "#5b6175",
-            "paper": "#fffaf2",
-            "soft": "#fff2d9",
-            "line": "#ead9b8",
-            "danger": "#dd4b39",
-            "hero_overlay_a": "rgba(17,24,39,.96)",
-            "hero_overlay_b": "rgba(45,32,19,.88)",
-            "hero_glow": "rgba(242,169,59,.42)",
-            "action_overlay_a": "rgba(17,24,39,.94)",
-            "action_overlay_b": "rgba(242,169,59,.70)",
+            "accent": "#e8b24a",
+            "secondary": "#2c1420",
+            "ink": "#2c1420",
+            "muted": "#6b5058",
+            "paper": "#fbf5ee",
+            "soft": "#f1e2c9",
+            "line": "#dfc9a8",
+            "danger": "#d4483a",
+            "radius": "4px",
+            "hero_overlay_a": "rgba(44,20,32,.96)",
+            "hero_overlay_b": "rgba(232,178,74,.42)",
+        },
+        ("music", "collective"): {
+            "accent": "#4a90a4",
+            "secondary": "#1a2f38",
+            "ink": "#1a2f38",
+            "muted": "#4f6a72",
+            "paper": "#f5f9fa",
+            "soft": "#e3eef0",
+            "line": "#cddde0",
+            "danger": "#c85a4a",
+            "radius": "10px",
+            "hero_overlay_a": "rgba(26,47,56,.93)",
+            "hero_overlay_b": "rgba(74,144,164,.52)",
+        },
+        ("music", "academy"): {
+            "accent": "#a8763e",
+            "secondary": "#20222b",
+            "ink": "#20222b",
+            "muted": "#5c5850",
+            "paper": "#f6f5f2",
+            "soft": "#ece7dc",
+            "line": "#d9d0bd",
+            "danger": "#a8412f",
+            "radius": "5px",
+            "hero_overlay_a": "rgba(32,34,43,.95)",
+            "hero_overlay_b": "rgba(168,118,62,.55)",
         },
         ("sports", "action"): {
-            "accent": "#ef4444",
-            "secondary": "#121212",
-            "ink": "#171717",
-            "muted": "#5a5f6f",
-            "paper": "#fff8f3",
-            "soft": "#fff0e6",
-            "line": "#f1d4c7",
-            "danger": "#dc2626",
-            "hero_overlay_a": "rgba(18,18,18,.96)",
-            "hero_overlay_b": "rgba(127,29,29,.78)",
-            "hero_glow": "rgba(239,68,68,.38)",
-            "action_overlay_a": "rgba(18,18,18,.96)",
-            "action_overlay_b": "rgba(239,68,68,.72)",
+            "accent": "#ef7b32",
+            "secondary": "#17202b",
+            "ink": "#17202b",
+            "muted": "#59636f",
+            "paper": "#f8f7f4",
+            "soft": "#efe2d6",
+            "line": "#ddccbc",
+            "danger": "#d9432c",
+            "radius": "6px",
+            "hero_overlay_a": "rgba(23,32,43,.96)",
+            "hero_overlay_b": "rgba(120,50,20,.78)",
         },
         ("sports", "trust"): {
-            "accent": "#2fb07f",
+            "accent": "#2e9c73",
             "secondary": "#12312f",
             "ink": "#12312f",
-            "muted": "#536663",
-            "paper": "#f7fbf7",
-            "soft": "#edf7f1",
-            "line": "#d8e8de",
-            "danger": "#d85d4a",
+            "muted": "#50655f",
+            "paper": "#f6faf6",
+            "soft": "#e7f2ea",
+            "line": "#d2e4d8",
+            "danger": "#c65b46",
+            "radius": "12px",
             "hero_overlay_a": "rgba(18,49,47,.94)",
-            "hero_overlay_b": "rgba(47,176,127,.56)",
-            "hero_glow": "rgba(47,176,127,.32)",
-            "action_overlay_a": "rgba(18,49,47,.94)",
-            "action_overlay_b": "rgba(47,176,127,.70)",
+            "hero_overlay_b": "rgba(46,156,115,.56)",
+        },
+        ("sports", "camp"): {
+            "accent": "#f2b705",
+            "secondary": "#1d5c63",
+            "ink": "#1d5c63",
+            "muted": "#5c6f6a",
+            "paper": "#fbf8ee",
+            "soft": "#f7ecc4",
+            "line": "#e9d89a",
+            "danger": "#d9432c",
+            "radius": "10px",
+            "hero_overlay_a": "rgba(29,92,99,.90)",
+            "hero_overlay_b": "rgba(242,183,5,.48)",
+        },
+        ("sports", "team"): {
+            "accent": "#c81e4b",
+            "secondary": "#151b2e",
+            "ink": "#151b2e",
+            "muted": "#5a5e6e",
+            "paper": "#f7f7fa",
+            "soft": "#eee0e5",
+            "line": "#ddc7cf",
+            "danger": "#a8162f",
+            "radius": "7px",
+            "hero_overlay_a": "rgba(21,27,46,.95)",
+            "hero_overlay_b": "rgba(200,30,75,.55)",
         },
         ("preschool", "warm"): {
-            "accent": "#f97362",
-            "secondary": "#35513f",
+            "accent": "#ef7b5a",
+            "secondary": "#33513f",
             "ink": "#243d35",
-            "muted": "#66736d",
-            "paper": "#fffaf7",
-            "soft": "#fff0eb",
-            "line": "#efd7ce",
-            "danger": "#d85d4a",
-            "hero_overlay_a": "rgba(36,61,53,.90)",
-            "hero_overlay_b": "rgba(249,115,98,.56)",
-            "hero_glow": "rgba(249,115,98,.30)",
-            "action_overlay_a": "rgba(36,61,53,.94)",
-            "action_overlay_b": "rgba(249,115,98,.70)",
+            "muted": "#62716a",
+            "paper": "#fbf7f1",
+            "soft": "#f3e9df",
+            "line": "#e6d8c8",
+            "danger": "#d1573f",
+            "radius": "18px",
+            "hero_overlay_a": "rgba(51,81,63,.90)",
+            "hero_overlay_b": "rgba(239,123,90,.56)",
         },
         ("preschool", "structured"): {
-            "accent": "#3b82f6",
-            "secondary": "#172554",
-            "ink": "#172554",
-            "muted": "#53627d",
-            "paper": "#f6f8ff",
-            "soft": "#eaf0ff",
-            "line": "#d8e0f5",
-            "danger": "#e45858",
-            "hero_overlay_a": "rgba(23,37,84,.95)",
-            "hero_overlay_b": "rgba(59,130,246,.60)",
-            "hero_glow": "rgba(59,130,246,.34)",
-            "action_overlay_a": "rgba(23,37,84,.95)",
-            "action_overlay_b": "rgba(59,130,246,.72)",
+            "accent": "#b4863a",
+            "secondary": "#1c2e42",
+            "ink": "#1c2e42",
+            "muted": "#55677a",
+            "paper": "#f7f5ef",
+            "soft": "#efe8d8",
+            "line": "#ded2b8",
+            "danger": "#b9503f",
+            "radius": "3px",
+            "hero_overlay_a": "rgba(28,46,66,.95)",
+            "hero_overlay_b": "rgba(180,134,58,.55)",
+        },
+        ("preschool", "explorer"): {
+            "accent": "#5b8a3a",
+            "secondary": "#1f4d5c",
+            "ink": "#1f4d5c",
+            "muted": "#5c6d5a",
+            "paper": "#f7f8f0",
+            "soft": "#eaeedc",
+            "line": "#d7ddc4",
+            "danger": "#c1543f",
+            "radius": "14px",
+            "hero_overlay_a": "rgba(31,77,92,.92)",
+            "hero_overlay_b": "rgba(91,138,58,.52)",
+        },
+        ("preschool", "community"): {
+            "accent": "#c65a7a",
+            "secondary": "#4a3728",
+            "ink": "#4a3728",
+            "muted": "#7a655c",
+            "paper": "#fbf5f2",
+            "soft": "#f5e6df",
+            "line": "#e8d3c8",
+            "danger": "#b5453a",
+            "radius": "16px",
+            "hero_overlay_a": "rgba(74,55,40,.92)",
+            "hero_overlay_b": "rgba(198,90,122,.52)",
         },
     }
     return palettes.get(
@@ -380,11 +550,9 @@ def _visual_palette(variant: website_mocks.MockVariant) -> dict[str, str]:
             "soft": "#eef8fb",
             "line": "#d8e6f3",
             "danger": "#ee5b4f",
+            "radius": "8px",
             "hero_overlay_a": "rgba(7,16,72,.95)",
             "hero_overlay_b": "rgba(17,24,39,.90)",
-            "hero_glow": "rgba(15,93,184,.42)",
-            "action_overlay_a": "rgba(8,16,77,.96)",
-            "action_overlay_b": "rgba(15,93,184,.74)",
         },
     )
 
@@ -431,14 +599,6 @@ def _photo_style(photo_url: str) -> str:
 
 def _hero_photo_style(photo_url: str) -> str:
     return f"style=\"--hero-photo: url('{html.escape(photo_url, quote=True)}')\""
-
-
-def _photo_card(photo_url: str, label: str, extra_class: str = "") -> str:
-    class_name = f"photo-card {extra_class}".strip()
-    return (
-        f'<figure class="{html.escape(class_name, quote=True)}" {_photo_style(photo_url)}>'
-        f"<figcaption>{html.escape(label)}</figcaption></figure>"
-    )
 
 
 COMMON_SITE_ANCHOR_PATTERNS = [
@@ -591,34 +751,78 @@ def _site_anchor_labels_from_text(
     return labels
 
 
-def _site_anchors_for_lead(lead: dict, variant: website_mocks.MockVariant) -> list[str]:
-    override = lead.get("_website_mock_site_anchors")
-    if isinstance(override, str):
-        return [_anchor_title_case(part) for part in override.split("|") if _clean(part)]
-    if isinstance(override, list):
-        return [_anchor_title_case(part) for part in override if _clean(part)]
+_QUOTE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_QUOTE_SKIP_RE = re.compile(
+    r"cookie|copyright|all rights reserved|©|privacy policy|terms of (service|use)|"
+    r"javascript|browser",
+    re.IGNORECASE,
+)
+
+
+def _site_quote_from_text(text: str) -> str:
+    """Pull one real, usable sentence from the school's own homepage text, so
+    the mock can quote them back to themselves instead of only paraphrasing."""
+    signal = re.sub(r"\s+", " ", _clean(text))
+    if not signal:
+        return ""
+    for sentence in _QUOTE_SPLIT_RE.split(signal):
+        sentence = sentence.strip(" -|•\t")
+        if not (40 <= len(sentence) <= 170):
+            continue
+        if len(sentence.split()) < 6:
+            continue
+        if _QUOTE_SKIP_RE.search(sentence):
+            continue
+        upper_ratio = sum(1 for c in sentence if c.isupper()) / max(len(sentence), 1)
+        if upper_ratio > 0.4:
+            continue  # likely a nav/banner fragment, not real sentence copy
+        return sentence
+    return ""
+
+
+def _site_domain(website: str) -> str:
+    netloc = urlsplit(_clean(website)).netloc
+    return re.sub(r"^www\.", "", netloc)
+
+
+def _site_signal_for_lead(lead: dict, variant: website_mocks.MockVariant) -> dict:
+    """Real content pulled from the lead's current homepage: program names
+    (for personalizing card titles) and one representative quote (for an
+    'in their own words' pull-quote). Falls back to empty when the site
+    can't be fetched, so rendering always degrades gracefully."""
+    override_labels = lead.get("_website_mock_site_anchors")
+    override_quote = lead.get("_website_mock_site_quote")
+    if override_labels is not None or override_quote is not None:
+        labels: list[str] = []
+        if isinstance(override_labels, str):
+            labels = [_anchor_title_case(part) for part in override_labels.split("|") if _clean(part)]
+        elif isinstance(override_labels, list):
+            labels = [_anchor_title_case(part) for part in override_labels if _clean(part)]
+        return {"labels": labels, "quote": _clean(override_quote)}
 
     website = _clean(lead.get("website"))
     if not website:
-        return []
+        return {"labels": [], "quote": ""}
 
     page = fetcher.fetch(website)
     if page.error:
         logger.info(
-            "Skipping site-detail anchors for %s: %s",
+            "Skipping site content for %s: %s",
             _clean(lead.get("id")) or _clean(lead.get("name")) or website,
             page.error,
         )
-        return []
+        return {"labels": [], "quote": ""}
 
     link_text = " ".join(_clean(link.get("text")) for link in page.outbound_links)
     signal = f"{page.text} {link_text}"
-    return _site_anchor_labels_from_text(
+    labels = _site_anchor_labels_from_text(
         signal,
         mock_type=variant.type_id,
         category=_clean(lead.get("category")),
         school_name=_clean(lead.get("name")),
     )
+    quote = _site_quote_from_text(page.text)
+    return {"labels": labels, "quote": quote}
 
 
 def _render_site_anchors(labels: list[str]) -> str:
@@ -791,6 +995,7 @@ def _render_enrollment_panel(ctx: dict, items: list[tuple[str, str]]) -> str:
             <h2>{html.escape(flow["headline"])}</h2>
             <p>{html.escape(flow["intro"])}</p>
             <div class="next-step-note"><b>After submit</b><span>{html.escape(flow["next_step"])}</span></div>
+            <p class="contact-line">Or reach out directly: {ctx["contact"]}</p>
           </div>
           <div class="mock-form" aria-label="Sample inquiry flow">
             <div class="mock-field option-field">
@@ -805,234 +1010,388 @@ def _render_enrollment_panel(ctx: dict, items: list[tuple[str, str]]) -> str:
 """
 
 
-def _strategy_focus(ctx: dict) -> str:
-    type_id = ctx["type_id"]
-    version_id = ctx["version_id"]
-    raw_category = _clean(ctx.get("raw_category")).lower()
-    if type_id == "preschool" and version_id == "structured":
-        return "Admissions clarity"
-    if type_id == "preschool":
-        return "Parent trust"
-    if type_id == "music" and version_id == "performance":
-        return "Student milestones"
-    if type_id == "music":
-        return "Lesson fit"
-    if type_id == "sports" and raw_category == "swim":
-        return "Level-aware trial path"
-    if type_id == "sports" and version_id == "trust":
-        return "Parent confidence"
-    return "Trial-class momentum"
-
-
-def _render_strategy_note(ctx: dict, items: list[tuple[str, str]]) -> str:
-    site_labels = _choice_labels(ctx.get("site_anchor_labels", []), items, max_labels=3)
-    detail_text = (
-        "Brought forward: " + ", ".join(site_labels)
-        if site_labels
-        else "Brought the strongest program paths into the first screen."
-    )
-    focus = _strategy_focus(ctx)
+def _render_hero(ctx: dict, cta_label: str, hero_photo: str) -> str:
+    # Quote and anchor chips both signal "I actually read your site" — showing
+    # both stacks two devices doing the same job. Prefer the quote (more
+    # specific, more human); fall back to chips only when there's no quote.
+    quote_html = ""
+    anchors_html = ""
+    if ctx.get("site_quote"):
+        quote_html = (
+            f'<blockquote class="site-quote">“{html.escape(ctx["site_quote"])}”'
+            f'<cite>From {html.escape(ctx["site_domain"])}, their current site</cite></blockquote>'
+        )
+    else:
+        anchors_html = ctx["site_anchors_html"]
     return f"""
-    <section class="strategy-note" id="about">
-      <div>
-        <p class="section-kicker">What I tightened</p>
-        <h2>Built around the current parent path at {ctx["name"]}.</h2>
-      </div>
-      <div class="strategy-grid">
-        <article><span>01</span><b>{html.escape(focus)}</b><p>{html.escape(detail_text)}</p></article>
-        <article><span>02</span><b>One next step</b><p>Every call to action points families into the same inquiry flow instead of scattering them across the page.</p></article>
-        <article><span>03</span><b>Cleaner handoff</b><p>The form captures age, level, timing, and intent so staff can respond with less manual follow-up.</p></article>
-      </div>
-    </section>
+      <section class="hero-bleed" {_hero_photo_style(hero_photo)}>
+        <div class="hero-bleed__content">
+          <p class="eyebrow">{ctx["category"]} in {ctx["city"]}</p>
+          <h1>{ctx["headline"]}</h1>
+          <p>{ctx["intro"]}</p>
+          {quote_html}
+          {anchors_html}
+          <a class="primary light" href="#next-step">{html.escape(cta_label)}</a>
+        </div>
+      </section>
+"""
+
+
+def _day_timeline_steps() -> list[tuple[str, str, str]]:
+    # Exactly 3: matches the 3 stock photos available per category, so no
+    # image repeats across the strip (a repeated photo reads as a mistake,
+    # not a real day).
+    return [
+        ("7:30am", "Drop-off", "A quick hello, a cubby, and a calm start to the morning."),
+        ("12:00pm", "Outdoor play", "Fresh air and movement, the kind of tired that makes naptime easy."),
+        ("3:00pm", "Pickup", "A quick note on the day before families head home."),
+    ]
+
+
+def _render_day_timeline(ctx: dict) -> str:
+    photos = ctx["photos"]
+    steps = _day_timeline_steps()
+    cards = "\n".join(
+        f'<article {_photo_style(photos[idx % len(photos)])}>'
+        f"<span>{html.escape(time)}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
+        for idx, (time, title, body) in enumerate(steps)
+    )
+    return f"""
+      <section class="day-timeline" id="programs">
+        <div class="day-timeline__head">
+          <p class="section-kicker">A day at {ctx["name"]}</p>
+          <h2>What actually happens, hour by hour.</h2>
+        </div>
+        <div class="day-timeline__strip">{cards}</div>
+      </section>
+"""
+
+
+def _admissions_steps() -> list[tuple[str, str]]:
+    return [
+        ("Check age group & schedule", "Ages, openings, and daily schedule are laid out before you call."),
+        ("Request a tour", "See the classrooms and meet staff before deciding anything."),
+        ("Submit application", "One form captures what the office needs to move you forward."),
+        ("Confirm placement", "A clear yes, waitlist, or next date, no guessing."),
+    ]
+
+
+def _render_admissions_path(ctx: dict) -> str:
+    photo = ctx["photos"][1]
+    steps = _admissions_steps()
+    items_html = "\n".join(
+        f'<li><span>{idx:02d}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p>'
+        + (f'<figure {_photo_style(photo)}></figure>' if idx == 2 else "")
+        + "</li>"
+        for idx, (title, body) in enumerate(steps, start=1)
+    )
+    return f"""
+      <section class="admissions-path" id="programs">
+        <div class="admissions-path__head">
+          <p class="section-kicker">From inquiry to first day</p>
+          <h2>Every step, laid out before you ask.</h2>
+        </div>
+        <ol class="admissions-path__steps">{items_html}</ol>
+      </section>
+"""
+
+
+def _render_lesson_scroll(ctx: dict, items: list[tuple[str, str]]) -> str:
+    photos = ctx["photos"]
+    # Cap at 3 cards to match the 3 stock photos per category — same reason
+    # the day-timeline is capped at 3 steps. The 4th item still feeds the
+    # enrollment panel's program-interest pills via the full `items` list.
+    cards = "\n".join(
+        f'<article {_photo_style(photos[idx % len(photos)])}>'
+        f"<h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
+        for idx, (title, body) in enumerate(items[:len(photos)])
+    )
+    return f"""
+      <section class="lesson-scroll" id="programs">
+        <div class="lesson-scroll__head">
+          <p class="section-kicker">Lesson path</p>
+          <h2>Find the right fit before the first call.</h2>
+        </div>
+        <div class="lesson-scroll__track">{cards}</div>
+      </section>
+"""
+
+
+def _render_showcase_marquee(ctx: dict, items: list[tuple[str, str]]) -> str:
+    stubs = "\n".join(
+        f"<article><span>{html.escape(title)}</span><p>{html.escape(body)}</p></article>"
+        for title, body in items[:3]
+    )
+    return f"""
+      <section class="showcase-marquee" id="programs">
+        <p class="section-kicker">Upcoming</p>
+        <h2>Every lesson points toward a stage.</h2>
+        <div class="showcase-marquee__row">{stubs}</div>
+      </section>
+"""
+
+
+def _render_stat_block(ctx: dict) -> str:
+    stats = [
+        ("4", "age groups covered"),
+        ("3x", "weekly trial slots open"),
+        ("1", "clear next step, not a contact form"),
+    ]
+    cells = "\n".join(
+        f"<div><b>{html.escape(num)}</b><span>{html.escape(label)}</span></div>"
+        for num, label in stats
+    )
+    return f"""
+      <section class="stat-block" id="programs">
+        <div class="stat-block__row">{cells}</div>
+      </section>
+"""
+
+
+def _render_parent_qa(ctx: dict) -> str:
+    qa = [
+        ("What age should my child start?", "Most programs open around 4-5, with age-specific classes from there."),
+        ("What happens in the first class?", "A coach walks through basics and safety before anything competitive."),
+        ("How do levels and schedules work?", "Placement is based on age and experience, not guesswork."),
+        ("What if my child is nervous?", "A trial class is low-pressure, with no commitment required."),
+    ]
+    rows = "\n".join(
+        f"<div><h3>{html.escape(q)}</h3><p>{html.escape(a)}</p></div>"
+        for q, a in qa
+    )
+    return f"""
+      <section class="parent-qa" id="programs">
+        <div class="parent-qa__head">
+          <p class="section-kicker">Before you ask</p>
+          <h2>The questions every parent has, answered up front.</h2>
+        </div>
+        <div class="parent-qa__grid">{rows}</div>
+      </section>
+"""
+
+
+def _explorer_themes() -> list[tuple[str, str]]:
+    return [
+        ("Bugs & backyard science", "Magnifying glasses, bug jars, and a lot of very serious questions about ants."),
+        ("Water play week", "Pouring, measuring, and the first real lessons in cause and effect."),
+        ("Building & blocks", "Towers fall down. Kids build them again. That's most of the lesson."),
+    ]
+
+
+def _render_explorer_spotlight(ctx: dict) -> str:
+    photo = ctx["photos"][0]
+    themes = _explorer_themes()
+    featured_title, featured_body = themes[0]
+    rest_html = "\n".join(
+        f"<li><b>{html.escape(title)}</b><p>{html.escape(body)}</p></li>"
+        for title, body in themes[1:]
+    )
+    return f"""
+      <section class="explorer-spotlight" id="programs">
+        <div class="explorer-spotlight__head">
+          <p class="section-kicker">This week at {ctx["name"]}</p>
+          <h2>One theme, explored all week.</h2>
+        </div>
+        <div class="explorer-spotlight__layout">
+          <article class="explorer-spotlight__featured" {_photo_style(photo)}>
+            <span>Featured this week</span>
+            <h3>{html.escape(featured_title)}</h3>
+            <p>{html.escape(featured_body)}</p>
+          </article>
+          <ul class="explorer-spotlight__list">{rest_html}</ul>
+        </div>
+      </section>
+"""
+
+
+def _community_reasons() -> list[tuple[str, str]]:
+    return [
+        ("Years, not months", "Many families started with one child and are now on their third."),
+        ("Staff who stay", "Low turnover means the teacher your child loves is still there next year."),
+        ("A real community", "Family events and parent involvement, not just drop-off and pickup."),
+    ]
+
+
+def _render_community_reasons(ctx: dict) -> str:
+    reasons = _community_reasons()
+    rows = "\n".join(
+        f"<div><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></div>"
+        for title, body in reasons
+    )
+    return f"""
+      <section class="community-reasons" id="programs">
+        <div class="community-reasons__head">
+          <p class="section-kicker">Why families stay</p>
+          <h2>Not just enrolled. Part of it.</h2>
+        </div>
+        <div class="community-reasons__row">{rows}</div>
+      </section>
+"""
+
+
+def _collective_roles() -> list[tuple[str, str]]:
+    return [
+        ("Beginners", "New players join a group built for exactly their level, not thrown in cold."),
+        ("Returning students", "Ensemble slots that build on private lessons instead of competing with them."),
+        ("Performance-ready", "Students who want to play with others before ever stepping on a stage alone."),
+    ]
+
+
+def _render_collective_lineup(ctx: dict) -> str:
+    photos = ctx["photos"]
+    roles = _collective_roles()
+    cards = "\n".join(
+        f'<article {_photo_style(photos[idx])}><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>'
+        for idx, (title, body) in enumerate(roles)
+    )
+    return f"""
+      <section class="collective-lineup" id="programs">
+        <div class="collective-lineup__head">
+          <p class="section-kicker">Who plays together</p>
+          <h2>Group classes built around real skill levels.</h2>
+        </div>
+        <div class="collective-lineup__row">{cards}</div>
+      </section>
+"""
+
+
+def _academy_levels() -> list[tuple[str, str]]:
+    return [
+        ("Foundations", "Note reading, rhythm, and the habits that make practice stick."),
+        ("Building technique", "Real repertoire, not just exercises, once the basics are solid."),
+        ("Performance prep", "Recital pieces and the confidence to play them in front of people."),
+        ("Advanced study", "For students ready to work toward exams, auditions, or serious repertoire."),
+    ]
+
+
+def _render_academy_path(ctx: dict) -> str:
+    levels = _academy_levels()
+    items_html = "\n".join(
+        f'<li><span>{idx:02d}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></li>'
+        for idx, (title, body) in enumerate(levels, start=1)
+    )
+    return f"""
+      <section class="academy-path" id="programs">
+        <div class="academy-path__head">
+          <p class="section-kicker">The curriculum</p>
+          <h2>Every student can see what's next.</h2>
+        </div>
+        <ol class="academy-path__steps">{items_html}</ol>
+      </section>
+"""
+
+
+def _camp_sessions() -> list[tuple[str, str, str]]:
+    return [
+        ("Weeks 1-2", "Skills camp", "Fundamentals and drills, disguised as fun."),
+        ("Weeks 3-4", "Team clinic", "Scrimmage-based coaching once the basics are second nature."),
+        ("Weeks 5-6", "Showcase week", "A low-pressure chance to show families what the summer built."),
+    ]
+
+
+def _render_camp_calendar(ctx: dict) -> str:
+    photos = ctx["photos"]
+    sessions = _camp_sessions()
+    cards = "\n".join(
+        f'<article {_photo_style(photos[idx])}><span>{html.escape(week)}</span>'
+        f"<h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
+        for idx, (week, title, body) in enumerate(sessions)
+    )
+    return f"""
+      <section class="camp-calendar" id="programs">
+        <div class="camp-calendar__head">
+          <p class="section-kicker">This season</p>
+          <h2>Real dates, not a generic program list.</h2>
+        </div>
+        <div class="camp-calendar__row">{cards}</div>
+      </section>
+"""
+
+
+def _team_levels() -> list[tuple[str, str]]:
+    return [
+        ("Developmental", "Ages 6-9. Fundamentals and a genuine love of the sport first."),
+        ("Competitive", "Ages 10-14. Regular scrimmages, tournaments, and real coaching feedback."),
+        ("Elite", "By invitation. For athletes training toward a serious competitive path."),
+    ]
+
+
+def _render_team_roster(ctx: dict) -> str:
+    levels = _team_levels()
+    rows = "\n".join(
+        f"<div><b>{idx:02d}</b><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></div>"
+        for idx, (title, body) in enumerate(levels, start=1)
+    )
+    return f"""
+      <section class="team-roster" id="programs">
+        <div class="team-roster__head">
+          <p class="section-kicker">The competitive path</p>
+          <h2>Every level has a clear next step up.</h2>
+        </div>
+        <div class="team-roster__row">{rows}</div>
+      </section>
 """
 
 
 def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
-    name = ctx["name"]
-    category = ctx["category"]
-    city = ctx["city"]
-    headline = ctx["headline"]
-    intro = ctx["intro"]
-    contact = ctx["contact"]
+    type_id = ctx["type_id"]
+    version_id = ctx["version_id"]
     photos = ctx["photos"]
-    site_anchors_html = ctx["site_anchors_html"]
-    cards = _render_cards(items)
     enrollment_panel = _render_enrollment_panel(ctx, items)
 
-    if ctx["type_id"] == "music" and ctx["version_id"] == "performance":
-        showcase_cards = "\n".join(
-            f"<div><b>{html.escape(title)}</b><span>{html.escape(body)}</span></div>"
-            for title, body in items[:3]
-        )
-        return f"""
-    <main class="mock-layout mock-layout-music-performance">
-      <section class="stage-hero" {_hero_photo_style(photos[2])}>
-        <div class="stage-copy">
-          <p class="eyebrow">{category} in {city}</p>
-          <h1>{headline}</h1>
-          <p>{intro}</p>
-          {site_anchors_html}
-          <a class="primary light" href="#next-step">Book a trial lesson</a>
-        </div>
-        <aside class="showcase-calendar" aria-label="Showcase calendar">
-          <span>Upcoming</span>
-          <strong>Spring showcase</strong>
-          <p>Recital prep, student milestones, and trial lesson interest all point to one clear enrollment path.</p>
-        </aside>
-      </section>
-      <section class="showcase-strip">
-        {showcase_cards}
-      </section>
-      <section class="split-feature" id="programs">
-        <div>
-          <p class="section-kicker">Performance pathway</p>
-          <h2>Performance gives every lesson a destination.</h2>
-        </div>
-        <div class="cards">{cards}</div>
-      </section>
-      <section class="cta-band">
-        <h2>Ready for a first lesson?</h2>
-        <p>Parents can choose a lesson path, send student details, and ask questions before the school follows up.</p>
-        <div>{contact}</div>
-      </section>
-      {enrollment_panel}
-    </main>
-"""
-
-    if ctx["type_id"] == "music":
-        return f"""
-    <main class="mock-layout mock-layout-music-studio">
-      <section class="studio-hero">
-        <div>
-          <p class="eyebrow">{category} in {city}</p>
-          <h1>{headline}</h1>
-          <p>{intro}</p>
-          {site_anchors_html}
-          <div class="hero-actions">
-            <a class="primary" href="#next-step">Find the right lesson</a>
-            <a class="secondary-link" href="#programs">View programs</a>
-          </div>
-        </div>
-        <aside class="studio-side">
-          {_photo_card(photos[0], "Lesson paths, scheduling, and teacher fit in one place", "wide-photo")}
-          <div class="lesson-finder">
-            <h2>Lesson finder</h2>
-            <label>Student level</label><div>Beginner / returning / advanced</div>
-            <label>Instrument or focus</label><div>Guitar, voice, piano, theory, performance</div>
-            <label>Best next step</label><div>Request availability and teacher match</div>
-          </div>
-        </aside>
-      </section>
-      <section class="cards compact" id="programs">{cards}</section>
-      <section class="teacher-band">
-        <div><p class="section-kicker">Lesson path</p><h2>Lessons feel personal before the first call.</h2></div>
-        <p>Teacher credibility, scheduling options, and inquiry details live together, so parents do not have to piece together the process.</p>
-      </section>
-      {enrollment_panel}
-    </main>
-"""
-
-    if ctx["type_id"] == "sports" and ctx["version_id"] == "trust":
-        return f"""
-    <main class="mock-layout mock-layout-sports-trust">
-      <section class="trust-hero">
-        <div>
-          <p class="eyebrow">{category} in {city}</p>
-          <h1>{headline}</h1>
-          <p>{intro}</p>
-          {site_anchors_html}
-        </div>
-        <aside class="trust-side">
-          {_photo_card(photos[0], "Parent confidence before the first class", "trust-photo")}
-          <div class="parent-checklist">
-            <h2>Parent questions answered</h2>
-            <p>What age should my child start?</p>
-            <p>What happens in the first class?</p>
-            <p>How do levels and schedules work?</p>
-          </div>
-        </aside>
-      </section>
-      <section class="process-row">
-        <div><b>1</b><span>Pick a level</span></div>
-        <div><b>2</b><span>Request a trial</span></div>
-        <div><b>3</b><span>Get matched with the right class</span></div>
-      </section>
-      <section class="cards" id="programs">{cards}</section>
-      <section class="cta-band soft"><h2>Confidence before commitment.</h2><p>Parents get enough context to take action without calling three times first.</p><div>{contact}</div></section>
-      {enrollment_panel}
-    </main>
-"""
-
-    if ctx["type_id"] == "sports":
-        return f"""
-    <main class="mock-layout mock-layout-sports-action">
-      <section class="action-hero" {_hero_photo_style(photos[1])}>
-        <div class="action-card">
-          <p class="eyebrow">{category} in {city}</p>
-          <h1>{headline}</h1>
-          <p>{intro}</p>
-          {site_anchors_html}
-          <a class="primary light" href="#next-step">Claim a trial spot</a>
-        </div>
-        <div class="schedule-stack">
-          <div><span>Mon/Wed</span><b>Kids beginner</b></div>
-          <div><span>Friday</span><b>Trial class</b></div>
-          <div><span>Weekend</span><b>Clinics and camps</b></div>
-        </div>
-      </section>
-      <section class="cards angled" id="programs">{cards}</section>
-      <section class="impact-band"><h2>Make the first visit easy to say yes to.</h2><p>Families see the right class, the right level, and the next step immediately.</p></section>
-      {enrollment_panel}
-    </main>
-"""
-
-    if ctx["type_id"] == "preschool" and ctx["version_id"] == "structured":
-        return f"""
-    <main class="mock-layout mock-layout-preschool-structured">
-      <section class="admissions-hero">
-        <div>
-          <p class="eyebrow">{category} in {city}</p>
-          <h1>{headline}</h1>
-          <p>{intro}</p>
-          {site_anchors_html}
-        </div>
-        <aside class="admissions-side">
-          {_photo_card(photos[1], "Admissions steps without the guessing", "structured-photo")}
-          <div class="admissions-board">
-            <h2>Enrollment steps</h2>
-            <ol>
-              <li>Check age group and schedule</li>
-              <li>Request tour or availability</li>
-              <li>Submit application details</li>
-              <li>Confirm placement or waitlist</li>
-            </ol>
-          </div>
-        </aside>
-      </section>
-      <section class="cards process-cards" id="programs">{cards}</section>
-      <section class="comparison-band"><h2>Less mystery for parents, fewer loose ends for staff.</h2><p>Every call to action points to the same enrollment workflow.</p><div>{contact}</div></section>
-      {enrollment_panel}
-    </main>
-"""
+    if type_id == "preschool" and version_id == "structured":
+        hero = _render_hero(ctx, "See enrollment steps", photos[0])
+        signature = _render_admissions_path(ctx)
+        layout_class = "mock-layout-preschool-structured"
+    elif type_id == "preschool" and version_id == "explorer":
+        hero = _render_hero(ctx, "See this week's theme", photos[1])
+        signature = _render_explorer_spotlight(ctx)
+        layout_class = "mock-layout-preschool-explorer"
+    elif type_id == "preschool" and version_id == "community":
+        hero = _render_hero(ctx, "Start the conversation", photos[0])
+        signature = _render_community_reasons(ctx)
+        layout_class = "mock-layout-preschool-community"
+    elif type_id == "preschool":
+        hero = _render_hero(ctx, "Ask about openings", photos[0])
+        signature = _render_day_timeline(ctx)
+        layout_class = "mock-layout-preschool-warm"
+    elif type_id == "music" and version_id == "performance":
+        hero = _render_hero(ctx, "Book a trial lesson", photos[2])
+        signature = _render_showcase_marquee(ctx, items)
+        layout_class = "mock-layout-music-performance"
+    elif type_id == "music" and version_id == "collective":
+        hero = _render_hero(ctx, "Join a group class", photos[1])
+        signature = _render_collective_lineup(ctx)
+        layout_class = "mock-layout-music-collective"
+    elif type_id == "music" and version_id == "academy":
+        hero = _render_hero(ctx, "See the curriculum", photos[2])
+        signature = _render_academy_path(ctx)
+        layout_class = "mock-layout-music-academy"
+    elif type_id == "music":
+        hero = _render_hero(ctx, "Find the right lesson", photos[0])
+        signature = _render_lesson_scroll(ctx, items)
+        layout_class = "mock-layout-music-studio"
+    elif type_id == "sports" and version_id == "trust":
+        hero = _render_hero(ctx, "Ask us anything", photos[0])
+        signature = _render_parent_qa(ctx)
+        layout_class = "mock-layout-sports-trust"
+    elif type_id == "sports" and version_id == "camp":
+        hero = _render_hero(ctx, "Reserve a spot", photos[2])
+        signature = _render_camp_calendar(ctx)
+        layout_class = "mock-layout-sports-camp"
+    elif type_id == "sports" and version_id == "team":
+        hero = _render_hero(ctx, "Ask about tryouts", photos[1])
+        signature = _render_team_roster(ctx)
+        layout_class = "mock-layout-sports-team"
+    else:
+        hero = _render_hero(ctx, "Claim a trial spot", photos[1])
+        signature = _render_stat_block(ctx)
+        layout_class = "mock-layout-sports-action"
 
     return f"""
-    <main class="mock-layout mock-layout-preschool-warm">
-      <section class="warm-hero">
-        <div>
-          <p class="eyebrow">{category} in {city}</p>
-          <h1>{headline}</h1>
-          <p>{intro}</p>
-          {site_anchors_html}
-          <a class="primary" href="#next-step">Ask about openings</a>
-        </div>
-        <div class="classroom-collage">
-          <div {_photo_style(photos[0])}>Morning welcome</div>
-          <div {_photo_style(photos[1])}>Learning through play</div>
-          <div {_photo_style(photos[2])}>Parent updates</div>
-        </div>
-      </section>
-      <section class="cards rounded" id="programs">{cards}</section>
-      <section class="visit-band"><h2>A calmer way for parents to take the first step.</h2><p>Tour requests, openings, questions, and child details can start in one friendly flow.</p><div>{contact}</div></section>
+    <main class="mock-layout {layout_class}">
+      {hero}
+      {signature}
       {enrollment_panel}
     </main>
 """
@@ -1063,12 +1422,14 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     escaped_intro = html.escape(intro)
     contact = _render_contact_link(phone, website)
     site_anchor_labels = _precomputed_site_anchors(lead)
+    site_quote = _clean(lead.get("_website_mock_site_quote"))
     site_anchors_html = _render_site_anchors(site_anchor_labels)
     items = _program_blurbs(
         variant.type_id,
         variant.version_id,
         _clean(lead.get("category")),
     )
+    items = _personalize_items(items, site_anchor_labels)
     photos = _photo_urls(variant.type_id, _clean(lead.get("category")))
     body = _render_variant_body(
         {
@@ -1080,17 +1441,9 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
             "contact": contact,
             "site_anchors_html": site_anchors_html,
             "site_anchor_labels": site_anchor_labels,
+            "site_quote": site_quote,
+            "site_domain": _site_domain(website),
             "photos": photos,
-            "type_id": variant.type_id,
-            "version_id": variant.version_id,
-            "raw_category": _clean(lead.get("category")),
-        },
-        items,
-    )
-    strategy_note = _render_strategy_note(
-        {
-            "name": escaped_name,
-            "site_anchor_labels": site_anchor_labels,
             "type_id": variant.type_id,
             "version_id": variant.version_id,
             "raw_category": _clean(lead.get("category")),
@@ -1104,6 +1457,9 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escaped_name} - Website Concept</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500..700&family=Inter:wght@400..900&display=swap" rel="stylesheet">
   <style>
     :root {{
       --accent: {accent};
@@ -1114,11 +1470,9 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       --soft: {palette["soft"]};
       --line: {palette["line"]};
       --danger: {palette["danger"]};
+      --radius: {palette["radius"]};
       --hero-overlay-a: {palette["hero_overlay_a"]};
       --hero-overlay-b: {palette["hero_overlay_b"]};
-      --hero-glow: {palette["hero_glow"]};
-      --action-overlay-a: {palette["action_overlay_a"]};
-      --action-overlay-b: {palette["action_overlay_b"]};
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -1128,6 +1482,19 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background: var(--paper);
     }}
     a {{ color: inherit; }}
+    h1, h2 {{
+      font-family: "Fraunces", ui-serif, Georgia, serif;
+      /* Pinned low instead of font-optical-sizing:auto: at large display
+         sizes Fraunces' automatic high-opsz instance swaps in a swashy,
+         big-looped lowercase f that reads as broken rather than characterful. */
+      font-variation-settings: "opsz" 18;
+      font-weight: 620;
+    }}
+    @media (prefers-reduced-motion: no-preference) {{
+      a, button, .day-timeline__strip article, .lesson-scroll__track article, .option-pill {{
+        transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease;
+      }}
+    }}
     .page {{ min-height: 100vh; overflow: hidden; }}
     .topbar {{
       display: flex;
@@ -1169,23 +1536,23 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       text-decoration: none;
       background: var(--secondary);
       padding: 14px 18px;
-      border-radius: 8px;
+      border-radius: var(--radius);
       font-weight: 800;
     }}
-    .primary.light {{ background: white; color: var(--secondary); }}
-    .secondary-link {{
-      color: var(--secondary);
-      font-weight: 800;
-      text-decoration: none;
-      border-bottom: 2px solid var(--accent);
-      padding-bottom: 4px;
+    .primary.light {{ background: white; color: var(--secondary); margin-top: 10px; }}
+    a:focus-visible, button:focus-visible {{
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }}
-    .hero-actions {{ display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 28px; }}
+    .nav-cta:hover, .primary:hover {{
+      transform: translateY(-2px);
+      box-shadow: 0 14px 30px rgba(0,0,0,.18);
+    }}
     .site-anchors {{
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin: 22px 0 4px;
+      margin: 18px 0 4px;
       max-width: 760px;
     }}
     .site-anchors span {{
@@ -1226,182 +1593,10 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     h1, h2, h3, p {{ letter-spacing: 0; }}
     h1 {{ font-size: clamp(44px, 6.4vw, 92px); line-height: .96; margin: 0 0 24px; }}
     h2 {{ font-size: clamp(30px, 4vw, 56px); line-height: 1; margin: 0 0 18px; }}
-    h3 {{ font-size: 23px; line-height: 1.1; margin: 16px 0 10px; }}
+    h3 {{ font-size: 22px; line-height: 1.15; margin: 14px 0 8px; }}
     p {{ color: var(--muted); font-size: 18px; line-height: 1.58; margin: 0; }}
     .mock-layout section {{ padding-inline: clamp(20px, 5vw, 72px); }}
-    .studio-hero, .trust-hero, .warm-hero, .admissions-hero {{
-      display: grid;
-      grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
-      gap: clamp(28px, 5vw, 70px);
-      align-items: center;
-      padding-top: clamp(58px, 8vw, 118px);
-      padding-bottom: 54px;
-    }}
     figure {{ margin: 0; }}
-    .studio-side, .trust-side, .admissions-side {{
-      display: grid;
-      gap: 14px;
-    }}
-    .lesson-finder, .parent-checklist, .admissions-board {{
-      background: white;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 28px;
-      box-shadow: 0 24px 70px rgba(15, 40, 80, .12);
-    }}
-    .lesson-finder label {{
-      display: block;
-      color: var(--accent);
-      font-size: 13px;
-      font-weight: 900;
-      margin-top: 18px;
-    }}
-    .lesson-finder div {{
-      margin-top: 8px;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      color: var(--ink);
-      background: #f8fbff;
-      font-weight: 750;
-    }}
-    .photo-card {{
-      min-height: 230px;
-      border-radius: 8px;
-      padding: 20px;
-      display: flex;
-      align-items: end;
-      overflow: hidden;
-      color: white;
-      background-image:
-        linear-gradient(180deg, rgba(7,16,72,.06), rgba(7,16,72,.72)),
-        var(--photo);
-      background-size: cover;
-      background-position: center;
-      box-shadow: 0 24px 70px rgba(15, 40, 80, .12);
-    }}
-    .photo-card figcaption {{
-      max-width: 360px;
-      font-size: 22px;
-      font-weight: 900;
-      line-height: 1.12;
-    }}
-    .wide-photo {{ min-height: 260px; }}
-    .structured-photo, .trust-photo {{ min-height: 210px; }}
-    .cards {{
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 16px;
-      padding-top: 42px;
-      padding-bottom: 70px;
-    }}
-    .cards__card {{
-      background: white;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 24px;
-      min-height: 218px;
-    }}
-    .cards__card span {{
-      color: var(--accent);
-      font-weight: 900;
-      font-size: 13px;
-    }}
-    .cards__card p {{ font-size: 16px; }}
-    .mock-layout-music-studio .cards {{
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      background: linear-gradient(180deg, var(--paper), #fff);
-    }}
-    .mock-layout-music-studio .cards__card {{
-      min-height: 170px;
-      border-left: 5px solid var(--accent);
-    }}
-    .mock-layout-music-performance .split-feature {{
-      background: var(--secondary);
-      color: white;
-    }}
-    .mock-layout-music-performance .split-feature h2,
-    .mock-layout-music-performance .split-feature .section-kicker {{
-      color: white;
-    }}
-    .mock-layout-music-performance .split-feature .cards__card {{
-      background: rgba(255,255,255,.08);
-      border-color: rgba(255,255,255,.16);
-      color: white;
-    }}
-    .mock-layout-music-performance .split-feature .cards__card p {{
-      color: rgba(255,255,255,.72);
-    }}
-    .mock-layout-sports-action .cards {{
-      background: #171717;
-    }}
-    .mock-layout-sports-action .cards__card {{
-      background: #222;
-      border-color: rgba(255,255,255,.12);
-      color: white;
-      min-height: 178px;
-    }}
-    .mock-layout-sports-action .cards__card p {{
-      color: rgba(255,255,255,.72);
-    }}
-    .mock-layout-sports-trust .cards {{
-      background: #f5fbfb;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }}
-    .mock-layout-sports-trust .cards__card {{
-      min-height: 150px;
-      border: 0;
-      border-top: 5px solid var(--accent);
-      box-shadow: 0 18px 50px rgba(18, 49, 47, .08);
-    }}
-    .mock-layout-preschool-warm .cards {{
-      background: var(--soft);
-    }}
-    .mock-layout-preschool-warm .cards__card {{
-      background: white;
-      border: 0;
-      border-radius: 18px;
-      box-shadow: 0 18px 50px rgba(80, 44, 25, .08);
-    }}
-    .mock-layout-preschool-structured .cards {{
-      grid-template-columns: 1fr;
-      max-width: 940px;
-      margin-inline: auto;
-    }}
-    .mock-layout-preschool-structured .cards__card {{
-      min-height: 0;
-      display: grid;
-      grid-template-columns: 70px 1fr;
-      gap: 18px;
-      align-items: start;
-      padding: 20px 24px;
-    }}
-    .mock-layout-preschool-structured .cards__card span {{
-      display: grid;
-      place-items: center;
-      width: 48px;
-      height: 48px;
-      border-radius: 999px;
-      background: var(--soft);
-      grid-row: 1 / span 2;
-    }}
-    .mock-layout-preschool-structured .cards__card h3 {{
-      grid-column: 2;
-      margin-top: 0;
-    }}
-    .mock-layout-preschool-structured .cards__card p {{
-      grid-column: 2;
-    }}
-    .teacher-band, .cta-band, .impact-band, .comparison-band, .visit-band {{
-      display: grid;
-      grid-template-columns: minmax(0, .9fr) minmax(260px, .7fr);
-      gap: 30px;
-      align-items: center;
-      padding-top: 42px;
-      padding-bottom: 42px;
-      background: white;
-      border-top: 1px solid var(--line);
-    }}
     .section-kicker {{
       color: var(--accent);
       font-size: 14px;
@@ -1409,6 +1604,336 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       text-transform: uppercase;
       margin-bottom: 12px;
     }}
+
+    /* Hero: full-bleed photography carries the thesis, not a boxed collage */
+    .hero-bleed {{
+      min-height: 84vh;
+      display: flex;
+      align-items: flex-end;
+      padding: clamp(20px, 5vw, 72px);
+      padding-top: clamp(120px, 16vw, 210px);
+      background:
+        linear-gradient(180deg, var(--hero-overlay-a) 0%, transparent 30%, var(--hero-overlay-b) 100%),
+        var(--hero-photo);
+      background-size: cover;
+      background-position: center;
+      color: white;
+    }}
+    .hero-bleed__content {{ max-width: 760px; }}
+    .hero-bleed h1, .hero-bleed p, .hero-bleed .eyebrow {{ color: white; }}
+    .hero-bleed .site-anchors span {{ color: rgba(255,255,255,.72); }}
+    .hero-bleed .site-anchors b {{
+      color: white;
+      background: rgba(255,255,255,.14);
+      border-color: rgba(255,255,255,.3);
+    }}
+    .site-quote {{
+      margin: 18px 0 4px;
+      padding-left: 18px;
+      border-left: 3px solid var(--accent);
+      font-family: "Fraunces", serif;
+      font-variation-settings: "opsz" 18;
+      font-weight: 500;
+      font-style: italic;
+      font-size: 19px;
+      line-height: 1.4;
+      color: rgba(255,255,255,.94);
+      max-width: 600px;
+    }}
+    .site-quote cite {{
+      display: block;
+      margin-top: 8px;
+      font-family: Inter, sans-serif;
+      font-style: normal;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: rgba(255,255,255,.6);
+    }}
+
+    /* Signature: preschool-warm — a real day, hour by hour */
+    .day-timeline {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .day-timeline__head {{ max-width: 640px; margin-bottom: 32px; }}
+    .day-timeline__strip {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }}
+    .day-timeline__strip article {{
+      min-height: 260px;
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      color: white;
+      background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.74)), var(--photo);
+      background-size: cover;
+      background-position: center;
+      box-shadow: 0 18px 44px rgba(0,0,0,.14);
+    }}
+    .day-timeline__strip:hover article {{ opacity: .82; }}
+    .day-timeline__strip article:hover {{ opacity: 1; transform: translateY(-4px); }}
+    .day-timeline__strip span {{ font-weight: 900; font-size: 13px; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }}
+    .day-timeline__strip h3 {{ color: white; margin: 8px 0 6px; font-size: 20px; }}
+    .day-timeline__strip p {{ font-size: 14px; color: rgba(255,255,255,.84); line-height: 1.4; }}
+
+    /* Signature: preschool-structured — the actual admissions sequence */
+    .admissions-path {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .admissions-path__head {{ max-width: 640px; margin-bottom: 40px; }}
+    .admissions-path__steps {{
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 20px;
+      position: relative;
+    }}
+    .admissions-path__steps::before {{
+      content: "";
+      position: absolute;
+      top: 24px;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: var(--line);
+    }}
+    .admissions-path__steps li {{ position: relative; padding-top: 60px; }}
+    .admissions-path__steps span {{
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      color: var(--accent);
+    }}
+    .admissions-path__steps p {{ font-size: 15px; }}
+    .admissions-path__steps figure {{
+      margin-top: 14px;
+      min-height: 120px;
+      border-radius: var(--radius);
+      background-image: var(--photo);
+      background-size: cover;
+      background-position: center;
+    }}
+
+    /* Signature: music-studio — an overlapping, hand-arranged lesson scroll */
+    .lesson-scroll {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); background: var(--soft); }}
+    .lesson-scroll__head {{ max-width: 640px; margin-bottom: 28px; }}
+    .lesson-scroll__track {{
+      display: flex;
+      gap: 18px;
+      overflow-x: auto;
+      padding: 10px 0 24px;
+      scroll-snap-type: x proximity;
+    }}
+    .lesson-scroll__track article {{
+      flex: 0 0 250px;
+      scroll-snap-align: start;
+      min-height: 300px;
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      color: white;
+      background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.76)), var(--photo);
+      background-size: cover;
+      background-position: center;
+      box-shadow: 0 20px 46px rgba(43,33,64,.22);
+    }}
+    .lesson-scroll__track article:nth-child(even) {{ transform: translateY(20px); }}
+    .lesson-scroll__track article:hover {{ transform: translateY(-4px); }}
+    .lesson-scroll__track article:nth-child(even):hover {{ transform: translateY(16px); }}
+    .lesson-scroll__track h3 {{ color: white; font-size: 19px; margin: 0 0 6px; }}
+    .lesson-scroll__track p {{ font-size: 14px; color: rgba(255,255,255,.84); }}
+
+    /* Signature: music-performance — a ticket-stub marquee, not a card grid */
+    .showcase-marquee {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); background: var(--secondary); color: white; }}
+    .showcase-marquee h2, .showcase-marquee .section-kicker {{ color: white; }}
+    .showcase-marquee__row {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 30px;
+      border-top: 1px dashed rgba(255,255,255,.3);
+    }}
+    .showcase-marquee__row article {{ padding: 26px 24px; border-right: 1px dashed rgba(255,255,255,.3); }}
+    .showcase-marquee__row article:last-child {{ border-right: 0; }}
+    .showcase-marquee__row span {{
+      display: block;
+      font-family: "Fraunces", serif;
+      font-variation-settings: "opsz" 18;
+      font-weight: 600;
+      font-size: 22px;
+      margin-bottom: 10px;
+      color: var(--accent);
+    }}
+    .showcase-marquee__row p {{ color: rgba(255,255,255,.76); font-size: 15px; }}
+
+    /* Signature: sports-action — a scoreboard, information not decoration */
+    .stat-block {{ padding-top: clamp(48px, 6vw, 88px); padding-bottom: clamp(48px, 6vw, 88px); background: var(--ink); }}
+    .stat-block__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; text-align: center; }}
+    .stat-block__row div {{ padding: 22px 12px; border-left: 1px solid rgba(255,255,255,.16); }}
+    .stat-block__row div:first-child {{ border-left: 0; }}
+    .stat-block__row b {{
+      display: block;
+      font-family: "Fraunces", serif;
+      font-variation-settings: "opsz" 18;
+      font-weight: 600;
+      font-size: clamp(40px, 6vw, 68px);
+      color: var(--accent);
+      line-height: 1;
+    }}
+    .stat-block__row span {{
+      display: block;
+      margin-top: 10px;
+      color: rgba(255,255,255,.72);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 13px;
+      letter-spacing: .04em;
+    }}
+
+    /* Signature: sports-trust — calm, text-led answers, no photos competing */
+    .parent-qa {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); background: var(--soft); }}
+    .parent-qa__head {{ max-width: 640px; margin-bottom: 32px; }}
+    .parent-qa__grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }}
+    .parent-qa__grid div {{ background: white; padding: 26px; }}
+    .parent-qa__grid h3 {{ font-size: 18px; margin: 0 0 8px; }}
+    .parent-qa__grid p {{ font-size: 15px; }}
+
+    /* Signature: preschool-explorer — one featured theme, not an equal grid */
+    .explorer-spotlight {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .explorer-spotlight__head {{ max-width: 640px; margin-bottom: 32px; }}
+    .explorer-spotlight__layout {{
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(240px, .8fr);
+      gap: 22px;
+      align-items: stretch;
+    }}
+    .explorer-spotlight__featured {{
+      min-height: 340px;
+      border-radius: var(--radius);
+      padding: 26px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      color: white;
+      background-image: linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.72)), var(--photo);
+      background-size: cover;
+      background-position: center;
+    }}
+    .explorer-spotlight__featured span {{ color: var(--accent); font-weight: 900; font-size: 13px; text-transform: uppercase; }}
+    .explorer-spotlight__featured h3 {{ color: white; font-size: 26px; margin: 8px 0 6px; }}
+    .explorer-spotlight__featured p {{ color: rgba(255,255,255,.86); font-size: 15px; }}
+    .explorer-spotlight__list {{ list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }}
+    .explorer-spotlight__list li {{ border-top: 1px solid var(--line); padding-top: 16px; }}
+    .explorer-spotlight__list li:first-child {{ border-top: 0; padding-top: 0; }}
+    .explorer-spotlight__list b {{ display: block; font-size: 17px; margin-bottom: 4px; }}
+    .explorer-spotlight__list p {{ font-size: 14px; }}
+
+    /* Signature: preschool-community — plain statements, no photos, no numbers */
+    .community-reasons {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); background: var(--soft); }}
+    .community-reasons__head {{ max-width: 640px; margin-bottom: 32px; }}
+    .community-reasons__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }}
+    .community-reasons__row div {{ border-top: 3px solid var(--accent); padding-top: 16px; }}
+    .community-reasons__row h3 {{ font-size: 19px; margin: 0 0 8px; }}
+    .community-reasons__row p {{ font-size: 15px; }}
+
+    /* Signature: music-collective — vertical photo-on-top cards, not overlaid text */
+    .collective-lineup {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .collective-lineup__head {{ max-width: 640px; margin-bottom: 28px; }}
+    .collective-lineup__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }}
+    .collective-lineup__row article {{
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: white;
+    }}
+    .collective-lineup__row article::before {{
+      content: "";
+      display: block;
+      height: 150px;
+      background-image: var(--photo);
+      background-size: cover;
+      background-position: center;
+    }}
+    .collective-lineup__row h3 {{ font-size: 18px; margin: 16px 18px 6px; }}
+    .collective-lineup__row p {{ font-size: 14px; margin: 0 18px 18px; }}
+
+    /* Signature: music-academy — a vertical curriculum ladder, text only */
+    .academy-path {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .academy-path__head {{ max-width: 640px; margin-bottom: 32px; }}
+    .academy-path__steps {{
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-width: 640px;
+      border-left: 2px solid var(--line);
+    }}
+    .academy-path__steps li {{ position: relative; padding: 4px 0 28px 30px; }}
+    .academy-path__steps li:last-child {{ padding-bottom: 0; }}
+    .academy-path__steps span {{
+      position: absolute;
+      left: -19px;
+      top: 2px;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: white;
+      font-size: 12px;
+      font-weight: 900;
+      display: grid;
+      place-items: center;
+    }}
+    .academy-path__steps h3 {{ font-size: 19px; margin: 0 0 6px; }}
+    .academy-path__steps p {{ font-size: 15px; }}
+
+    /* Signature: sports-camp — a skewed, high-energy dated calendar */
+    .camp-calendar {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .camp-calendar__head {{ max-width: 640px; margin-bottom: 30px; }}
+    .camp-calendar__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }}
+    .camp-calendar__row article {{
+      min-height: 240px;
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      color: white;
+      background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.72)), var(--photo);
+      background-size: cover;
+      background-position: center;
+      box-shadow: 0 18px 44px rgba(0,0,0,.16);
+    }}
+    .camp-calendar__row span {{ font-weight: 900; font-size: 13px; color: var(--accent); text-transform: uppercase; }}
+    .camp-calendar__row h3 {{ color: white; margin: 8px 0 6px; font-size: 20px; }}
+    .camp-calendar__row p {{ font-size: 14px; color: rgba(255,255,255,.84); }}
+
+    /* Signature: sports-team — a bold roster board, text only */
+    .team-roster {{ padding-top: clamp(48px, 6vw, 88px); padding-bottom: clamp(48px, 6vw, 88px); background: var(--ink); }}
+    .team-roster .section-kicker, .team-roster h2 {{ color: white; }}
+    .team-roster__head {{ max-width: 640px; margin-bottom: 30px; }}
+    .team-roster__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }}
+    .team-roster__row div {{ padding: 20px; border: 1px solid rgba(255,255,255,.14); border-radius: var(--radius); }}
+    .team-roster__row b {{ display: block; color: var(--accent); font-family: "Fraunces", serif; font-variation-settings: "opsz" 18; font-size: 34px; }}
+    .team-roster__row h3 {{ color: white; margin: 10px 0 6px; font-size: 18px; }}
+    .team-roster__row p {{ color: rgba(255,255,255,.7); font-size: 14px; }}
+
+    /* Shared enrollment panel */
     .enrollment-section {{
       padding-top: 54px;
       padding-bottom: 54px;
@@ -1424,7 +1949,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       margin: 0 auto;
       background: white;
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: var(--radius);
       padding: clamp(24px, 4vw, 44px);
       box-shadow: 0 24px 70px rgba(15, 40, 80, .12);
     }}
@@ -1436,22 +1961,21 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       padding: 18px;
       border-left: 5px solid var(--accent);
       background: var(--paper);
-      border-radius: 8px;
+      border-radius: var(--radius);
     }}
     .next-step-note b {{ color: var(--ink); }}
     .next-step-note span {{ color: var(--muted); line-height: 1.45; }}
+    .contact-line {{ margin-top: 16px; font-size: 14px; color: var(--muted); }}
+    .contact-line a {{ color: var(--accent); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }}
     .mock-form {{
       display: grid;
       gap: 14px;
       background: var(--paper);
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: var(--radius);
       padding: 20px;
     }}
-    .mock-field {{
-      display: grid;
-      gap: 8px;
-    }}
+    .mock-field {{ display: grid; gap: 8px; }}
     .mock-field label {{
       color: var(--ink);
       font-size: 13px;
@@ -1464,16 +1988,12 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       align-items: center;
       padding: 12px 14px;
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: var(--radius);
       background: white;
       color: var(--muted);
       font-weight: 700;
     }}
-    .option-pills {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }}
+    .option-pills {{ display: flex; flex-wrap: wrap; gap: 8px; }}
     .option-pill {{
       display: inline-flex;
       align-items: center;
@@ -1487,192 +2007,17 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       font-weight: 800;
       line-height: 1.1;
     }}
+    .option-pill:hover {{ border-color: var(--accent); background: var(--soft); }}
     .mock-form button {{
       min-height: 50px;
       border: 0;
-      border-radius: 8px;
+      border-radius: var(--radius);
       background: var(--secondary);
       color: white;
       font-weight: 900;
       font-size: 15px;
       cursor: default;
     }}
-    .strategy-note {{
-      display: grid;
-      grid-template-columns: minmax(280px, .55fr) minmax(0, 1fr);
-      gap: clamp(22px, 4vw, 48px);
-      align-items: start;
-      padding: 58px clamp(20px, 5vw, 72px);
-      background: white;
-      border-top: 1px solid var(--line);
-    }}
-    .strategy-note h2 {{ font-size: clamp(28px, 3.6vw, 48px); }}
-    .strategy-grid {{
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-    }}
-    .strategy-grid article {{
-      min-height: 190px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 20px;
-      background: var(--paper);
-    }}
-    .strategy-grid span {{
-      display: block;
-      color: var(--accent);
-      font-size: 13px;
-      font-weight: 900;
-      margin-bottom: 18px;
-    }}
-    .strategy-grid b {{
-      display: block;
-      margin-bottom: 10px;
-      font-size: 20px;
-      line-height: 1.12;
-    }}
-    .strategy-grid p {{ font-size: 15px; line-height: 1.48; }}
-    .stage-hero {{
-      min-height: 640px;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(300px, 440px);
-      gap: 34px;
-      align-items: center;
-      padding-top: 78px;
-      padding-bottom: 72px;
-      background:
-        linear-gradient(135deg, var(--hero-overlay-a), var(--hero-overlay-b)),
-        radial-gradient(circle at 82% 18%, var(--hero-glow), transparent 34%),
-        var(--hero-photo);
-      background-size: cover;
-      background-position: center;
-      color: white;
-    }}
-    .stage-hero h1, .stage-hero p, .stage-hero .eyebrow {{ color: white; }}
-    .stage-copy p:not(.eyebrow) {{ max-width: 760px; color: rgba(255,255,255,.78); }}
-    .showcase-calendar {{
-      background: rgba(255,255,255,.12);
-      border: 1px solid rgba(255,255,255,.24);
-      border-radius: 8px;
-      padding: 26px;
-      backdrop-filter: blur(14px);
-    }}
-    .showcase-calendar span {{ color: var(--accent); font-weight: 900; }}
-    .showcase-calendar strong {{ display: block; font-size: 34px; margin: 12px 0; }}
-    .showcase-calendar p {{ color: rgba(255,255,255,.78); }}
-    .showcase-strip {{
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 1px;
-      padding-top: 0;
-      padding-bottom: 0;
-      background: var(--secondary);
-    }}
-    .showcase-strip div {{
-      padding: 28px;
-      background: white;
-    }}
-    .showcase-strip b {{ display: block; font-size: 22px; margin-bottom: 8px; }}
-    .showcase-strip span {{ color: var(--muted); line-height: 1.45; }}
-    .split-feature {{
-      display: grid;
-      grid-template-columns: minmax(240px, .5fr) minmax(0, 1fr);
-      gap: 26px;
-      padding-top: 68px;
-      padding-bottom: 68px;
-    }}
-    .split-feature .cards {{ padding: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }}
-    .action-hero {{
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
-      gap: 34px;
-      padding-top: 68px;
-      padding-bottom: 68px;
-      background:
-        linear-gradient(120deg, var(--action-overlay-a) 0 54%, var(--action-overlay-b) 54% 100%),
-        var(--hero-photo);
-      background-size: cover;
-      background-position: center;
-      color: white;
-    }}
-    .action-hero h1, .action-hero p, .action-hero .eyebrow {{ color: white; }}
-    .stage-hero .site-anchors span, .action-hero .site-anchors span {{ color: rgba(255,255,255,.72); }}
-    .stage-hero .site-anchors b, .action-hero .site-anchors b {{
-      color: white;
-      background: rgba(255,255,255,.14);
-      border-color: rgba(255,255,255,.28);
-    }}
-    .action-card {{ align-self: center; max-width: 820px; }}
-    .schedule-stack {{ display: grid; gap: 14px; align-content: center; }}
-    .schedule-stack div {{
-      background: white;
-      color: var(--ink);
-      border-radius: 8px;
-      padding: 22px;
-      box-shadow: 0 18px 60px rgba(7,16,72,.18);
-    }}
-    .schedule-stack span {{ color: var(--accent); font-weight: 900; }}
-    .schedule-stack b {{ display: block; font-size: 24px; margin-top: 8px; }}
-    .cards.angled {{ background: white; transform: skewY(-1deg); transform-origin: left top; }}
-    .cards.angled .cards__card {{ transform: skewY(1deg); }}
-    .trust-hero {{ background: #f5fbfb; }}
-    .parent-checklist p {{
-      padding: 16px 0;
-      border-bottom: 1px solid var(--line);
-      font-weight: 750;
-      color: var(--ink);
-    }}
-    .process-row {{
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-      padding-top: 0;
-      padding-bottom: 42px;
-      background: #f5fbfb;
-    }}
-    .process-row div {{
-      background: white;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 22px;
-    }}
-    .process-row b {{
-      display: inline-grid;
-      place-items: center;
-      width: 36px;
-      height: 36px;
-      border-radius: 999px;
-      background: var(--accent);
-      color: white;
-      margin-right: 10px;
-    }}
-    .admissions-hero {{ background: linear-gradient(180deg, #f7fbff, #eef6ff); }}
-    .admissions-board ol {{ margin: 10px 0 0; padding-left: 22px; color: var(--ink); line-height: 1.8; font-weight: 750; }}
-    .warm-hero {{
-      background:
-        linear-gradient(90deg, #ffffff 0 58%, var(--soft) 58% 100%);
-    }}
-    .classroom-collage {{
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-    }}
-    .classroom-collage div {{
-      min-height: 160px;
-      border-radius: 8px;
-      padding: 18px;
-      display: flex;
-      align-items: end;
-      color: white;
-      font-weight: 850;
-      background-image:
-        linear-gradient(180deg, rgba(7,16,72,.04), rgba(7,16,72,.7)),
-        var(--photo);
-      background-size: cover;
-      background-position: center;
-    }}
-    .classroom-collage div:first-child {{ grid-row: span 2; min-height: 334px; }}
     .concept-note {{
       font-size: 13px;
       color: #667085;
@@ -1682,21 +2027,21 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     }}
     @media (max-width: 900px) {{
       nav {{ display: none; }}
-      .studio-hero, .trust-hero, .warm-hero, .admissions-hero,
-      .stage-hero, .action-hero, .split-feature,
-      .teacher-band, .cta-band, .impact-band, .comparison-band, .visit-band,
-      .enrollment-panel, .strategy-note {{
+      .day-timeline__strip, .admissions-path__steps, .stat-block__row, .showcase-marquee__row,
+      .parent-qa__grid, .explorer-spotlight__layout, .community-reasons__row,
+      .collective-lineup__row, .camp-calendar__row, .team-roster__row {{
         grid-template-columns: 1fr;
       }}
-      .cards {{ grid-template-columns: 1fr 1fr; }}
-      .strategy-grid {{ grid-template-columns: 1fr; }}
-      .showcase-strip, .process-row {{ grid-template-columns: 1fr; }}
+      .admissions-path__steps::before {{ display: none; }}
+      .enrollment-panel {{ grid-template-columns: 1fr; }}
+      .stat-block__row div, .showcase-marquee__row article {{ border: 0; border-top: 1px solid rgba(255,255,255,.16); }}
+      .stat-block__row div:first-child, .showcase-marquee__row article:first-child {{ border-top: 0; }}
+      .team-roster__row div {{ border-top: 1px solid rgba(255,255,255,.14); }}
     }}
     @media (max-width: 580px) {{
-      .cards, .split-feature .cards {{ grid-template-columns: 1fr; }}
-      .hero-actions {{ align-items: stretch; }}
+      .hero-bleed {{ min-height: 72vh; }}
       .primary {{ width: 100%; }}
-      h1 {{ font-size: 44px; }}
+      h1 {{ font-size: 40px; }}
     }}
   </style>
 </head>
@@ -1706,12 +2051,10 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       <div class="brand"><span class="brand-mark">{escaped_name[:1] or "P"}</span>{escaped_name}</div>
       <nav>
         <a href="#programs">Programs</a>
-        <a href="#about">What changed</a>
         <a href="#next-step" class="nav-cta">Start enrollment</a>
       </nav>
     </header>
 {body}
-{strategy_note}
     <div class="concept-note">
       Website concept prepared by Pontora for {escaped_name} after reviewing the current public site. This is a preview, not the live website.
     </div>
@@ -1758,11 +2101,12 @@ def _render_candidate(lead: dict, output_dir: Path, base_url: str) -> list[dict]
         f"{variant.type_id}-{variant.version_id}": variant
         for variant in website_mocks.variants_for(mock_type, _clean(lead.get("website_mock_versions")))
     }
-    site_anchor_labels = []
+    site_signal = {"labels": [], "quote": ""}
     if variants:
-        site_anchor_labels = _site_anchors_for_lead(lead, next(iter(variants.values())))
+        site_signal = _site_signal_for_lead(lead, next(iter(variants.values())))
     render_lead = dict(lead)
-    render_lead["_website_mock_site_anchors"] = site_anchor_labels
+    render_lead["_website_mock_site_anchors"] = site_signal["labels"]
+    render_lead["_website_mock_site_quote"] = site_signal["quote"]
 
     for item in payload:
         variant_key = f"{item['type']}-{item['version']}"

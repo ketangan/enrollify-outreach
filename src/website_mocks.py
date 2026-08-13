@@ -38,7 +38,7 @@ MOCK_TEMPLATE_ID = "website_mock_followup_addendum"
 
 DEFAULT_ADDENDUM_TEMPLATE = (
     "<p style=\"margin-top:18px;\"><strong>P.S.</strong> While looking at "
-    "{{school_name}}'s enrollment flow, I also mocked up two quick examples "
+    "{{school_name}}'s enrollment flow, I also mocked up a few quick examples "
     "of how a cleaner, enrollment-ready website refresh could look. Totally "
     "optional, but it may be useful:</p>{{mock_links_html}}"
 )
@@ -63,8 +63,8 @@ MOCK_VARIANTS: dict[str, list[MockVariant]] = {
             label="Warm parent-first preschool concept",
             short_label="Warm preschool concept",
             tagline="A softer homepage focused on trust, programs, and parent inquiries.",
-            accent="#14b8a6",
-            secondary="#102a5c",
+            accent="#ef7b5a",
+            secondary="#33513f",
         ),
         MockVariant(
             type_id="preschool",
@@ -72,8 +72,26 @@ MOCK_VARIANTS: dict[str, list[MockVariant]] = {
             label="Structured admissions preschool concept",
             short_label="Structured admissions concept",
             tagline="A clearer admissions flow with program paths and a direct enrollment CTA.",
-            accent="#2563eb",
-            secondary="#08104d",
+            accent="#b4863a",
+            secondary="#1c2e42",
+        ),
+        MockVariant(
+            type_id="preschool",
+            version_id="explorer",
+            label="Hands-on exploration preschool concept",
+            short_label="Explorer concept",
+            tagline="A curiosity-led homepage built around this week's theme, not a static brochure.",
+            accent="#5b8a3a",
+            secondary="#1f4d5c",
+        ),
+        MockVariant(
+            type_id="preschool",
+            version_id="community",
+            label="Community-first preschool concept",
+            short_label="Community concept",
+            tagline="A homepage built around why families stay for years, not just the first tour.",
+            accent="#c65a7a",
+            secondary="#4a3728",
         ),
     ],
     "music": [
@@ -83,8 +101,8 @@ MOCK_VARIANTS: dict[str, list[MockVariant]] = {
             label="Modern music studio concept",
             short_label="Modern studio concept",
             tagline="A clean studio site with lessons, teacher credibility, and easy inquiries.",
-            accent="#14b8a6",
-            secondary="#08104d",
+            accent="#d99a4e",
+            secondary="#2b2140",
         ),
         MockVariant(
             type_id="music",
@@ -92,8 +110,26 @@ MOCK_VARIANTS: dict[str, list[MockVariant]] = {
             label="Performance-focused music concept",
             short_label="Performance concept",
             tagline="A richer layout for programs, showcases, and trial lesson signups.",
-            accent="#0f5db8",
-            secondary="#111827",
+            accent="#e8b24a",
+            secondary="#2c1420",
+        ),
+        MockVariant(
+            type_id="music",
+            version_id="collective",
+            label="Group and ensemble music concept",
+            short_label="Collective concept",
+            tagline="A homepage built around playing together, not just one-on-one lessons.",
+            accent="#4a90a4",
+            secondary="#1a2f38",
+        ),
+        MockVariant(
+            type_id="music",
+            version_id="academy",
+            label="Structured curriculum music concept",
+            short_label="Academy concept",
+            tagline="A grade-by-grade progression path for families who want a clear curriculum.",
+            accent="#a8763e",
+            secondary="#20222b",
         ),
     ],
     "sports": [
@@ -103,8 +139,8 @@ MOCK_VARIANTS: dict[str, list[MockVariant]] = {
             label="Action-forward sports program concept",
             short_label="Action-forward concept",
             tagline="A bold first impression with programs, ages, and trial-class calls to action.",
-            accent="#0f5db8",
-            secondary="#08104d",
+            accent="#ef7b32",
+            secondary="#17202b",
         ),
         MockVariant(
             type_id="sports",
@@ -112,8 +148,26 @@ MOCK_VARIANTS: dict[str, list[MockVariant]] = {
             label="Trust-first sports academy concept",
             short_label="Trust-first concept",
             tagline="A calmer layout for coaches, safety, schedules, and parent confidence.",
-            accent="#14b8a6",
+            accent="#2e9c73",
             secondary="#12312f",
+        ),
+        MockVariant(
+            type_id="sports",
+            version_id="camp",
+            label="Seasonal camps and clinics concept",
+            short_label="Camps concept",
+            tagline="A homepage built around this season's calendar, not a generic program list.",
+            accent="#f2b705",
+            secondary="#1d5c63",
+        ),
+        MockVariant(
+            type_id="sports",
+            version_id="team",
+            label="Competitive team-identity concept",
+            short_label="Team concept",
+            tagline="A roster-and-achievement layout for families who care about the competitive path.",
+            accent="#c81e4b",
+            secondary="#151b2e",
         ),
     ],
 }
@@ -148,11 +202,14 @@ def parse_versions(raw_versions: str) -> list[str]:
     raw = _clean(raw_versions)
     if not raw or raw.lower() == "auto":
         return []
-    return [
-        part.strip().lower().replace(" ", "_")
-        for part in re.split(r"[,|]", raw)
-        if part.strip()
-    ]
+    seen: set[str] = set()
+    versions = []
+    for part in re.split(r"[,|]", raw):
+        cleaned = part.strip().lower().replace(" ", "_")
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            versions.append(cleaned)
+    return versions
 
 
 def variants_for(mock_type: str, raw_versions: str = "") -> list[MockVariant]:
@@ -160,10 +217,10 @@ def variants_for(mock_type: str, raw_versions: str = "") -> list[MockVariant]:
     variants = MOCK_VARIANTS[normalized]
     wanted = parse_versions(raw_versions)
     if not wanted:
-        return variants[:2]
+        return variants[:4]
     by_id = {v.version_id: v for v in variants}
     selected = [by_id[v] for v in wanted if v in by_id]
-    return selected or variants[:2]
+    return selected or variants[:4]
 
 
 def is_mock_candidate(lead: dict) -> bool:
@@ -316,10 +373,15 @@ def render_followup_addendum(
     ctx = {
         "school_name": html.escape(school_name),
         "mock_links_html": mock_links_html,
-        "website_mock_url": html.escape(links[0]["url"], quote=True),
-        "website_mock_url_1": html.escape(links[0]["url"], quote=True),
-        "website_mock_url_2": html.escape(links[1]["url"], quote=True) if len(links) > 1 else "",
     }
+    # Legacy numbered placeholders for custom Sheet templates that reference
+    # individual links instead of {{mock_links_html}}. Covers up to 4 since
+    # that's the current default variant count per category.
+    ctx["website_mock_url"] = html.escape(links[0]["url"], quote=True)
+    for idx in range(1, 5):
+        ctx[f"website_mock_url_{idx}"] = (
+            html.escape(links[idx - 1]["url"], quote=True) if len(links) >= idx else ""
+        )
     for key, value in ctx.items():
         body = body.replace("{{" + key + "}}", str(value or ""))
     return body
