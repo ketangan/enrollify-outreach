@@ -56,17 +56,26 @@ EMAIL_BLOCKLIST_RE = re.compile("|".join(EMAIL_BLOCKLIST), re.IGNORECASE)
 # Pages we try to fetch to find owner info
 OWNER_PAGE_PATTERNS = [
     r"about",
+    r"history",
+    r"philosophy",
     r"team",
     r"staff",
     r"faculty",
     r"teacher",
     r"teachers",
+    r"caregiver",
+    r"caregivers",
     r"parent",
     r"parents",
     r"famil(?:y|ies)",
     r"prospective[-_\s]?famil(?:y|ies)",
     r"welcome",
     r"contact",
+    r"get[-_\s]?in[-_\s]?touch",
+    r"application",
+    r"admissions?",
+    r"enroll(?:ment)?",
+    r"tour",
     r"our[-_\s]?story",
     r"who[-_\s]?we[-_\s]?are",
     r"leadership",
@@ -89,8 +98,23 @@ OWNER_PAGE_PATTERNS = [
 COMMON_OWNER_PATHS = [
     "/contact",
     "/contact-us",
+    "/application-process",
+    "/application",
+    "/applications",
+    "/admissions",
+    "/admission",
+    "/enrollment",
+    "/enroll",
+    "/schedule-a-tour",
+    "/tour",
     "/about",
     "/about-us",
+    "/our-history-and-philosophy",
+    "/history-and-philosophy",
+    "/our-history",
+    "/history",
+    "/our-philosophy",
+    "/philosophy",
     "/team",
     "/staff",
     "/meet-the-team",
@@ -105,6 +129,8 @@ COMMON_OWNER_PATHS = [
     "/prospective-family",
     "/welcome",
     "/instructors",
+    "/our-caregivers",
+    "/caregivers",
 ]
 
 
@@ -145,7 +171,7 @@ OWNER_CONTEXT_RE = re.compile(
     r"\b("
     r"about me|teacher|educator|provider|director|owner|founder|principal|"
     r"head of school|opened|opening|started|founded|licensed child care|"
-    r"licensed childcare|preschool|school|studio|academy|program"
+    r"owned|operated|licensed childcare|preschool|school|studio|academy|program"
     r")\b",
     re.IGNORECASE,
 )
@@ -153,7 +179,9 @@ OWNER_EXCERPT_RE = re.compile(
     r"\b("
     r"about me|meet|owner|provider|director|founder|principal|head of school|"
     r"executive director|teacher|parents|families|prospective family|"
-    r"sincerely|welcome|my name is|i am|i'm|i’m|contact|email"
+    r"history|philosophy|owned|operated|sincerely|welcome|my name is|"
+    r"i am|i'm|i’m|contact|email|application|admissions?|enrollment|"
+    r"tour|get in touch"
     r")\b",
     re.IGNORECASE,
 )
@@ -192,6 +220,11 @@ NON_PERSON_NAME_WORDS = {
     "team",
     "teacher",
     "today",
+    "llc",
+    "inc",
+    "corp",
+    "corporation",
+    "company",
     "us",
     "will",
     "your",
@@ -366,6 +399,25 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
         r"\b(?P<title>owner|provider|founder|director|principal|head\s+of\s+school)\b",
         re.IGNORECASE,
     )
+    ownership_action_patterns = [
+        (
+            re.compile(
+                rf"\b(?:is\s+)?(?:owned\s+and\s+operated|owned|operated)\s+by\s+"
+                rf"{PERSON_NAME}\b",
+                re.IGNORECASE,
+            ),
+            "Owner",
+            "owned_operated_by_pattern",
+        ),
+        (
+            re.compile(
+                rf"\b(?:was\s+)?(?:founded|started|opened)\s+by\s+{PERSON_NAME}\b",
+                re.IGNORECASE,
+            ),
+            "Founder",
+            "founded_by_pattern",
+        ),
+    ]
     compound_director_patterns = [
         re.compile(
             rf"{short_or_full_name}\s+"
@@ -396,6 +448,17 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
         text = page.text or ""
         if not text:
             continue
+
+        for pattern, title, reason in ownership_action_patterns:
+            for match in pattern.finditer(text):
+                name = _clean_owner_name(match.group(1))
+                if name:
+                    return OwnerCandidate(
+                        name=name,
+                        title=title,
+                        source_url=page.url,
+                        reason=reason,
+                    )
 
         for pattern in compound_director_patterns:
             for match in pattern.finditer(text):
@@ -567,7 +630,46 @@ def _extract_profile_links(pages: list[fetcher.FetchedPage]) -> list[str]:
     return profile_links
 
 
-def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 3) -> list[str]:
+def _owner_probe_base_urls(home_url: str) -> list[str]:
+    """
+    Return origin and path-prefixed bases for direct owner-page probes.
+
+    Wix free sites often live under paths like /my-site, so probing only
+    https://subdomain.wixsite.com/contact misses the real
+    https://subdomain.wixsite.com/my-site/contact-style pages.
+    """
+    try:
+        parsed = urlparse(home_url)
+    except Exception:
+        return []
+
+    host = parsed.netloc.lower().lstrip("www.")
+    if not host:
+        return []
+
+    scheme = parsed.scheme or "https"
+    origin = f"{scheme}://{host}"
+    bases: list[str] = []
+
+    path = parsed.path.rstrip("/")
+    if path and path != "/":
+        last_segment = path.rsplit("/", 1)[-1]
+        if "." not in last_segment:
+            bases.append(origin + path)
+
+    bases.append(origin)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for base in bases:
+        if base in seen:
+            continue
+        seen.add(base)
+        deduped.append(base)
+    return deduped
+
+
+def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 4) -> list[str]:
     """
     Identify About/Team/Contact-style links on the homepage.
 
@@ -587,11 +689,13 @@ def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 3) -> list[str]
         base_host = ""
 
     # --- Pass 1: from homepage outbound links -------------------------------
-    # Score outbound links: contact/team/teachers/parents get priority over about/philosophy.
-    # Reason: contact pages have emails; about/philosophy pages have names. We
-    # need both, but if max_pages=3 forces a choice, contact wins.
+    # Score outbound links: contact/application/team/history-style pages get
+    # priority over generic about pages because they tend to contain emails,
+    # senior staff, or owner/operator bios.
     PRIORITY_KEYWORDS = re.compile(
-        r"contact|team|staff|faculty|teacher|parent|famil(?:y|ies)|meet|people",
+        r"contact|application|admissions?|enroll(?:ment)?|tour|"
+        r"team|staff|faculty|teacher|caregiver|parent|famil(?:y|ies)|"
+        r"history|philosophy|meet|people|get[-_\s]?in[-_\s]?touch",
         re.IGNORECASE,
     )
 
@@ -634,34 +738,36 @@ def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 3) -> list[str]
     # but each fetcher call is timeout-protected (~12s) and short-circuits on
     # 404/non-HTML.
     if base_host:
-        scheme = "https"
-        try:
-            scheme = urlparse(home.url).scheme or "https"
-        except Exception:
-            pass
-        base_url = f"{scheme}://{base_host}"
-
+        base_urls = _owner_probe_base_urls(home.url)
         for path in COMMON_OWNER_PATHS:
             if len(picked) >= max_pages:
                 break
-            if path.rstrip("/").lower() in picked_paths:
-                continue  # already got it from outbound links
-            probe_url = base_url + path
-            probed = fetcher.fetch(probe_url)
-            # Only count it if the fetch actually succeeded and returned HTML
-            if probed.error:
-                continue
-            if probed.status_code != 200:
-                continue
-            # If the probe redirected away from base host, skip
-            try:
-                probed_host = urlparse(probed.url).netloc.lower().lstrip("www.")
-                if probed_host != base_host:
+            for base_url in base_urls:
+                if len(picked) >= max_pages:
+                    break
+                probe_url = base_url + path
+                try:
+                    probe_path = urlparse(probe_url).path.rstrip("/").lower()
+                except Exception:
+                    probe_path = path.rstrip("/").lower()
+                if probe_path in picked_paths:
+                    continue  # already got it from outbound links
+                probed = fetcher.fetch(probe_url)
+                # Only count it if the fetch actually succeeded and returned HTML
+                if probed.error:
                     continue
-            except Exception:
-                continue
-            picked.append(probe_url)
-            picked_paths.add(path.rstrip("/").lower())
+                if probed.status_code != 200:
+                    continue
+                # If the probe redirected away from base host, skip
+                try:
+                    probed_host = urlparse(probed.url).netloc.lower().lstrip("www.")
+                    if probed_host != base_host:
+                        continue
+                except Exception:
+                    continue
+                picked.append(probe_url)
+                picked_paths.add(probe_path)
+                break
 
     return picked
 
@@ -752,7 +858,7 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
         )
 
     pages = [home]
-    sub_urls = find_owner_pages(home, max_pages=3)
+    sub_urls = find_owner_pages(home, max_pages=4)
     for sub in sub_urls:
         fetched = fetcher.fetch(sub)
         if not fetched.error:

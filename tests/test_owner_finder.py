@@ -65,6 +65,84 @@ def test_find_owner_recovers_hidden_garden_first_person_bio(monkeypatch):
     assert "deterministic_email_fallback" in result.reason
 
 
+def test_find_owner_recovers_discovery_garden_wix_history_and_application_pages(monkeypatch):
+    base = "https://discoverygardenece.wixsite.com/my-site"
+    history_url = f"{base}/our-history-and-philosophy"
+    application_url = f"{base}/application-process"
+    about_url = f"{base}/about-us"
+    caregivers_url = f"{base}/our-caregivers"
+    history_text = (
+        "Our History Although recently established in 2022, the Discovery "
+        "Garden family child care has roots that are deeply embedded within "
+        "the child development realm. Discovery Garden is owned and operated "
+        "by Lisset Gutierrez, a child development specialist of nearly 20 years."
+    )
+    application_text = (
+        "Application Process Take the first step to joining our family at "
+        "Discovery Garden and contact us to schedule your tour now. "
+        "Email: DiscoveryGarden.ECE@gmail.com"
+    )
+
+    def fake_fetch(url):
+        normalized = url.rstrip("/")
+        if normalized == base:
+            return FetchedPage(
+                url=base,
+                status_code=200,
+                text="Discovery Garden, LLC",
+                outbound_links=[
+                    {"href": about_url, "text": "About Us"},
+                    {
+                        "href": history_url,
+                        "text": "Our History and Philosophy",
+                    },
+                    {"href": caregivers_url, "text": "Our Caregivers"},
+                    {"href": application_url, "text": "Application Process"},
+                ],
+            )
+        if normalized == history_url:
+            return FetchedPage(
+                url=history_url,
+                status_code=200,
+                text=history_text,
+                raw_html_snippet=history_text.lower(),
+            )
+        if normalized == application_url:
+            return FetchedPage(
+                url=application_url,
+                status_code=200,
+                text=application_text,
+                raw_html_snippet=application_text.lower(),
+            )
+        if normalized in {about_url, caregivers_url}:
+            return FetchedPage(
+                url=normalized,
+                status_code=200,
+                text="Discovery Garden program overview",
+                raw_html_snippet="discovery garden program overview",
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+
+    result = owner_finder.find_owner(
+        base,
+        _FakeClient(),
+        name="Discovery Garden, LLC",
+        category="preschool",
+        city="Hawthorne",
+        state="CA",
+    )
+
+    assert result.owner_name == "Lisset Gutierrez"
+    assert result.owner_title == "Owner"
+    assert result.owner_source_url == history_url
+    assert result.best_email == "discoverygarden.ece@gmail.com"
+    assert result.email_confidence == "medium"
+    assert "deterministic_owner:owned_operated_by_pattern" in result.reason
+    assert "deterministic_email_fallback" in result.reason
+
+
 def test_find_owner_recovers_signed_owner_from_parents_page(monkeypatch):
     parent_text = (
         "Welcome to our Parents' Corner Dear Prospective Family. "
@@ -266,6 +344,33 @@ def test_find_owner_pages_treats_parents_and_teachers_as_owner_pages():
         "https://example-school.test/parents",
         "https://example-school.test/teachers-2/",
     ]
+
+
+def test_find_owner_pages_probes_path_prefixed_wix_common_paths(monkeypatch):
+    home = FetchedPage(
+        url="https://discoverygardenece.wixsite.com/my-site",
+        status_code=200,
+        outbound_links=[],
+    )
+    successful_urls = {
+        "https://discoverygardenece.wixsite.com/my-site/application-process",
+        "https://discoverygardenece.wixsite.com/my-site/our-history-and-philosophy",
+    }
+    fetched_urls = []
+
+    def fake_fetch(url):
+        fetched_urls.append(url)
+        if url in successful_urls:
+            return FetchedPage(url=url, status_code=200, text="ok")
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+
+    assert owner_finder.find_owner_pages(home, max_pages=2) == [
+        "https://discoverygardenece.wixsite.com/my-site/application-process",
+        "https://discoverygardenece.wixsite.com/my-site/our-history-and-philosophy",
+    ]
+    assert "https://discoverygardenece.wixsite.com/application-process" not in fetched_urls
 
 
 def test_pick_best_email_prefers_owner_named_email():
