@@ -79,6 +79,9 @@
       <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
       <input type="hidden" name="mode" value="{{ mode }}">
       <input type="hidden" name="action_type" value="save">
+      <input type="hidden" name="mock_checkbox_present" value="1">
+      <input type="hidden" name="mock_type" value="{{ lead_mock_type }}">
+      <input type="hidden" name="versions" value="{{ lead_mock_versions }}">
 
       <label>
         School name
@@ -110,22 +113,12 @@
         </label>
       {% endif %}
 
-      <div class="review-actions">
-        <button type="submit" class="btn-primary">Save &amp; next</button>
-        {% if mode == 'owner' %}
-          <button type="submit"
-                  class="btn-secondary-action"
-                  onclick="if(!this.form.best_email.value.trim()){alert('Best email is required before approving without owner.'); return false;} this.form.action_type.value='approve_without_owner';"
-                  title="Move to ready_to_send with a blank owner. The email draft will start with Hi there.">
-            Approve without owner
-          </button>
-        {% endif %}
-      </div>
-    </form>
-
-    <div class="mock-controls">
-      <div>
+      <div class="mock-controls">
         <strong>Website mock</strong>
+        <label class="mock-checkbox">
+          <input type="checkbox" name="website_mock_candidate" value="yes" {% if lead_mock_checked %}checked{% endif %}>
+          <span>Generate mock for this school</span>
+        </label>
         <p class="school-meta">
           Status:
           {% if lead_mock_suggested %}
@@ -147,29 +140,25 @@
           </p>
         {% endif %}
       </div>
-      <form method="POST" action="/review/mock" class="mock-form">
-        <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
-        <input type="hidden" name="mode" value="{{ mode }}">
-        <select name="mock_type" aria-label="Website mock type">
-          {% for opt in mock_type_options %}
-            <option value="{{ opt }}" {% if opt == lead_mock_type %}selected{% endif %}>{{ opt }}</option>
-          {% endfor %}
-        </select>
-        <input type="text" name="versions" value="{{ lead.get('website_mock_versions', '') or 'auto' }}" aria-label="Website mock versions">
-        <button type="submit"
-                name="action_type"
-                value="website_mock_candidate"
-                class="btn-mock">
-          {% if lead_mock_suggested %}Approve mock{% else %}Mark mock{% endif %}
-        </button>
-        <button type="submit"
-                name="action_type"
-                value="website_mock_skip"
-                class="btn-mock-secondary">
-          Skip mock
-        </button>
-      </form>
-    </div>
+
+      <div class="review-actions">
+        <button type="submit" class="btn-primary">Save &amp; next</button>
+        {% if mode == 'owner' %}
+          <button type="submit"
+                  class="btn-secondary-action"
+                  onclick="if(!confirm('Mark as contacted through the website contact form?')) return false; this.form.action_type.value='form_submitted';"
+                  title="Set status=sent and skip Gmail follow-up because outreach happened through the website form.">
+            Form sent
+          </button>
+          <button type="submit"
+                  class="btn-secondary-action"
+                  onclick="if(!this.form.best_email.value.trim()){alert('Best email is required before approving without owner.'); return false;} this.form.action_type.value='approve_without_owner';"
+                  title="Move to ready_to_send with a blank owner. The email draft will start with Hi there.">
+            Approve without owner
+          </button>
+        {% endif %}
+      </div>
+    </form>
 
     <div class="review-secondary">
       {% if prev_id %}
@@ -239,6 +228,7 @@
       <th>Owner Name</th>
       <th>Email</th>
       <th>Enrollment Method</th>
+      <th>Mock</th>
       <th></th>
     </tr>
   </thead>
@@ -255,6 +245,9 @@
         <input type="hidden" name="mode" value="{{ mode }}">
         <input type="hidden" name="page" value="{{ grid_page }}">
         <input type="hidden" name="action_type" value="save">
+        <input type="hidden" name="mock_checkbox_present" value="1">
+        <input type="hidden" name="mock_type" value="{{ r.get('_mock_type_default', '') }}">
+        <input type="hidden" name="versions" value="{{ r.get('_mock_versions_default', 'auto') }}">
         <td>
           <div class="school-name">{{ r.get("name", "") }}</div>
           <div class="school-meta">
@@ -279,6 +272,13 @@
             {% endfor %}
           </select>
         </td>
+        <td style="text-align:center;">
+          <input type="checkbox"
+                 name="website_mock_candidate"
+                 value="yes"
+                 {% if r.get('_mock_checked') %}checked{% endif %}
+                 title="Generate mock for this school">
+        </td>
         <td style="white-space: nowrap;">
           <button type="submit" class="btn-save-row">Save</button>
           {% if mode == 'owner' %}
@@ -289,12 +289,6 @@
             No owner OK
           </button>
           {% endif %}
-          <button type="submit"
-                  class="btn-mock-row"
-                  onclick="this.form.action_type.value='website_mock_candidate';"
-                  title="Mark this lead for optional website mock generation">
-            Mock
-          </button>
           <button type="submit"
                   class="btn-form-row"
                   onclick="if(!confirm('Mark as contacted through the website contact form?')) return false; this.form.action_type.value='form_submitted';"

@@ -15,7 +15,7 @@ Endpoints:
   POST /review/skip           → Skip from top card
   POST /review/dnc            → Mark do-not-contact from top card
   POST /review/grid-update    → Inline edit from bottom grid (Save, no-owner OK,
-                                contact form sent, OR DNC)
+                                contact form sent, mock checkbox, OR DNC)
   POST /review/clear-skipped  → Reset session skip list
 """
 
@@ -245,6 +245,59 @@ def _manual_contact_form_updates(
     }
 
 
+def _mock_checkbox_updates(
+    lead: dict,
+    checked: bool,
+    *,
+    mock_type: str = "",
+    versions: str = "auto",
+) -> dict:
+    """Return idempotent mock-candidate updates for the review checkbox."""
+    candidate = _clean_form_value(lead.get("website_mock_candidate")).lower()
+    status = _clean_form_value(lead.get("website_mock_status")).lower()
+    if checked:
+        if candidate == "yes" and status not in {"skip", "needs_review"}:
+            return {}
+        return website_mocks.candidate_updates(
+            mock_type or _clean_form_value(lead.get("website_mock_type")),
+            versions or _clean_form_value(lead.get("website_mock_versions")) or "auto",
+            category=_clean_form_value(lead.get("category")),
+            existing_notes=_clean_form_value(lead.get("website_mock_notes")),
+        )
+
+    if candidate in {"", "no"} and status in {"", "skip"}:
+        return {}
+    return website_mocks.skip_updates(
+        existing_notes=_clean_form_value(lead.get("website_mock_notes")),
+    )
+
+
+def _merge_mock_checkbox_updates(
+    lead_id: str,
+    updates: dict,
+    *,
+    mock_checkbox_present: str = "",
+    website_mock_candidate: str = "no",
+    mock_type: str = "",
+    versions: str = "auto",
+) -> dict:
+    if not isinstance(mock_checkbox_present, str) or not mock_checkbox_present.strip():
+        return updates
+    _ensure_mock_headers()
+    lead = _find_lead_by_id(lead_id) or {}
+    mock_updates = _mock_checkbox_updates(
+        lead,
+        _clean_form_value(website_mock_candidate).lower() in {"1", "true", "yes", "y", "on"},
+        mock_type=mock_type,
+        versions=versions,
+    )
+    # Keep the primary review action as last_action; the checkbox is secondary
+    # state saved with the same form.
+    mock_updates.pop("last_action", None)
+    updates.update(mock_updates)
+    return updates
+
+
 def _demote_duplicate_review_rows(rows: list[dict]) -> int:
     """
     Hide and repair stale review rows when another duplicate row has already
@@ -355,6 +408,8 @@ def review_view(
     lead_mock_links = []
     lead_mock_suggested = False
     lead_mock_note = ""
+    lead_mock_checked = False
+    lead_mock_versions = "auto"
     if lead:
         lead_mock_type = website_mocks.normalize_mock_type(
             str(lead.get("website_mock_type", "")).strip(),
@@ -363,6 +418,8 @@ def review_view(
         lead_mock_links = website_mocks.generated_mock_links(lead)
         lead_mock_suggested = website_mocks.is_mock_suggested(lead)
         lead_mock_note = website_mocks.latest_mock_note(lead)
+        lead_mock_checked = website_mocks.is_mock_candidate(lead) or lead_mock_suggested
+        lead_mock_versions = _clean_form_value(lead.get("website_mock_versions")) or "auto"
 
     # Grid: all leads matching current mode, sorted, paginated
     grid_leads = [r for r in rows if _matches_mode(r, mode)]
@@ -378,7 +435,19 @@ def review_view(
     total_pages = max(1, (total_grid + GRID_PAGE_SIZE - 1) // GRID_PAGE_SIZE)
     page = max(1, min(page, total_pages))
     start = (page - 1) * GRID_PAGE_SIZE
-    grid_page = grid_leads[start:start + GRID_PAGE_SIZE]
+    grid_page = []
+    for row in grid_leads[start:start + GRID_PAGE_SIZE]:
+        copied = dict(row)
+        copied["_mock_checked"] = (
+            website_mocks.is_mock_candidate(copied)
+            or website_mocks.is_mock_suggested(copied)
+        )
+        copied["_mock_type_default"] = website_mocks.normalize_mock_type(
+            _clean_form_value(copied.get("website_mock_type")),
+            category=_clean_form_value(copied.get("category")),
+        )
+        copied["_mock_versions_default"] = _clean_form_value(copied.get("website_mock_versions")) or "auto"
+        grid_page.append(copied)
 
     return templates.TemplateResponse(
         request,
@@ -404,6 +473,8 @@ def review_view(
             "lead_mock_links": lead_mock_links,
             "lead_mock_suggested": lead_mock_suggested,
             "lead_mock_note": lead_mock_note,
+            "lead_mock_checked": lead_mock_checked,
+            "lead_mock_versions": lead_mock_versions,
         },
     )
 
@@ -415,6 +486,10 @@ def review_save(
     owner_name: str = Form(""),
     best_email: str = Form(""),
     enrollment_method: str = Form(""),
+    mock_checkbox_present: str = Form(""),
+    website_mock_candidate: str = Form("no"),
+    mock_type: str = Form(""),
+    versions: str = Form("auto"),
     action_type: str = Form("save"),
     mode: str = Form(MODE_OWNER),
     review_history: str = Cookie(default=None),
@@ -427,7 +502,17 @@ def review_save(
     enrollment_method = enrollment_method.strip()
     action_type = action_type.strip()
 
-    if mode == MODE_CLASSIFY:
+    if action_type == MANUAL_CONTACT_FORM_ACTION:
+        lead = _find_lead_by_id(lead_id) or {}
+        updates = _manual_contact_form_updates(str(lead.get("notes", "")))
+        if owner_name:
+            updates["owner_name"] = owner_name
+        if best_email:
+            updates["best_email"] = best_email
+            updates["email_confidence"] = "manual"
+        if enrollment_method:
+            updates["enrollment_method"] = enrollment_method
+    elif mode == MODE_CLASSIFY:
         updates: dict = {"last_action": "review_classified"}
         if enrollment_method:
             updates["enrollment_method"] = enrollment_method
@@ -464,6 +549,15 @@ def review_save(
     # We don't promote status based on name alone; just record the edit.
     if name:
         updates["name"] = name
+
+    updates = _merge_mock_checkbox_updates(
+        lead_id,
+        updates,
+        mock_checkbox_present=mock_checkbox_present,
+        website_mock_candidate=website_mock_candidate,
+        mock_type=mock_type,
+        versions=versions,
+    )
 
     if not _update_lead_fields(lead_id, updates):
         logger.warning("review_save: lead %s not found", lead_id)
@@ -523,6 +617,10 @@ def review_grid_update(
     best_email: str = Form(""),
     enrollment_method: str = Form(""),
     website: str = Form(""),
+    mock_checkbox_present: str = Form(""),
+    website_mock_candidate: str = Form("no"),
+    mock_type: str = Form(""),
+    versions: str = Form("auto"),
     mode: str = Form(MODE_OWNER),
     page: int = Form(1),
     action_type: str = Form("save"),
@@ -585,6 +683,15 @@ def review_grid_update(
         if enrollment_method:
             updates["enrollment_method"] = enrollment_method
 
+        updates = _merge_mock_checkbox_updates(
+            lead_id,
+            updates,
+            mock_checkbox_present=mock_checkbox_present,
+            website_mock_candidate=website_mock_candidate,
+            mock_type=mock_type,
+            versions=versions,
+        )
+
         if not _update_lead_fields(lead_id, updates):
             logger.warning(
                 "review_grid_update (form_submitted): lead %s not found",
@@ -612,6 +719,15 @@ def review_grid_update(
         updates["status"] = "ready_to_send"
         if action_type == APPROVE_WITHOUT_OWNER_ACTION and not owner_name:
             updates["last_action"] = "review_grid_approved_without_owner"
+
+    updates = _merge_mock_checkbox_updates(
+        lead_id,
+        updates,
+        mock_checkbox_present=mock_checkbox_present,
+        website_mock_candidate=website_mock_candidate,
+        mock_type=mock_type,
+        versions=versions,
+    )
 
     if not _update_lead_fields(lead_id, updates):
         logger.warning("review_grid_update: lead %s not found", lead_id)
