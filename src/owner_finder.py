@@ -27,7 +27,7 @@ MAX_OUTPUT_TOKENS = 200
 
 # Regex for extracting email addresses from page text/HTML
 EMAIL_REGEX = re.compile(
-    r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+    r"[a-zA-Z0-9._%+-]+\s*@\s*[a-zA-Z0-9.-]+\s*\.\s*[a-zA-Z]{2,}",
 )
 
 # Addresses we don't want (images, placeholders, transactional)
@@ -72,6 +72,7 @@ OWNER_PAGE_PATTERNS = [
     r"welcome",
     r"contact",
     r"get[-_\s]?in[-_\s]?touch",
+    r"learn[-_\s]?more",
     r"application",
     r"admissions?",
     r"enroll(?:ment)?",
@@ -98,6 +99,8 @@ OWNER_PAGE_PATTERNS = [
 COMMON_OWNER_PATHS = [
     "/contact",
     "/contact-us",
+    "/learn-more",
+    "/learn-more.html",
     "/application-process",
     "/application",
     "/applications",
@@ -257,7 +260,7 @@ def _extract_emails(text: str) -> list[str]:
     cleaned = []
     seen = set()
     for email in found:
-        email_lower = email.lower()
+        email_lower = re.sub(r"\s+", "", email).lower()
         if email_lower in seen:
             continue
         if EMAIL_BLOCKLIST_RE.search(email_lower):
@@ -546,7 +549,7 @@ def _pick_best_email(emails: list[str], owner_name: str = "") -> str:
     first = owner_parts[0] if owner_parts else ""
     last = owner_parts[-1] if len(owner_parts) > 1 else ""
 
-    def score(email: str) -> tuple[int, int]:
+    def score(index: int, email: str) -> tuple[int, int]:
         local = email.split("@", 1)[0].lower()
         local_norm = _normalize_for_email(local)
 
@@ -568,9 +571,9 @@ def _pick_best_email(emails: list[str], owner_name: str = "") -> str:
             ):
                 return (20 + idx, len(email))
 
-        return (50, len(email))
+        return (50, index)
 
-    return min(emails, key=score)
+    return min(enumerate(emails), key=lambda item: score(item[0], item[1]))[1]
 
 
 def _page_excerpt_for_llm(text: str, max_chars: int = 4500) -> str:
@@ -694,6 +697,7 @@ def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 4) -> list[str]
     # senior staff, or owner/operator bios.
     PRIORITY_KEYWORDS = re.compile(
         r"contact|application|admissions?|enroll(?:ment)?|tour|"
+        r"learn[-_\s]?more|"
         r"team|staff|faculty|teacher|caregiver|parent|famil(?:y|ies)|"
         r"history|philosophy|meet|people|get[-_\s]?in[-_\s]?touch",
         re.IGNORECASE,

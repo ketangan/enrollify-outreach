@@ -204,6 +204,77 @@ def test_find_owner_recovers_fernando_daycare_contact_signature(monkeypatch):
     assert "deterministic_owner:title_anchor_owner_pattern" in result.reason
 
 
+def test_find_owner_recovers_hifi_preschool_spaced_contact_email(monkeypatch):
+    base = "http://www.hifipreschool.com"
+    learn_more_url = f"{base}/learn-more.html"
+    learn_more_text = (
+        "Learn More HI FI Infant Center & Afterschool Preschool "
+        "25527 Narbonne Ave. Lomita CA 90717 US +1.424.347.7272 "
+        "hifipreschool @gmail.com Thank you for contacting us! "
+        "Fill out the form below, and one of our admission specialists "
+        "will contact you."
+    )
+    captured_stage2 = {}
+
+    def fake_fetch(url):
+        normalized = url.rstrip("/")
+        if normalized == base:
+            return FetchedPage(
+                url=f"{base}/",
+                status_code=200,
+                text="Hi Fi Preschool Home Mission Program Photo Learn More",
+                outbound_links=[
+                    {"href": f"{base}/home.html", "text": "Home"},
+                    {"href": f"{base}/mission.html", "text": "Mission"},
+                    {"href": f"{base}/program.html", "text": "Program"},
+                    {"href": f"{base}/photo.html", "text": "Photo"},
+                    {"href": learn_more_url, "text": "Learn More"},
+                ],
+            )
+        if normalized == learn_more_url.rstrip("/"):
+            return FetchedPage(
+                url=learn_more_url,
+                status_code=200,
+                text=learn_more_text,
+                raw_html_snippet=(
+                    learn_more_text.lower()
+                    + ' <a href="mailto:lanajoo84@gmail.com"></a>'
+                ),
+                outbound_links=[
+                    {"href": "mailto:lanajoo84@gmail.com", "text": ""},
+                ],
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    def fake_stage2(**kwargs):
+        captured_stage2.update(kwargs)
+        return owner_finder.owner_web_search.Stage2Result(
+            reason="web_search:no_owner_found",
+        )
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+    monkeypatch.setattr(owner_finder.owner_web_search, "find_owner_via_web", fake_stage2)
+
+    result = owner_finder.find_owner(
+        base,
+        _FakeClient(),
+        name="Hi Fi Preschool",
+        category="preschool",
+        city="Lomita",
+        state="CA",
+    )
+
+    assert result.owner_name == ""
+    assert result.best_email == "hifipreschool@gmail.com"
+    assert result.email_confidence == "medium"
+    assert result.all_emails_found == [
+        "hifipreschool@gmail.com",
+        "lanajoo84@gmail.com",
+    ]
+    assert "deterministic_email_fallback" in result.reason
+    assert captured_stage2["known_profile_urls"] == []
+
+
 def test_find_owner_recovers_signed_owner_from_parents_page(monkeypatch):
     parent_text = (
         "Welcome to our Parents' Corner Dear Prospective Family. "
@@ -459,6 +530,42 @@ def test_find_owner_pages_ignores_owner_words_in_hostname():
         "https://fernandofamilyfundaycare.com/contact",
         "https://fernandofamilyfundaycare.com/about",
     ]
+
+
+def test_find_owner_pages_treats_learn_more_as_contact_candidate():
+    home = FetchedPage(
+        url="http://www.hifipreschool.com/",
+        status_code=200,
+        outbound_links=[
+            {"href": "http://www.hifipreschool.com/home.html", "text": "Home"},
+            {"href": "http://www.hifipreschool.com/mission.html", "text": "Mission"},
+            {"href": "http://www.hifipreschool.com/program.html", "text": "Program"},
+            {"href": "http://www.hifipreschool.com/photo.html", "text": "Photo"},
+            {
+                "href": "http://www.hifipreschool.com/learn-more.html",
+                "text": "Learn More",
+            },
+        ],
+    )
+
+    assert owner_finder.find_owner_pages(home, max_pages=1) == [
+        "http://www.hifipreschool.com/learn-more.html",
+    ]
+
+
+def test_extract_emails_normalizes_spaced_addresses():
+    assert owner_finder._extract_emails("Email: hifipreschool @gmail.com") == [
+        "hifipreschool@gmail.com",
+    ]
+
+
+def test_pick_best_email_uses_page_order_for_weak_candidates():
+    assert (
+        owner_finder._pick_best_email(
+            ["hifipreschool@gmail.com", "lanajoo84@gmail.com"],
+        )
+        == "hifipreschool@gmail.com"
+    )
 
 
 def test_pick_best_email_prefers_owner_named_email():
