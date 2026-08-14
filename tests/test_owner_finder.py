@@ -143,6 +143,67 @@ def test_find_owner_recovers_discovery_garden_wix_history_and_application_pages(
     assert "deterministic_email_fallback" in result.reason
 
 
+def test_find_owner_recovers_fernando_daycare_contact_signature(monkeypatch):
+    base = "https://fernandofamilyfundaycare.com"
+    home_url = f"{base}/home"
+    about_url = f"{base}/about"
+    contact_url = f"{base}/contact"
+    contact_text = (
+        "Email: lsferndo@sbcglobal.net Phone Number: (310) 293-3883 "
+        "I am a trained and qualified daycare owner/childcare provider and "
+        "will care for your child with love and respect. - Shiromi Fernando "
+        "Call For a Tour and Rates!"
+    )
+
+    def fake_fetch(url):
+        normalized = url.rstrip("/")
+        if normalized in {base, home_url}:
+            return FetchedPage(
+                url=home_url,
+                status_code=200,
+                text="Fernando Family Daycare",
+                outbound_links=[
+                    {"href": home_url, "text": ""},
+                    {"href": f"{base}/gallery", "text": "Gallery"},
+                    {"href": about_url, "text": "About"},
+                    {"href": contact_url, "text": "Contact"},
+                ],
+            )
+        if normalized == about_url:
+            return FetchedPage(
+                url=about_url,
+                status_code=200,
+                text="Hi, my name is Shiromi!",
+                raw_html_snippet="hi, my name is shiromi!",
+            )
+        if normalized == contact_url:
+            return FetchedPage(
+                url=contact_url,
+                status_code=200,
+                text=contact_text,
+                raw_html_snippet=contact_text.lower(),
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+
+    result = owner_finder.find_owner(
+        home_url,
+        _FakeClient(),
+        name="Fernando Family Daycare",
+        category="daycare",
+        city="",
+        state="CA",
+    )
+
+    assert result.owner_name == "Shiromi Fernando"
+    assert result.owner_title == "Owner"
+    assert result.owner_source_url == contact_url
+    assert result.best_email == "lsferndo@sbcglobal.net"
+    assert result.email_confidence == "medium"
+    assert "deterministic_owner:title_anchor_owner_pattern" in result.reason
+
+
 def test_find_owner_recovers_signed_owner_from_parents_page(monkeypatch):
     parent_text = (
         "Welcome to our Parents' Corner Dear Prospective Family. "
@@ -371,6 +432,33 @@ def test_find_owner_pages_probes_path_prefixed_wix_common_paths(monkeypatch):
         "https://discoverygardenece.wixsite.com/my-site/our-history-and-philosophy",
     ]
     assert "https://discoverygardenece.wixsite.com/application-process" not in fetched_urls
+
+
+def test_find_owner_pages_ignores_owner_words_in_hostname():
+    home = FetchedPage(
+        url="https://fernandofamilyfundaycare.com/home",
+        status_code=200,
+        outbound_links=[
+            {"href": "https://fernandofamilyfundaycare.com/home", "text": ""},
+            {
+                "href": "https://fernandofamilyfundaycare.com/gallery",
+                "text": "Gallery",
+            },
+            {
+                "href": "https://fernandofamilyfundaycare.com/about",
+                "text": "About",
+            },
+            {
+                "href": "https://fernandofamilyfundaycare.com/contact",
+                "text": "Contact",
+            },
+        ],
+    )
+
+    assert owner_finder.find_owner_pages(home, max_pages=2) == [
+        "https://fernandofamilyfundaycare.com/contact",
+        "https://fernandofamilyfundaycare.com/about",
+    ]
 
 
 def test_pick_best_email_prefers_owner_named_email():

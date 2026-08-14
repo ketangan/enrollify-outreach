@@ -706,14 +706,19 @@ def find_owner_pages(home: fetcher.FetchedPage, max_pages: int = 4) -> list[str]
         href = link.get("href", "")
         text = link.get("text", "")
         try:
-            link_host = urlparse(href).netloc.lower().lstrip("www.")
+            parsed_href = urlparse(href)
+            link_host = parsed_href.netloc.lower().lstrip("www.")
             if base_host and link_host and base_host != link_host:
                 continue
         except Exception:
             continue
-        if not (pattern.search(href) or pattern.search(text)):
+        # Match only the visible label and URL path. Hostnames often contain
+        # broad words like "family" or "school", which would otherwise turn
+        # every internal link into a false owner-page candidate.
+        link_signal = f"{text} {parsed_href.path}"
+        if not pattern.search(link_signal):
             continue
-        if PRIORITY_KEYWORDS.search(href) or PRIORITY_KEYWORDS.search(text):
+        if PRIORITY_KEYWORDS.search(link_signal):
             priority_matches.append(href)
         else:
             secondary_matches.append(href)
