@@ -48,6 +48,25 @@ def test_clean_school_name_removes_trailing_location_suffixes():
     )
 
 
+def test_clean_school_name_removes_trailing_seo_service_descriptors():
+    assert (
+        clean_school_name("Living Tango - Argentine Tango lessons, Coaching & Wedding Dance prep")
+        == "Living Tango"
+    )
+    assert (
+        clean_school_name("ABC Music Academy - Piano Lessons, Voice Classes & Summer Camps")
+        == "ABC Music Academy"
+    )
+    assert (
+        clean_school_name("Tiny Scholars Preschool: Daycare, Preschool & After School Care")
+        == "Tiny Scholars Preschool"
+    )
+    assert (
+        clean_school_name("The Center: A Place For Children")
+        == "The Center: A Place For Children"
+    )
+
+
 def test_clean_school_name_removes_non_english_alternate_names():
     assert (
         clean_school_name("Jung Im Lee Korean Dance Academy | 이정임 한국무용 아카데미")

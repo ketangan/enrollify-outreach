@@ -47,6 +47,7 @@ from src import (
     gmail_client,
     sheets,
 )
+from src.name_cleaner import clean_school_name
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,6 +72,15 @@ SHEET_WRITE_THROTTLE_SEC = 1.2
 # needs_enrollment_system_classification (Review Classify tab) instead of
 # failing forever on every daily run.
 VALID_ENROLLMENT_METHODS = set(drafter.ENROLLMENT_METHOD_TO_TEMPLATE.keys())
+
+
+def _display_school_name(lead: dict) -> str:
+    raw_name = str(lead.get("name", "")).strip()
+    return clean_school_name(
+        raw_name,
+        city=str(lead.get("city", "")).strip(),
+        state=str(lead.get("state", "")).strip(),
+    ) or raw_name
 
 
 def _draft_quality_block(
@@ -142,7 +152,7 @@ def _duplicate_reroute_for_lead(
     kept_id = str(kept.get("id", "")).strip()
     kept_status = str(kept.get("status", "")).strip()
     return {
-        "school": lead.get("name", ""),
+        "school": _display_school_name(lead),
         "enrollment_method": f"internal_duplicate:{kept_id or '(unknown)'}",
         "_row_idx": lead["_row_idx"],
         "reroute_status": "do_not_contact",
@@ -375,7 +385,7 @@ def main():
         # Non-Latin owner names need manual Romanization before English outreach.
         if drafter.has_non_latin_letters(owner_name):
             rerouted.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "enrollment_method": f"non_latin_owner_name:{owner_name}",
                 "_row_idx": lead["_row_idx"],
                 "reroute_status": "needs_owner_review",
@@ -386,7 +396,7 @@ def main():
         # Junk owner name check (LLM hallucinations like "Unnamed female founder")
         if drafter.is_junk_owner_name(owner_name):
             rerouted.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "enrollment_method": f"junk_owner_name:{owner_name}",
                 "_row_idx": lead["_row_idx"],
                 "reroute_status": "needs_owner_review",
@@ -397,7 +407,7 @@ def main():
         # Invalid enrollment_method check
         if em not in VALID_ENROLLMENT_METHODS:
             rerouted.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "enrollment_method": em or "(empty)",
                 "_row_idx": lead["_row_idx"],
                 "reroute_status": "needs_enrollment_system_classification",
@@ -409,7 +419,7 @@ def main():
         quality_block = _draft_quality_block(lead, inspect_site=False)
         if quality_block:
             rerouted.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "enrollment_method": f"quality_gate:{quality_block.reason}",
                 "_row_idx": lead["_row_idx"],
                 "reroute_status": "online_system_exclude",
@@ -522,7 +532,7 @@ def main():
                 )
                 time.sleep(SHEET_WRITE_THROTTLE_SEC)
             failures.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "error": f"quality gate blocked draft: {reason}",
             })
             continue
@@ -531,7 +541,7 @@ def main():
         if not to_email:
             logger.warning("  skipping — no email on lead")
             failures.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "error": "no email address on lead (should not happen at this stage)",
             })
             continue
@@ -539,7 +549,7 @@ def main():
         rendered = drafter.render_email(lead)
         if rendered is None:
             failures.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "error": f"template render failed for enrollment_method={lead.get('enrollment_method')}",
             })
             continue
@@ -570,14 +580,14 @@ def main():
                 )
                 time.sleep(SHEET_WRITE_THROTTLE_SEC)
                 failures.append({
-                    "school": lead.get("name", ""),
+                    "school": _display_school_name(lead),
                     "error": f"audit preflight blocked draft: {reason}",
                 })
                 continue
 
         if args.dry_run:
             drafts_summary.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "website": lead.get("website", ""),
                 "owner": lead.get("owner_name", ""),
                 "email": to_email,
@@ -607,7 +617,7 @@ def main():
                 value_input_option="USER_ENTERED",
             )
             time.sleep(SHEET_WRITE_THROTTLE_SEC)
-            failures.append({"school": lead.get("name", ""), "error": err})
+            failures.append({"school": _display_school_name(lead), "error": err})
             continue
 
         leads_ws.batch_update(
@@ -622,7 +632,7 @@ def main():
         time.sleep(SHEET_WRITE_THROTTLE_SEC)
 
         drafts_summary.append({
-            "school": lead.get("name", ""),
+            "school": _display_school_name(lead),
             "website": lead.get("website", ""),
             "owner": lead.get("owner_name", ""),
             "email": to_email,

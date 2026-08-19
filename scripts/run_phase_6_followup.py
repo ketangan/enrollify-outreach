@@ -34,6 +34,7 @@ from gspread.utils import rowcol_to_a1
 
 from scripts import audit_drafts
 from src import config, sheets, drafter, gmail_client, brand_guard, website_mocks
+from src.name_cleaner import clean_school_name
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,6 +49,15 @@ logger = logging.getLogger("phase6fu")
 SHEET_WRITE_THROTTLE_SEC = 1.2
 FOLLOWUP_DRAFTED_ACTION = "phase6_followup_drafted"
 FOLLOWUP_LEGACY_SKIP_ACTION = "phase6_followup_skipped_missing_gmail_original"
+
+
+def _display_school_name(lead: dict) -> str:
+    raw_name = str(lead.get("name", "")).strip()
+    return clean_school_name(
+        raw_name,
+        city=str(lead.get("city", "")).strip(),
+        state=str(lead.get("state", "")).strip(),
+    ) or raw_name
 
 
 def _send_summary_email(subject: str, summary_html: str) -> None:
@@ -280,7 +290,7 @@ def main():
                 ], value_input_option="USER_ENTERED")
                 time.sleep(SHEET_WRITE_THROTTLE_SEC)
             skipped.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "email": lead.get("best_email", ""),
                 "reason": "missing_gmail_original",
             })
@@ -294,7 +304,7 @@ def main():
         rendered = drafter.render_follow_up(lead, greeting_override=greeting if greeting else None)
         
         if rendered is None:
-            failures.append({"school": lead.get("name", ""), "error": "render_failed"})
+            failures.append({"school": _display_school_name(lead), "error": "render_failed"})
             continue
 
         logger.info("  -> %s", rendered.subject[:80])
@@ -325,14 +335,14 @@ def main():
                 ], value_input_option="USER_ENTERED")
                 time.sleep(SHEET_WRITE_THROTTLE_SEC)
                 failures.append({
-                    "school": lead.get("name", ""),
+                    "school": _display_school_name(lead),
                     "error": f"audit preflight blocked follow-up: {reason}",
                 })
                 continue
 
         if args.dry_run:
             drafts.append({
-                "school": lead.get("name", ""),
+                "school": _display_school_name(lead),
                 "email": lead.get("best_email", ""),
                 "subject": rendered.subject,
                 "mock_links": _mock_review_links(lead),
@@ -357,7 +367,7 @@ def main():
                  "values": [[f"phase6_followup_upload_failed:{err[:300]}"]]},
             ], value_input_option="USER_ENTERED")
             time.sleep(SHEET_WRITE_THROTTLE_SEC)
-            failures.append({"school": lead.get("name", ""), "error": err})
+            failures.append({"school": _display_school_name(lead), "error": err})
             continue
 
         # NOTE: we do NOT set status to awaiting_approval — that's used for
@@ -373,7 +383,7 @@ def main():
         time.sleep(SHEET_WRITE_THROTTLE_SEC)
 
         drafts.append({
-            "school": lead.get("name", ""),
+            "school": _display_school_name(lead),
             "email": lead.get("best_email", ""),
             "subject": rendered.subject,
             "mock_links": _mock_review_links(lead),

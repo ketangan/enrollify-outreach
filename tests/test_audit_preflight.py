@@ -137,6 +137,26 @@ def test_phase5_duplicate_reroute_blocks_ready_duplicate_before_draft():
     assert "duplicate blocked before draft" in reroute["notes_update"]
 
 
+def test_phase5_internal_summary_display_name_strips_descriptor():
+    lead = {
+        "name": "Living Tango - Argentine Tango lessons, Coaching & Wedding Dance prep",
+        "city": "Los Angeles",
+        "state": "CA",
+    }
+
+    assert run_phase_5._display_school_name(lead) == "Living Tango"
+
+
+def test_phase6_internal_summary_display_name_strips_descriptor():
+    lead = {
+        "name": "Living Tango - Argentine Tango lessons, Coaching & Wedding Dance prep",
+        "city": "Los Angeles",
+        "state": "CA",
+    }
+
+    assert run_followup._display_school_name(lead) == "Living Tango"
+
+
 def test_followup_candidate_flags_existing_followup_draft():
     context = _context()
     existing = [

@@ -81,6 +81,16 @@ TRAILING_ORG_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+SEO_DESCRIPTOR_SUFFIX_RE = re.compile(
+    r"\b("
+    r"admissions?|after[-\s]?school|ballet|care|classes?|coaching|coach|"
+    r"dance|daycare|enroll(?:ment)?|kids?|lessons?|martial arts|music|"
+    r"prep|preparation|preschool|programs?|summer|taekwondo|tango|"
+    r"tutoring|tutor|wedding|yoga"
+    r")\b",
+    re.IGNORECASE,
+)
+
 PUNCT_TRANSLATION = str.maketrans({
     "’": "'",
     "‘": "'",
@@ -193,6 +203,27 @@ def _strip_known_location_suffix(name: str, city: str = "", state: str = "") -> 
     return cleaned
 
 
+def _strip_seo_descriptor_suffix(name: str) -> str:
+    """Drop Google Places SEO/service copy after a strong separator."""
+    parts = re.split(r"\s*[-:]\s+", name)
+    if len(parts) < 2:
+        return name
+
+    cleaned_parts = parts[:]
+    stripped = False
+    while len(cleaned_parts) > 1:
+        suffix = cleaned_parts[-1].strip(" ,;:.")
+        prefix = " - ".join(cleaned_parts[:-1]).strip()
+        if not prefix or not SEO_DESCRIPTOR_SUFFIX_RE.search(suffix):
+            break
+        cleaned_parts.pop()
+        stripped = True
+
+    if not stripped:
+        return name
+    return " - ".join(cleaned_parts).strip() if cleaned_parts else name
+
+
 def clean_school_name(raw_name: str, *, city: str = "", state: str = "") -> str:
     """
     Return a concise, English-first display name suitable for outreach.
@@ -204,6 +235,7 @@ def clean_school_name(raw_name: str, *, city: str = "", state: str = "") -> str:
       PEPE'S SPORTS -> Pepe's Sports
       Edupro Academy(.../ Tutoring/ SAT/ ACT/ ...) -> Edupro Academy
       Power of One Self-Defense - Long Beach -> Power of One Self-Defense
+      Living Tango - Argentine Tango lessons, Coaching & Wedding Dance prep -> Living Tango
       CODELA Preschool Hawthorne C.D.C -> CODELA Preschool
     """
     original = str(raw_name or "").strip()
@@ -228,6 +260,7 @@ def clean_school_name(raw_name: str, *, city: str = "", state: str = "") -> str:
     name = re.sub(r"\s+#\s*\d+\b", " ", name)
     name = re.sub(r"\s+\b(no\.?|number)\s*\d+\b", " ", name, flags=re.IGNORECASE)
     name = _strip_known_location_suffix(name, city=city, state=state)
+    name = _strip_seo_descriptor_suffix(name)
     name = TRAILING_ORG_SUFFIX_RE.sub("", name).strip()
     name = _strip_known_location_suffix(name, city=city, state=state)
     while True:

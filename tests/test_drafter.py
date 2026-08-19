@@ -50,6 +50,35 @@ def test_render_email_supports_brand_placeholders(monkeypatch):
     assert "domain mypontora.com" in rendered.html_body
 
 
+def test_render_email_strips_long_google_places_descriptor(monkeypatch):
+    raw_name = "Living Tango - Argentine Tango lessons, Coaching & Wedding Dance prep"
+    monkeypatch.setattr(
+        drafter,
+        "_load_templates",
+        lambda: {
+            "contact_form": {
+                "subject": "{{brand_name}} for {{school_name}}",
+                "observation": "I was on {{school_name}}'s site.",
+                "body": "Hi {{owner_first_name}}, {{specific_observation}}",
+            }
+        },
+    )
+
+    rendered = drafter.render_email(
+        {
+            "enrollment_method": "contact_form_qualify",
+            "owner_name": "",
+            "name": raw_name,
+            "category": "dance",
+            "id": "lead-1",
+        }
+    )
+
+    assert rendered.subject == "Pontora for Living Tango"
+    assert "Living Tango's site" in rendered.html_body
+    assert raw_name not in rendered.html_body
+
+
 def test_render_follow_up_appends_website_mock_addendum(monkeypatch):
     monkeypatch.setattr(
         drafter,
