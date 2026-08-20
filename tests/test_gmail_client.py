@@ -1,3 +1,4 @@
+import base64
 from email.message import EmailMessage
 
 from src import gmail_client
@@ -120,6 +121,104 @@ def test_upload_draft_includes_thread_id(monkeypatch):
     assert captured["userId"] == "me"
     assert captured["body"]["message"]["threadId"] == "thread-123"
     assert captured["body"]["message"]["raw"]
+
+
+def test_fetch_inbox_replies_broadens_query_when_include_all(monkeypatch):
+    captured = {}
+
+    class ExecuteCall:
+        def execute(self):
+            return {}
+
+    class Messages:
+        def list(self, userId, q, pageToken=None, maxResults=100):
+            captured["query"] = q
+            return ExecuteCall()
+
+    class Users:
+        def messages(self):
+            return Messages()
+
+    class Service:
+        def users(self):
+            return Users()
+
+    monkeypatch.setattr(gmail_client.config, "OUTREACH_EMAIL", "ketan@mypontora.com")
+    monkeypatch.setattr(gmail_client, "get_service", lambda: Service())
+
+    assert gmail_client.fetch_inbox_replies(since_days=14, include_all=True) == []
+    assert captured["query"] == "newer_than:14d -from:ketan@mypontora.com"
+
+
+def test_fetch_inbox_replies_defaults_to_inbox_query(monkeypatch):
+    captured = {}
+
+    class ExecuteCall:
+        def execute(self):
+            return {}
+
+    class Messages:
+        def list(self, userId, q, pageToken=None, maxResults=100):
+            captured["query"] = q
+            return ExecuteCall()
+
+    class Users:
+        def messages(self):
+            return Messages()
+
+    class Service:
+        def users(self):
+            return Users()
+
+    monkeypatch.setattr(gmail_client, "get_service", lambda: Service())
+
+    assert gmail_client.fetch_inbox_replies(since_days=14) == []
+    assert captured["query"] == "in:inbox newer_than:14d"
+
+
+def test_fetch_inbox_replies_uses_gmail_snippet_when_body_not_extractable(monkeypatch):
+    msg = EmailMessage()
+    msg["From"] = "Matthew Hawthorne <matthew@example.com>"
+    msg["To"] = "Ketan Gandhi <ketan@mypontora.com>"
+    msg["Subject"] = "Re: Reimagining enrollment for smaller schools"
+    msg["Date"] = "Wed, 19 Aug 2026 10:49:25 -0700"
+    msg.set_content("<html><body><p>No thanks</p></body></html>", subtype="html")
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+
+    class ExecuteCall:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def execute(self):
+            return self.payload
+
+    class Messages:
+        def list(self, userId, q, pageToken=None, maxResults=100):
+            return ExecuteCall({"messages": [{"id": "msg-1"}]})
+
+        def get(self, userId, id, format):
+            return ExecuteCall({
+                "raw": raw,
+                "snippet": "No thanks On Aug 19, 2026, Ketan wrote:",
+                "internalDate": "1787161765000",
+            })
+
+    class Users:
+        def messages(self):
+            return Messages()
+
+    class Service:
+        def users(self):
+            return Users()
+
+    monkeypatch.setattr(gmail_client.config, "OUTREACH_EMAIL", "ketan@mypontora.com")
+    monkeypatch.setattr(gmail_client, "get_service", lambda: Service())
+
+    replies = gmail_client.fetch_inbox_replies(since_days=14, include_all=True)
+
+    assert len(replies) == 1
+    assert replies[0].snippet.startswith("No thanks")
+    assert replies[0].body.startswith("No thanks")
 
 
 def test_profile_check_allows_configured_mailbox(monkeypatch):

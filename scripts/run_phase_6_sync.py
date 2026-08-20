@@ -5,7 +5,8 @@ Phase 6 sync: reconcile Gmail Sent + Inbox with the Leads sheet.
 - Sent items → mark leads as `sent`, record sent_at and sent_message_id,
   schedule follow_up_at = sent_at + 7 days.
 - Inbox replies (threaded):
-    * Real human reply -> mark `replied`, log alert
+    * Rejection/opt-out reply -> mark `do_not_contact`, clear follow_up_at
+    * Other real human reply -> mark `replied`, log alert
     * Mailer-daemon bounce -> mark `bounced`, capture error, log alert
 - Inbox bounces (UNTHREADED): mailer-daemon notifications that don't carry
   In-Reply-To headers. We scan the inbox for bounce-shaped messages and
@@ -71,6 +72,48 @@ RECIPIENT_PATTERNS = [
 
 EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
+AUTO_REPLY_SUBJECT_RE = re.compile(
+    r"\b(auto(?:matic)?[-\s]?reply|out\s+of\s+office|vacation responder|away from (?:my )?office)\b",
+    re.IGNORECASE,
+)
+
+DNC_REPLY_PATTERNS = [
+    (
+        "opt_out",
+        re.compile(
+            r"\b("
+            r"stop|unsubscribe|remove me|take me off|do not contact|don't contact|"
+            r"do not email|don't email|please stop|please remove|no more emails"
+            r")\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "not_interested",
+        re.compile(
+            r"\b("
+            r"no thanks|no thank you|not interested|not in the market|not looking|"
+            r"not at this time|not right now|we(?:'re| are) all set|all set|"
+            r"no need"
+            r")\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "existing_system",
+        re.compile(
+            r"\b("
+            r"(?:we(?:'re| are)|i(?:'m| am)) happy with (?:the |our )?"
+            r"(?:current )?(?:system|software|platform)(?: we have)?|"
+            r"happy with what we have|"
+            r"(?:we|i) already have (?:a |an |our )?(?:system|software|platform)|"
+            r"satisfied with (?:our |the )?(?:current )?(?:system|software|platform)"
+            r")\b",
+            re.IGNORECASE,
+        ),
+    ),
+]
+
 
 def _is_bounce(from_email: str, subject: str) -> bool:
     """True if this looks like a mail-server bounce, not a human reply."""
@@ -79,6 +122,51 @@ def _is_bounce(from_email: str, subject: str) -> bool:
     if BOUNCE_SUBJECT_PATTERNS.search(subject or ""):
         return True
     return False
+
+
+def _is_auto_reply(reply: gmail_client.InboxReply) -> bool:
+    """True for out-of-office / automatic responses that should not alter lead status."""
+    if AUTO_REPLY_SUBJECT_RE.search(reply.subject or ""):
+        return True
+    body = f"{reply.snippet or ''}\n{reply.body or ''}".lower()
+    return bool(
+        re.search(r"\b(i am|i'm|we are|we're) (currently )?(out of|away from) (the )?office\b", body)
+        or re.search(r"\bautomatic reply\b", body)
+    )
+
+
+def _unquoted_reply_text(reply: gmail_client.InboxReply) -> str:
+    """Keep the newest human text and discard obvious quoted history."""
+    text = f"{reply.subject or ''}\n{reply.snippet or ''}\n{reply.body or ''}"
+    split_patterns = [
+        r"\nOn .{0,160} wrote:\s*",
+        r"\nFrom:\s+",
+        r"\n-{2,}\s*Original Message\s*-{2,}",
+    ]
+    for pattern in split_patterns:
+        text = re.split(pattern, text, maxsplit=1, flags=re.IGNORECASE)[0]
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _classify_dnc_reply(reply: gmail_client.InboxReply) -> str:
+    """
+    Return a do_not_contact reason if the reply clearly says stop/no thanks.
+
+    Keep this conservative. A normal interested reply should be `replied`, not DNC.
+    """
+    if _is_auto_reply(reply):
+        return ""
+
+    text = _unquoted_reply_text(reply)
+    if not text:
+        return ""
+
+    for label, pattern in DNC_REPLY_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            phrase = re.sub(r"\s+", " ", match.group(1)).strip().lower()
+            return f"reply_dnc:{label}:{phrase}"[:240]
+    return ""
 
 
 def _extract_bounce_reason(snippet: str) -> str:
@@ -202,6 +290,18 @@ def _fallback_reply_match_allowed(reply: gmail_client.InboxReply) -> bool:
     return False
 
 
+def _campaign_context_present(reply: gmail_client.InboxReply) -> bool:
+    """True when an unthreaded reply still clearly belongs to this campaign."""
+    subject = (reply.subject or "").strip().lower()
+    body = f"{reply.snippet or ''}\n{reply.body or ''}".lower()
+    return bool(
+        "reimagining enrollment" in subject
+        or config.BRAND_NAME.lower() in body
+        or config.PRODUCT_DOMAIN.lower() in body
+        or config.OUTREACH_EMAIL.lower() in body
+    )
+
+
 # ─── Alert emails ──────────────────────────────────────────────────────
 
 def _send_reply_alert(school_name: str, from_email: str, subject: str, snippet: str) -> None:
@@ -302,7 +402,7 @@ def main():
 
     required = [
         "status", "best_email", "name", "sent_at", "sent_message_id",
-        "follow_up_at", "replied_at", "last_action", "notes",
+        "follow_up_at", "follow_up_sent_at", "replied_at", "last_action", "notes",
     ]
     missing = [c for c in required if c not in col]
     if missing:
@@ -399,19 +499,23 @@ def main():
         mid = (lead.get("sent_message_id") or "").strip()
         if mid:
             message_id_to_lead[mid] = lead
+    for follow_up_message_id, original_message_id in follow_up_message_map.items():
+        lead = message_id_to_lead.get(original_message_id)
+        if lead:
+            message_id_to_lead[follow_up_message_id] = lead
 
     logger.info("Fetching inbox replies from Gmail (last %d days)...", args.since_days)
     replies = gmail_client.fetch_inbox_replies(since_days=args.since_days, include_all=True)
     logger.info("  %d inbox messages found", len(replies))
-    # Build fallback index: active sent leads keyed by their best_email.
-    # Used when a reply arrives without thread headers — we match on sender.
-    # Narrow surface (only status=sent leads) keeps false-positive risk low.
-    active_sent_by_email = {}
+    # Build fallback index keyed by sender email. Normal replies can only fall
+    # back to status=sent. Clear DNC replies may also upgrade a unique status=
+    # replied row when the message still has campaign context.
+    reply_fallback_by_email: dict[str, list[dict]] = {}
     for lead in fresh_rows:
-        if str(lead.get("status", "")).strip() == "sent":
+        if str(lead.get("status", "")).strip() in {"sent", "replied"}:
             em = str(lead.get("best_email", "")).strip().lower()
             if em:
-                active_sent_by_email[em] = lead
+                reply_fallback_by_email.setdefault(em, []).append(lead)
 
     reply_updates = 0
     bounce_updates = 0
@@ -421,18 +525,33 @@ def main():
     handled_reply_leads: set[str] = set()
 
     for reply in replies:
+        is_bounce = _is_bounce(reply.from_email, reply.subject)
+        dnc_reason = "" if is_bounce else _classify_dnc_reply(reply)
+
         matched_lead = message_id_to_lead.get(reply.in_reply_to)
         if not matched_lead:
             for ref in reply.references:
                 if ref in message_id_to_lead:
                     matched_lead = message_id_to_lead[ref]
                     break
-        # Fallback: sender-email match against active-sent leads.
-        # Catches replies with broken thread headers.
+        # Fallback: sender-email match when thread headers are missing/broken.
+        # Keep non-DNC fallback narrow. For DNC upgrades, allow an existing
+        # replied row only if this still clearly belongs to our campaign.
         if not matched_lead:
-            fallback_lead = active_sent_by_email.get(reply.from_email.lower())
-            if fallback_lead and _fallback_reply_match_allowed(reply):
-                matched_lead = fallback_lead
+            fallback_candidates = reply_fallback_by_email.get(reply.from_email.lower(), [])
+            eligible_fallbacks = []
+            for lead in fallback_candidates:
+                lead_status = str(lead.get("status", "")).strip()
+                if lead_status == "sent" and _fallback_reply_match_allowed(reply):
+                    eligible_fallbacks.append(lead)
+                elif (
+                    lead_status == "replied"
+                    and dnc_reason
+                    and _campaign_context_present(reply)
+                ):
+                    eligible_fallbacks.append(lead)
+            if len(eligible_fallbacks) == 1:
+                matched_lead = eligible_fallbacks[0]
         if not matched_lead:
             continue
 
@@ -440,17 +559,25 @@ def main():
         if lead_key in handled_reply_leads:
             continue
 
-        cur_status = matched_lead.get("status", "")
-        if cur_status in ("replied", "bounced", "do_not_contact"):
+        if not is_bounce and _is_auto_reply(reply):
+            logger.info("  auto-reply ignored: %s from %s",
+                        matched_lead.get("name", ""), reply.from_email)
             continue
 
-        is_bounce = _is_bounce(reply.from_email, reply.subject)
+        cur_status = matched_lead.get("status", "")
+        if cur_status in ("bounced", "do_not_contact"):
+            continue
+        if cur_status == "replied" and not dnc_reason:
+            continue
 
         if is_bounce:
             bounce_reason = _extract_bounce_reason(reply.snippet)
             logger.info("  📭 BOUNCE (threaded): %s (%s)",
                         matched_lead.get("name", ""),
                         matched_lead.get("best_email", ""))
+        elif dnc_reason:
+            logger.info("  ⛔ DNC reply: %s from %s (%s)",
+                        matched_lead.get("name", ""), reply.from_email, dnc_reason)
         else:
             logger.info("  🚨 REPLY: %s from %s",
                         matched_lead.get("name", ""), reply.from_email)
@@ -484,6 +611,31 @@ def main():
                 em = (matched_lead.get("best_email") or "").strip().lower()
                 if em:
                     handled_recipients.add(em)
+            elif dnc_reason:
+                updates = [
+                    {"range": rowcol_to_a1(row_idx, col["status"] + 1),
+                     "values": [["do_not_contact"]]},
+                    {"range": rowcol_to_a1(row_idx, col["replied_at"] + 1),
+                     "values": [[reply.received_at.isoformat()]]},
+                    {"range": rowcol_to_a1(row_idx, col["follow_up_at"] + 1),
+                     "values": [[""]]},
+                    {"range": rowcol_to_a1(row_idx, col["last_action"] + 1),
+                     "values": [["phase6_dnc_reply_detected"]]},
+                ]
+                if "do_not_contact_reason" in col:
+                    updates.append({
+                        "range": rowcol_to_a1(row_idx, col["do_not_contact_reason"] + 1),
+                        "values": [[dnc_reason]],
+                    })
+                leads_ws.batch_update(updates, value_input_option="USER_ENTERED")
+
+                _send_reply_alert(
+                    school_name=matched_lead.get("name", ""),
+                    from_email=reply.from_email,
+                    subject=reply.subject,
+                    snippet=reply.snippet,
+                )
+                reply_updates += 1
             else:
                 leads_ws.batch_update([
                     {"range": rowcol_to_a1(row_idx, col["status"] + 1),
@@ -504,6 +656,8 @@ def main():
         else:
             if is_bounce:
                 bounce_updates += 1
+            elif dnc_reason:
+                reply_updates += 1
             else:
                 reply_updates += 1
 

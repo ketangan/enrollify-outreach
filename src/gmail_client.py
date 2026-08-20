@@ -346,8 +346,10 @@ def _extract_body(msg: email.message.Message) -> str:
             for part in msg.walk():
                 if part.get_content_maintype() == "multipart":
                     continue
-                if part.get_content_type() not in (
+                content_type = part.get_content_type()
+                if content_type not in (
                     "text/plain",
+                    "text/html",
                     "message/delivery-status",
                     "message/rfc822",
                     "message/global-delivery-status",
@@ -355,18 +357,18 @@ def _extract_body(msg: email.message.Message) -> str:
                     continue
                 payload = part.get_payload(decode=True)
                 if payload:
-                    chunks.append(
-                        payload.decode(
-                            part.get_content_charset() or "utf-8",
-                            errors="replace",
-                        )
+                    decoded = payload.decode(
+                        part.get_content_charset() or "utf-8",
+                        errors="replace",
                     )
+                    chunks.append(_html_to_plain(decoded) if content_type == "text/html" else decoded)
         else:
             payload = msg.get_payload(decode=True)
             if payload:
-                chunks.append(
-                    payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
-                )
+                decoded = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                if msg.get_content_type() == "text/html":
+                    decoded = _html_to_plain(decoded)
+                chunks.append(decoded)
     except Exception:
         return ""
     return "\n\n".join(chunks).strip()
@@ -374,6 +376,10 @@ def _extract_body(msg: email.message.Message) -> str:
 
 def _snippet_from_body(body: str, max_chars: int = 300) -> str:
     return re.sub(r"\s+", " ", body or "")[:max_chars]
+
+
+def _snippet_from_resource(resource: dict, max_chars: int = 300) -> str:
+    return re.sub(r"\s+", " ", str(resource.get("snippet", "") or ""))[:max_chars]
 
 
 def _list_draft_ids(service, since_days: int) -> list[str]:
@@ -483,7 +489,14 @@ def fetch_inbox_replies(since_days: int = 30, include_all: bool = False) -> list
     """
     service = get_service()
     results: list[InboxReply] = []
-    for gmail_id in _list_message_ids(service, f"in:inbox newer_than:{since_days}d"):
+    query = f"in:inbox newer_than:{since_days}d"
+    if include_all:
+        query = f"newer_than:{since_days}d"
+        sender = config.OUTREACH_EMAIL.strip()
+        if sender:
+            query = f"{query} -from:{sender}"
+
+    for gmail_id in _list_message_ids(service, query):
         resource = service.users().messages().get(
             userId="me",
             id=gmail_id,
@@ -499,6 +512,9 @@ def fetch_inbox_replies(since_days: int = 30, include_all: bool = False) -> list
             continue
 
         body = _extract_body(msg)
+        snippet = _snippet_from_body(body) or _snippet_from_resource(resource)
+        if not body:
+            body = snippet
         results.append(
             InboxReply(
                 from_email=_parse_addr(msg.get("From", "")),
@@ -507,7 +523,7 @@ def fetch_inbox_replies(since_days: int = 30, include_all: bool = False) -> list
                 references=re.findall(r"<[^>]+>", references_raw),
                 received_at=_parse_datetime(msg.get("Date", ""), resource.get("internalDate")),
                 gmail_id=gmail_id,
-                snippet=_snippet_from_body(body),
+                snippet=snippet,
                 body=body,
             )
         )

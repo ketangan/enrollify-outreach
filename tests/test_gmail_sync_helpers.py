@@ -101,6 +101,50 @@ def test_fallback_reply_match_requires_reply_signal():
     assert sync._fallback_reply_match_allowed(brand_message)
 
 
+def test_dnc_reply_classifier_catches_clear_rejections():
+    now = datetime.now(timezone.utc)
+    examples = [
+        ("Re: Reimagining enrollment for smaller schools", "No thanks"),
+        ("Re: Reimagining enrollment for smaller schools", "Stop"),
+        ("Re: Reimagining enrollment for smaller schools", "We are happy with the system we have."),
+        ("Re: Reimagining enrollment for smaller schools", "We're not in the market at this time."),
+    ]
+
+    reasons = [
+        sync._classify_dnc_reply(
+            InboxReply(
+                from_email="owner@example.com",
+                subject=subject,
+                in_reply_to="<sent@mypontora.com>",
+                references=[],
+                received_at=now,
+                gmail_id=f"gmail-{idx}",
+                snippet=snippet,
+                body=snippet,
+            )
+        )
+        for idx, (subject, snippet) in enumerate(examples)
+    ]
+
+    assert all(reason.startswith("reply_dnc:") for reason in reasons)
+
+
+def test_auto_reply_is_not_dnc():
+    reply = InboxReply(
+        from_email="owner@example.com",
+        subject="Automatic reply: Reimagining enrollment for smaller schools",
+        in_reply_to="<sent@mypontora.com>",
+        references=[],
+        received_at=datetime.now(timezone.utc),
+        gmail_id="gmail-auto",
+        snippet="Hello, I'm sorry I missed you.",
+        body="Hello, I'm sorry I missed you.",
+    )
+
+    assert sync._is_auto_reply(reply)
+    assert sync._classify_dnc_reply(reply) == ""
+
+
 def test_lead_key_prefers_sent_message_id():
     lead = {
         "id": "lead-1",
@@ -145,3 +189,157 @@ def test_rows_to_leads_preserves_sheet_row_numbers():
     assert leads[0]["_row_idx"] == 2
     assert leads[0]["sent_message_id"] == "<first@mypontora.com>"
     assert leads[1]["_row_idx"] == 3
+
+
+def test_sync_marks_dnc_reply_to_followup_message(monkeypatch):
+    original_message_id = "<initial@mypontora.com>"
+    followup_message_id = "<followup@mypontora.com>"
+    now = datetime.now(timezone.utc)
+    headers = [
+        "status",
+        "best_email",
+        "name",
+        "sent_at",
+        "sent_message_id",
+        "follow_up_at",
+        "follow_up_sent_at",
+        "replied_at",
+        "last_action",
+        "notes",
+        "do_not_contact_reason",
+    ]
+    row = [
+        "sent",
+        "owner@example.com",
+        "Example Preschool",
+        "2026-08-12T10:00:00-07:00",
+        original_message_id,
+        "2026-08-19",
+        "",
+        "",
+        "phase6_sent_detected",
+        "",
+        "",
+    ]
+    updates = []
+
+    class FakeWorksheet:
+        def get_all_values(self):
+            return [headers, row]
+
+        def batch_update(self, values, **_kwargs):
+            updates.extend(values)
+
+    monkeypatch.setattr(sys, "argv", ["run_phase_6_sync.py", "--since-days", "30"])
+    monkeypatch.setattr(sync.config, "validate", lambda: None)
+    monkeypatch.setattr(sync.sheets, "get_tab", lambda _name: FakeWorksheet())
+    monkeypatch.setattr(sync, "rowcol_to_a1", lambda row_idx, col_idx: f"R{row_idx}C{col_idx}")
+    monkeypatch.setattr(sync.gmail_client, "fetch_sent_messages", lambda since_days: [
+        SentMessage(
+            message_id=followup_message_id,
+            to_email="owner@example.com",
+            subject="Re: Reimagining enrollment for smaller schools",
+            sent_at=now,
+            gmail_id="sent-followup",
+            in_reply_to=original_message_id,
+            references=[],
+        )
+    ])
+    monkeypatch.setattr(sync.gmail_client, "fetch_inbox_replies", lambda since_days, include_all: [
+        InboxReply(
+            from_email="owner@example.com",
+            subject="Re: Reimagining enrollment for smaller schools",
+            in_reply_to=followup_message_id,
+            references=[],
+            received_at=now,
+            gmail_id="inbox-reply",
+            snippet="No thanks",
+            body="No thanks",
+        )
+    ])
+    monkeypatch.setattr(sync.gmail_client, "fetch_inbox_raw_messages", lambda since_days: [])
+    monkeypatch.setattr(sync, "_send_reply_alert", lambda **_kwargs: None)
+    monkeypatch.setattr(sync, "_send_bounce_alert", lambda **_kwargs: None)
+
+    sync.main()
+
+    written_values = [
+        cell
+        for update in updates
+        for row_values in update["values"]
+        for cell in row_values
+    ]
+    assert "do_not_contact" in written_values
+    assert "phase6_dnc_reply_detected" in written_values
+    assert any(str(value).startswith("reply_dnc:not_interested:no thanks") for value in written_values)
+
+
+def test_sync_upgrades_replied_lead_to_dnc_by_sender_when_campaign_context(monkeypatch):
+    now = datetime.now(timezone.utc)
+    headers = [
+        "status",
+        "best_email",
+        "name",
+        "sent_at",
+        "sent_message_id",
+        "follow_up_at",
+        "follow_up_sent_at",
+        "replied_at",
+        "last_action",
+        "notes",
+        "do_not_contact_reason",
+    ]
+    row = [
+        "replied",
+        "owner@example.com",
+        "Example Preschool",
+        "2026-08-12T10:00:00-07:00",
+        "<initial@mypontora.com>",
+        "2026-08-19",
+        "",
+        "2026-08-19T10:00:00-07:00",
+        "phase6_reply_detected",
+        "",
+        "",
+    ]
+    updates = []
+
+    class FakeWorksheet:
+        def get_all_values(self):
+            return [headers, row]
+
+        def batch_update(self, values, **_kwargs):
+            updates.extend(values)
+
+    monkeypatch.setattr(sys, "argv", ["run_phase_6_sync.py", "--since-days", "30"])
+    monkeypatch.setattr(sync.config, "validate", lambda: None)
+    monkeypatch.setattr(sync.sheets, "get_tab", lambda _name: FakeWorksheet())
+    monkeypatch.setattr(sync, "rowcol_to_a1", lambda row_idx, col_idx: f"R{row_idx}C{col_idx}")
+    monkeypatch.setattr(sync.gmail_client, "fetch_sent_messages", lambda since_days: [])
+    monkeypatch.setattr(sync.gmail_client, "fetch_inbox_replies", lambda since_days, include_all: [
+        InboxReply(
+            from_email="owner@example.com",
+            subject="Re: Reimagining enrollment for smaller schools",
+            in_reply_to="",
+            references=[],
+            received_at=now,
+            gmail_id="inbox-reply",
+            snippet="We are happy with the system we have.",
+            body="We are happy with the system we have.",
+        )
+    ])
+    monkeypatch.setattr(sync.gmail_client, "fetch_inbox_raw_messages", lambda since_days: [])
+    monkeypatch.setattr(sync, "_send_reply_alert", lambda **_kwargs: None)
+    monkeypatch.setattr(sync, "_send_bounce_alert", lambda **_kwargs: None)
+
+    sync.main()
+
+    written_values = [
+        cell
+        for update in updates
+        for row_values in update["values"]
+        for cell in row_values
+    ]
+    assert "do_not_contact" in written_values
+    assert "phase6_dnc_reply_detected" in written_values
+    assert any(str(value).startswith("reply_dnc:existing_system") for value in written_values)
