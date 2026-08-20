@@ -170,6 +170,39 @@ def test_business_services_profile_is_non_target_org():
     assert result.reason.startswith("local:non_target_org:business_services")
 
 
+def test_pet_daycare_page_is_non_target_org():
+    page = FetchedPage(
+        url="https://www.abarkidea.com/",
+        status_code=200,
+        text=(
+            "A Bark Idea Dog Daycare, Dog Boarding, Dog Training, "
+            "The Happy Puppy School. Requirements include Bordetella, "
+            "Rabies, Canine Influenza, flea prevention, and spayed/neutered by 1 year."
+        ),
+        raw_html_snippet="",
+    )
+
+    result = classifier.local_classify([page])
+
+    assert result is not None
+    assert result.status == "online_system_exclude"
+    assert result.reason.startswith("local:non_target_org:pet_services")
+
+
+def test_class_pet_reference_does_not_make_preschool_non_target():
+    page = FetchedPage(
+        url="https://example-preschool.com/",
+        status_code=200,
+        text=(
+            "Our preschool serves children ages 2 to 5. The classroom has a pet rabbit "
+            "and teachers help with potty training."
+        ),
+        raw_html_snippet="",
+    )
+
+    assert classifier.local_classify([page]) is None
+
+
 def test_music_teacher_with_lessons_is_not_excluded_as_solo_personal_service():
     page = FetchedPage(
         url="https://www.dejuancarlosmusic.com/teacher",

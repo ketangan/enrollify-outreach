@@ -236,6 +236,37 @@ def _check_business_services_profile(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+def _check_pet_services_profile(text: str) -> tuple[bool, str]:
+    """
+    Catch dog daycare / boarding / training businesses that leak in through
+    broad "daycare" discovery queries or use terms like "puppy school".
+    """
+    text_lower = text.lower()
+
+    hard_markers = [
+        "dog daycare",
+        "dog day care",
+        "dog boarding",
+        "dog training",
+        "puppy trainer",
+        "puppy training",
+        "puppy school",
+        "happy puppy school",
+        "canine influenza",
+        "bordetella",
+        "spayed/neutered",
+        "spayed or neutered",
+        "flea prevention",
+        "your pup",
+        "pup's home",
+    ]
+    for marker in hard_markers:
+        if marker in text_lower:
+            return True, f"pet_services:{marker}"
+
+    return False, ""
+
+
 def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
     """
     Fast, free keyword/pattern check. Returns None if no confident verdict.
@@ -273,6 +304,15 @@ def local_classify(pages: list[fetcher.FetchedPage]) -> Classification | None:
         )
 
     hit, reason = _check_business_services_profile(combined_text)
+    if hit:
+        return Classification(
+            status="online_system_exclude",
+            reason=f"local:non_target_org:{reason}",
+            used_llm=False,
+            pages_fetched=len(pages),
+        )
+
+    hit, reason = _check_pet_services_profile(combined_text)
     if hit:
         return Classification(
             status="online_system_exclude",
