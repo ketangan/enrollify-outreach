@@ -34,6 +34,7 @@ from webapp.webapp import (
     routes_in_progress,
     routes_leads,
     routes_review,
+    routes_site_generator,
 )
 
 logging.basicConfig(
@@ -47,11 +48,17 @@ WEBAPP_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = WEBAPP_DIR / "templates"
 STATIC_DIR = WEBAPP_DIR / "static"
 JOBS_DIR = WEBAPP_DIR / "jobs"
+GENERATED_SITES_DIR = PROJECT_ROOT / "generated" / "full-sites" / "mocks"
 
 JOBS_DIR.mkdir(exist_ok=True)
+GENERATED_SITES_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Pontora Outreach Admin")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Serves generated full-site pages directly as static files — real photos
+# and relative asset paths resolve for free since it's the same directory
+# tree scripts/generate_full_site.py writes to (see routes_site_generator.py).
+app.mount("/generated-sites/mocks", StaticFiles(directory=GENERATED_SITES_DIR, html=True), name="generated_sites")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # Clean up stale jobs on startup (any job marked running/queued whose
@@ -64,6 +71,7 @@ app.include_router(routes_coverage.router)
 app.include_router(routes_leads.router)
 app.include_router(routes_review.router)
 app.include_router(routes_in_progress.router)
+app.include_router(routes_site_generator.router)
 app.include_router(routes_actions.router)
 
 

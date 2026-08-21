@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Generating site…</h2>
+
+<dl class="job-meta">
+  <dt>Business</dt><dd>{{ job.params.name }}</dd>
+  <dt>Status</dt><dd><span class="job-status job-{{ job.status }}">{{ job.status }}</span></dd>
+  {% if job.params.is_regeneration %}<dt>Regenerating</dt><dd>{{ job.params.theme }}{% if job.params.revision_notes %} — "{{ job.params.revision_notes }}"{% endif %}</dd>{% endif %}
+  {% if job.error %}<dt>Error</dt><dd class="job-error">{{ job.error }}</dd>{% endif %}
+</dl>
+
+{% if job.status in ("queued", "running") %}
+  <p class="muted">This can take up to a couple minutes (Places lookups, photos, sometimes an LLM call). Auto-refreshing…</p>
+{% elif job.status == "done" and result %}
+  <div class="pipeline-alert" style="background:#e8f5e9;border-color:#a5d6a7;">
+    <strong>Done.</strong> {{ result.rendered|length }} page(s) generated.
+  </div>
+  <ul>
+    {% for item in result.rendered %}
+      <li><a href="{{ item.preview_url }}" target="_blank" rel="noopener">{{ item.label }}</a></li>
+    {% endfor %}
+  </ul>
+{% elif job.status == "done" %}
+  <div class="pipeline-alert" style="background:#e8f5e9;border-color:#a5d6a7;">
+    <strong>Done.</strong> The generated links aren't cached on this page anymore (the webapp
+    likely restarted since the job ran) — they're saved either way.
+    <a href="/site-generator">Find them on the site list →</a>
+  </div>
+{% elif job.status == "failed" %}
+  <div class="pipeline-alert pipeline-alert-warning">
+    <strong>⚠</strong> Generation failed. See the log below.
+  </div>
+{% endif %}
+
+<p><a href="/site-generator">← back to site generator</a></p>
+
+<div class="log-heading">
+  <h3>Log</h3>
+</div>
+<pre id="job-log" class="log-box" tabindex="0">{{ log or "(no log yet)" }}</pre>
+
+{% if job.status in ("queued", "running") %}
+<script>
+  setTimeout(function() { location.reload(); }, 4000);
+</script>
+{% endif %}
+{% endblock %}

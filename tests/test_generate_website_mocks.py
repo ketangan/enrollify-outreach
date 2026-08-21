@@ -1,3 +1,5 @@
+import re
+
 from scripts import generate_website_mocks
 from src import website_mocks
 
@@ -18,6 +20,147 @@ def _variant(mock_type: str, version_id: str) -> website_mocks.MockVariant:
         for variant in website_mocks.MOCK_VARIANTS[mock_type]
         if variant.version_id == version_id
     )
+
+
+def test_content_signal_from_text_is_source_agnostic():
+    # No "website" involved at all — proves extraction works on any prose
+    # about a business, e.g. review text, not just homepage copy.
+    review_text = (
+        "We've been coming for private guitar lessons for two years and the "
+        "trial lessons and recitals made it an easy decision to stay."
+    )
+    signal = generate_website_mocks.content_signal_from_text(
+        review_text,
+        mock_type="music",
+        category="music",
+        school_name="Mark Fitchett's Guitar School",
+    )
+    assert "Private guitar lessons" in signal["labels"]
+    assert "Trial lessons" in signal["labels"]
+    assert signal["quote"]
+
+
+def test_content_signal_from_reviews_accepts_places_dicts_or_plain_text():
+    review_dicts = [
+        {"author": "A.", "rating": 5, "text": "The trial lessons here are excellent."},
+        {"author": "B.", "rating": 4, "text": "Recitals twice a year, my daughter loves it."},
+    ]
+    from_dicts = generate_website_mocks.content_signal_from_reviews(
+        review_dicts, mock_type="music", category="music", school_name="Test School",
+    )
+    assert "Trial lessons" in from_dicts["labels"]
+    assert "Recitals" in from_dicts["labels"]
+
+    from_text = generate_website_mocks.content_signal_from_reviews(
+        "The trial lessons here are excellent.",
+        mock_type="music", category="music", school_name="Test School",
+    )
+    assert "Trial lessons" in from_text["labels"]
+
+
+def test_merge_content_signals_dedupes_labels_and_prefers_first_quote():
+    merged = generate_website_mocks.merge_content_signals([
+        {"labels": ["Trial lessons", "Recitals"], "quote": "A real customer quote."},
+        {"labels": ["Recitals", "Private lessons"], "quote": "A site-copy quote that should be ignored."},
+        None,
+        {},
+    ])
+
+    assert merged["labels"] == ["Trial lessons", "Recitals", "Private lessons"]
+    assert merged["quote"] == "A real customer quote."
+
+
+def test_merge_content_signals_falls_through_to_next_source_when_first_has_no_quote():
+    merged = generate_website_mocks.merge_content_signals([
+        {"labels": [], "quote": ""},
+        {"labels": ["Trial lessons"], "quote": "Second source's quote."},
+    ])
+
+    assert merged["quote"] == "Second source's quote."
+
+
+def test_derive_palette_from_colors_uses_given_accent_and_secondary():
+    palette = generate_website_mocks._derive_palette_from_colors("#ff3b30", "#101010", radius="10px")
+
+    assert palette["accent"] == "#ff3b30"
+    assert palette["secondary"] == "#101010"
+    assert palette["ink"] == "#101010"
+    assert palette["radius"] == "10px"
+    # Derived tones should exist and be real hex colors, not placeholders.
+    for key in ("paper", "soft", "line", "muted", "danger"):
+        assert re.fullmatch(r"#[0-9a-f]{6}", palette[key])
+
+
+def test_derive_palette_from_colors_darkens_a_too_light_secondary():
+    # #f0f0f0 is far too light to use as a white-text-on-dark background —
+    # the derivation should clamp it dark rather than silently break contrast.
+    palette = generate_website_mocks._derive_palette_from_colors("#ff3b30", "#f0f0f0", radius="8px")
+
+    r, g, b = generate_website_mocks._hex_to_rgb(palette["secondary"])
+    assert generate_website_mocks._perceived_lightness((r, g, b)) < 130
+
+
+def test_visual_palette_applies_color_override_and_ignores_it_when_absent():
+    variant = website_mocks.MOCK_VARIANTS["music"][0]  # studio
+    default_palette = generate_website_mocks._visual_palette(variant)
+    overridden = generate_website_mocks._visual_palette(variant, {"accent": "#ff3b30", "secondary": "#101010"})
+
+    assert overridden["accent"] == "#ff3b30"
+    assert overridden["secondary"] == "#101010"
+    assert overridden != default_palette
+    # radius is a shape choice, not a color one — the override keeps the
+    # concept's original radius rather than resetting it.
+    assert overridden["radius"] == default_palette["radius"]
+
+
+def test_render_mock_concepts_works_without_a_sheet_row_or_fetch():
+    subject = {
+        "id": "standalone-001",
+        "name": "Riverside Music Collective",
+        "category": "music",
+        "city": "Austin",
+        "state": "TX",
+        "phone": "(512) 555-0100",
+        # No "website" key at all — this is the future reviews-based path:
+        # caller extracts a signal from whatever source it has and hands it
+        # in directly, no fetcher.fetch() call happens.
+    }
+    content_signal = generate_website_mocks.content_signal_from_text(
+        "Group lessons here turned my kid into someone who actually practices.",
+        mock_type="music",
+        category="music",
+        school_name=subject["name"],
+    )
+
+    rendered = generate_website_mocks.render_mock_concepts(
+        subject,
+        base_url="https://mocks.mypontora.com",
+        content_signal=content_signal,
+    )
+
+    assert len(rendered) == 4
+    version_ids = {item["version"] for item in rendered}
+    assert version_ids == {"studio", "performance", "collective", "academy"}
+    for item in rendered:
+        assert "<h1>" in item["html"]
+        assert "Riverside Music Collective" in item["html"]
+        assert item["url"].startswith("https://mocks.mypontora.com/mocks/standalone-001/")
+
+
+def test_write_mock_files_lays_out_expected_directory_structure(tmp_path):
+    subject = {"id": "standalone-002", "name": "Test School", "category": "preschool"}
+    rendered = generate_website_mocks.render_mock_concepts(
+        subject,
+        base_url="https://mocks.mypontora.com",
+        content_signal={"labels": [], "quote": ""},
+    )
+
+    generate_website_mocks.write_mock_files(tmp_path, subject["id"], rendered)
+
+    for item in rendered:
+        expected = tmp_path / "mocks" / "standalone-002" / f"{item['type']}-{item['version']}" / "index.html"
+        assert expected.exists()
+        assert expected.read_text(encoding="utf-8") == item["html"]
 
 
 def test_music_mock_versions_use_distinct_page_strategies():
@@ -249,6 +392,21 @@ def test_mock_tracking_payload_includes_school_context():
     assert 'const WEBSITE = "http://www.theguitarschool.com/";' in rendered
     assert "school_name: params.get('school_name') || SCHOOL_NAME" in rendered
     assert "website: params.get('website') || WEBSITE" in rendered
+
+
+def test_render_candidate_writes_files_and_strips_html_from_payload(tmp_path):
+    lead = _lead()
+    lead["_website_mock_site_anchors"] = ["private guitar lessons", "recitals"]
+    lead["_website_mock_site_quote"] = "Every lesson here feels personal."
+
+    payload = generate_website_mocks._render_candidate(lead, tmp_path, "https://mocks.mypontora.com")
+
+    assert len(payload) == 4
+    for item in payload:
+        assert "html" not in item  # HTML strings never belong in the Sheet payload
+        page = tmp_path / "mocks" / "90277-bf9454" / f"{item['type']}-{item['version']}" / "index.html"
+        assert page.exists()
+        assert "Mark Fitchett's Guitar School" in page.read_text(encoding="utf-8")
 
 
 def test_mock_index_uses_preview_links_and_send_status(tmp_path):

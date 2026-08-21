@@ -1,0 +1,11 @@
+# Optional: deploy via `wrangler deploy` from this directory instead of the
+# dashboard's Quick Edit. Requires Node + `npm install -g wrangler` locally.
+# See docs/setup_site_generator.md for both paths.
+
+name = "pontora-generated-sites"
+main = "worker.js"
+compatibility_date = "2026-08-04"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "pontora-generated-sites"

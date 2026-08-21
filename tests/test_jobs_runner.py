@@ -14,6 +14,41 @@ def test_write_status_merges_updates_and_leaves_valid_json(tmp_path, monkeypatch
     assert list(tmp_path.glob("*.tmp")) == []
 
 
+def test_build_generate_full_site_cmd_includes_only_provided_optional_flags():
+    cmd = jobs_runner._build_generate_full_site_cmd(
+        name="Riverside Music Collective",
+        category="music",
+        city="Austin",
+        base_url="https://example.com",
+        output_dir="generated/full-sites",
+    )
+
+    assert "--name" in cmd and "Riverside Music Collective" in cmd
+    assert "--city" in cmd and "Austin" in cmd
+    assert "--state" not in cmd  # not provided — should be omitted, not passed as ""
+    assert "--phone" not in cmd
+    assert "--google-reviews" in cmd
+    assert "--no-google-reviews" not in cmd
+
+
+def test_build_generate_full_site_cmd_scopes_regeneration_to_one_theme():
+    cmd = jobs_runner._build_generate_full_site_cmd(
+        name="Riverside Music Collective",
+        category="music",
+        versions="studio",
+        revision_notes="Focus more on trial lessons",
+        subject_id="riverside-music-collective-abc123-v2",
+        use_google=False,
+        base_url="https://example.com",
+        output_dir="generated/full-sites",
+    )
+
+    assert "--versions" in cmd and "studio" in cmd
+    assert "--revision-notes" in cmd and "Focus more on trial lessons" in cmd
+    assert "--subject-id" in cmd and "riverside-music-collective-abc123-v2" in cmd
+    assert "--no-google-reviews" in cmd
+
+
 def test_get_job_retries_transient_partial_json(monkeypatch):
     reads = iter(["{", '{"id": "job-1", "status": "running"}'])
 

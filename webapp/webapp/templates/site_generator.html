@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Site generator</h2>
+
+<p class="muted" style="max-width: 720px;">
+  Generates a full business website (not a mock/placeholder) from real
+  content: Google Places reviews and photos, pasted Yelp review text, an
+  informational page, and/or the business's own site — whatever you give it.
+  Missing details are left blank, never invented. Each submit spends real
+  Places API and (sometimes) Claude API calls.
+</p>
+
+<form method="POST" action="/site-generator/generate" class="add-lead-form">
+  <fieldset>
+    <legend>Business</legend>
+
+    <label>
+      Name <span class="required">*</span>
+      <input type="text" name="name" required>
+    </label>
+
+    <label>
+      Category <span class="required">*</span>
+      <select name="category" required>
+        <option value="">— pick one —</option>
+        <option value="preschool">Preschool / daycare / Montessori</option>
+        <option value="music">Music / dance / art</option>
+        <option value="martial_arts">Martial arts</option>
+        <option value="sports">Sports / gymnastics / swim</option>
+      </select>
+    </label>
+
+    <div class="form-row">
+      <label>
+        City
+        <input type="text" name="city">
+      </label>
+      <label>
+        State
+        <input type="text" name="state" maxlength="2">
+      </label>
+      <label>
+        Phone
+        <input type="tel" name="phone">
+      </label>
+    </div>
+
+    <label>
+      Address <span class="muted" style="font-weight:400;">(optional — helps Google Places match the right business, especially for common names)</span>
+      <input type="text" name="address" placeholder="123 Main St">
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Real content sources (all optional, use whatever you have)</legend>
+
+    <label>
+      <input type="checkbox" name="use_google" value="true" checked>
+      Look up Google reviews + photos automatically (via Places API, by name/city/address — not a pasted link)
+    </label>
+
+    <label>
+      Their own website, if any
+      <input type="url" name="website" placeholder="https://example.com">
+    </label>
+
+    <label>
+      Informational pages <span class="muted" style="font-weight:400;">(comma-separated for more than one)</span>
+      <input type="text" name="info_pages" placeholder="https://example.com/about, https://example.com/programs">
+    </label>
+
+    <label>
+      Pasted Yelp review text (copy/paste from their Yelp page — Yelp blocks automated fetching)
+      <textarea name="yelp_text" rows="4" placeholder="Paste review text here…"></textarea>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Instructions (optional)</legend>
+    <label>
+      What should this generation emphasize?
+      <input type="text" name="revision_notes" placeholder='e.g. "focus on the trial class" or "lean into the outdoor program"'>
+    </label>
+    <p class="muted" style="font-size:12px; margin-top:4px;">
+      This steers written content only (which real details get emphasized). It
+      cannot change the visual theme — colors/layout/fonts are fixed per
+      concept, not generated from this text.
+    </p>
+  </fieldset>
+
+  <div class="add-lead-actions">
+    <button type="submit" class="btn-primary">Generate site</button>
+  </div>
+</form>
+
+<h2 style="margin-top:36px;">Generated businesses</h2>
+
+{% if not orgs %}
+  <p class="muted">Nothing generated yet.</p>
+{% else %}
+  {% for org in orgs %}
+    <details class="site-gen-org">
+      <summary>
+        <span class="site-gen-org-name">{{ org.name }}</span>
+        <span class="lead-meta">{{ org.category }}{% if org.city %} · {{ org.city }}{{ ", " + org.state if org.state }}{% endif %} · {{ org.themes|length }} concept{{ "s" if org.themes|length != 1 }}</span>
+      </summary>
+      <div class="site-gen-org-body">
+        {% for theme, versions in org.themes.items() %}
+          {% set latest = versions[-1] %}
+          <div class="site-gen-theme">
+            <a href="{{ latest.preview_url }}" target="_blank" rel="noopener" class="btn-primary">
+              {{ latest.label }}{% if versions|length > 1 %} (v{{ latest.version_n }}){% endif %} ↗
+            </a>
+            {% if versions|length > 1 %}
+              <span class="muted" style="font-size:12px;">
+                {{ versions|length }} versions —
+                {% for v in versions %}<a href="{{ v.preview_url }}" target="_blank" rel="noopener">v{{ v.version_n }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+              </span>
+            {% endif %}
+            <form method="POST" action="/site-generator/regenerate" class="site-gen-regen-form">
+              <input type="hidden" name="org_id" value="{{ org.org_id }}">
+              <input type="hidden" name="theme" value="{{ theme }}">
+              <input type="text" name="revision_notes" placeholder="Optional: what should change? (leave blank to just regenerate)">
+              <button type="submit" class="btn-secondary">Regenerate</button>
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+    </details>
+  {% endfor %}
+{% endif %}
+{% endblock %}

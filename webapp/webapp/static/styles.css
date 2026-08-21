@@ -1137,3 +1137,72 @@ form.filters button:hover { background: #2d4229; }
 .btn-add-lead:hover {
   background: #2d4229;
 }
+
+.site-gen-org {
+  border: 1px solid #e4dece;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  background: #fff;
+}
+
+.site-gen-org summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 20px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.site-gen-org summary::-webkit-details-marker { display: none; }
+
+.site-gen-org summary::before {
+  content: "▸";
+  color: #8a8272;
+  margin-right: 2px;
+  font-size: 12px;
+}
+
+.site-gen-org[open] summary::before {
+  content: "▾";
+}
+
+.site-gen-org-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.site-gen-org-body {
+  padding: 0 20px 14px;
+  border-top: 1px solid #eee7d8;
+}
+
+.site-gen-theme {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eee7d8;
+}
+
+.site-gen-theme:first-child {
+  border-top: 0;
+}
+
+.site-gen-regen-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.site-gen-regen-form input[type="text"] {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #d8d0bd;
+  border-radius: 4px;
+  font-size: 13px;
+}

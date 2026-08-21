@@ -42,6 +42,20 @@ CLICK_LOGGER_URL = (
     or "https://script.google.com/macros/s/AKfycbxC_jG6QI9cuXYNRWfq1nn0fJlUTCkeAJmx_x4k24QlN6-if-pTjq5UrOsxaHCHy7td/exec"
 )
 
+# Full-site generator webapp page. This route triggers real Places API and
+# Claude API spend on every submit and the webapp itself has no other auth —
+# unset means the route refuses to serve rather than being open to anyone
+# who finds the URL.
+SITE_GENERATOR_ACCESS_KEY = os.getenv("SITE_GENERATOR_ACCESS_KEY", "")
+
+# Cloudflare R2 storage for generated full-site output. Durable across
+# Render restarts/redeploys, unlike local disk — see docs/setup_site_generator.md.
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "pontora-generated-sites")
+GENERATED_SITES_BASE_URL = os.getenv("GENERATED_SITES_BASE_URL", "")
+
 # --- Gmail OAuth ---
 GMAIL_OAUTH_CLIENT_PATH = os.getenv(
     "GMAIL_OAUTH_CLIENT_PATH",

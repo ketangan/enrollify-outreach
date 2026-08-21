@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 PLACES_TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 PLACES_DETAILS_URL = "https://places.googleapis.com/v1/places/{place_id}"
+PLACES_PHOTO_MEDIA_URL = "https://places.googleapis.com/v1/{photo_name}/media"
 
 SEARCH_FIELDS = ",".join([
     "places.id",
@@ -50,7 +51,10 @@ DETAILS_FIELDS = ",".join([
     "userRatingCount",
     "reviews",
     "regularOpeningHours",
+    "photos",
 ])
+
+MAX_PHOTOS_PER_PLACE = 4
 
 MAX_RESULTS_PER_QUERY = 60
 
@@ -100,6 +104,7 @@ class DiscoveredPlace:
     google_rating: float | None = None
     google_review_count: int | None = None
     google_reviews: list[dict] = field(default_factory=list)
+    google_photo_names: list[str] = field(default_factory=list)
     skip_reason: str = ""
 
     @property
@@ -222,6 +227,30 @@ def _parse_place(raw: dict, category: str, fallback_zip: str) -> DiscoveredPlace
     )
 
 
+def _apply_details(place: DiscoveredPlace, details: dict) -> None:
+    """Populate rating/reviews/photos on `place` from a _place_details() response.
+    Shared by the zip-sweep discovery flow and the single-business lookup so
+    both parse the API response identically."""
+    if not details:
+        return
+    place.google_rating = details.get("rating")
+    place.google_review_count = details.get("userRatingCount")
+    reviews_raw = details.get("reviews", []) or []
+    place.google_reviews = [
+        {
+            "author": r.get("authorAttribution", {}).get("displayName"),
+            "rating": r.get("rating"),
+            "text": r.get("text", {}).get("text", ""),
+            "publish_time": r.get("publishTime"),
+        }
+        for r in reviews_raw
+    ]
+    photos_raw = details.get("photos", []) or []
+    place.google_photo_names = [
+        p["name"] for p in photos_raw[:MAX_PHOTOS_PER_PLACE] if p.get("name")
+    ]
+
+
 def _apply_pre_filter(place: DiscoveredPlace) -> None:
     skip, reason = skip_lists.is_skipped_by_name(place.name)
     if skip:
@@ -311,19 +340,7 @@ def discover_zip(zip_code: str) -> dict:
         except Exception as e:
             logger.warning("Details fetch failed for %s: %s", place.name, e)
             continue
-        if details:
-            place.google_rating = details.get("rating")
-            place.google_review_count = details.get("userRatingCount")
-            reviews_raw = details.get("reviews", []) or []
-            place.google_reviews = [
-                {
-                    "author": r.get("authorAttribution", {}).get("displayName"),
-                    "rating": r.get("rating"),
-                    "text": r.get("text", {}).get("text", ""),
-                    "publish_time": r.get("publishTime"),
-                }
-                for r in reviews_raw
-            ]
+        _apply_details(place, details)
 
     with_web = [p for p in seen_place_ids.values() if not p.is_skipped and p.has_website]
     no_web = [p for p in seen_place_ids.values() if not p.is_skipped and not p.has_website]
@@ -341,3 +358,108 @@ def discover_zip(zip_code: str) -> dict:
         "places_skipped": skipped,
         "capped_categories": capped_categories,
     }
+
+
+MIN_MATCH_CONFIDENCE = 60  # fuzz.token_set_ratio (0-100); below this, treat as no match
+
+
+def _best_candidate(results: list[dict], name: str, address: str) -> tuple[dict, float] | None:
+    """Score every text-search result against the name (and address, if
+    given) and return the best match with its confidence score. Not just
+    "take result[0]" — Places' own ranking doesn't always put the right
+    business first for common names."""
+    from rapidfuzz import fuzz
+
+    best: tuple[dict, float] | None = None
+    for raw in results:
+        candidate_name = raw.get("displayName", {}).get("text", "")
+        candidate_address = raw.get("formattedAddress", "")
+        name_score = fuzz.token_set_ratio(name, candidate_name)
+        score = name_score
+        if address.strip() and candidate_address:
+            address_score = fuzz.token_set_ratio(address, candidate_address)
+            # Address is corroborating evidence, not the primary signal —
+            # a name mismatch shouldn't be rescued by a lucky street-number
+            # match, but a strong address match can break ties between
+            # similarly-named results.
+            score = (name_score * 0.7) + (address_score * 0.3)
+        if best is None or score > best[1]:
+            best = (raw, score)
+    return best
+
+
+def find_business(name: str, city: str = "", state: str = "", address: str = "") -> DiscoveredPlace | None:
+    """Look up ONE specific named business (not a zip/category sweep) and
+    return it with rating/reviews/photos populated. Scores every text-search
+    result against the given name/address with fuzzy matching (rapidfuzz)
+    and picks the best one — not just the first result, which Places'
+    ranking doesn't always get right for common business names. Returns
+    None when nothing is found, the best match is too weak to trust
+    (MIN_MATCH_CONFIDENCE), or the lookup fails non-fatally (auth errors
+    still raise, same as the rest of this module)."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    address = (address or "").strip()
+    query = " ".join(part for part in [name, address, city, state] if part.strip())
+
+    try:
+        response = _text_search(query)
+    except PlacesAuthError:
+        raise
+    except (PlacesAPIError, requests.RequestException) as e:
+        logger.warning("find_business search failed for %r: %s", name, e)
+        return None
+
+    results = response.get("places", [])
+    if not results:
+        return None
+
+    best = _best_candidate(results, name, address)
+    if best is None or best[1] < MIN_MATCH_CONFIDENCE:
+        logger.info(
+            "find_business: no confident match for %r (best score %.0f, need %d)",
+            name, best[1] if best else 0, MIN_MATCH_CONFIDENCE,
+        )
+        return None
+
+    raw, score = best
+    place = _parse_place(raw, category="", fallback_zip="")
+    if not place.place_id:
+        return None
+    logger.info("find_business: matched %r to %r (confidence %.0f)", name, place.name, score)
+
+    try:
+        details = _place_details(place.place_id)
+    except PlacesAuthError:
+        raise
+    except Exception as e:
+        logger.warning("find_business details fetch failed for %s: %s", place.name, e)
+        details = {}
+    _apply_details(place, details)
+    return place
+
+
+def fetch_photo_bytes(photo_name: str, max_width_px: int = 1200) -> tuple[bytes, str] | None:
+    """Fetch actual photo bytes for a `google_photo_names` entry, server-side
+    only — the API key never reaches a client. Returns (bytes, content_type)
+    or None on any failure; never raises except on auth errors, matching the
+    rest of this module."""
+    url = PLACES_PHOTO_MEDIA_URL.format(photo_name=photo_name)
+    headers = {"X-Goog-Api-Key": config.GOOGLE_PLACES_API_KEY}
+    params = {"maxWidthPx": max_width_px, "skipHttpRedirect": "false"}
+    _bump_api_count()
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+    except requests.RequestException as e:
+        logger.warning("Photo media fetch failed for %s: %s", photo_name, e)
+        return None
+
+    if resp.status_code in (401, 403):
+        _check_response(resp, f"photo_media name={photo_name}")
+    if resp.status_code != 200:
+        logger.warning("Photo media fetch %s returned %s", photo_name, resp.status_code)
+        return None
+
+    content_type = resp.headers.get("Content-Type", "image/jpeg")
+    return resp.content, content_type

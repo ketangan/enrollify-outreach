@@ -376,7 +376,60 @@ def _render_contact_link(phone: str, website: str) -> str:
     return " ".join(pieces)
 
 
-def _visual_palette(variant: website_mocks.MockVariant) -> dict[str, str]:
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+def _rgb_to_hex(rgb: tuple[float, float, float]) -> str:
+    return "#" + "".join(f"{max(0, min(255, round(c))):02x}" for c in rgb)
+
+
+def _mix_rgb(rgb: tuple[int, int, int], target: tuple[int, int, int], ratio: float) -> tuple[float, float, float]:
+    return tuple(c * (1 - ratio) + t * ratio for c, t in zip(rgb, target))
+
+
+def _perceived_lightness(rgb: tuple[int, int, int]) -> float:
+    r, g, b = rgb
+    return 0.299 * r + 0.587 * g + 0.114 * b  # 0-255
+
+
+def _derive_palette_from_colors(accent_hex: str, secondary_hex: str, radius: str) -> dict[str, str]:
+    """Build a full palette from just an accent + secondary color — used
+    when a revision request asks for a specific theme color (see
+    mock_content_llm.infer_theme_colors). Everything else (paper, soft,
+    line, muted, hero overlays) is derived by mixing toward white/black, the
+    same relationship the hand-tuned per-concept palettes already follow, so
+    a color-steered site still looks like the rest of this design system
+    instead of an unrelated one-off.
+
+    secondary is clamped to stay genuinely dark — the CSS assumes it works
+    as a white-text-on-dark background in the hero and a few bands, so an
+    LLM picking something too light would silently break text legibility
+    rather than just looking a bit off."""
+    accent_rgb = _hex_to_rgb(accent_hex)
+    secondary_rgb = _hex_to_rgb(secondary_hex)
+    if _perceived_lightness(secondary_rgb) > 130:
+        secondary_rgb = tuple(round(c) for c in _mix_rgb(secondary_rgb, (0, 0, 0), 0.6))
+        secondary_hex = _rgb_to_hex(secondary_rgb)
+
+    white = (255, 255, 255)
+    return {
+        "accent": accent_hex,
+        "secondary": secondary_hex,
+        "ink": secondary_hex,
+        "muted": _rgb_to_hex(_mix_rgb(secondary_rgb, white, 0.45)),
+        "paper": _rgb_to_hex(_mix_rgb(secondary_rgb, white, 0.97)),
+        "soft": _rgb_to_hex(_mix_rgb(secondary_rgb, white, 0.90)),
+        "line": _rgb_to_hex(_mix_rgb(secondary_rgb, white, 0.80)),
+        "danger": "#c0392b",
+        "radius": radius,
+        "hero_overlay_a": f"rgba({secondary_rgb[0]},{secondary_rgb[1]},{secondary_rgb[2]},.94)",
+        "hero_overlay_b": f"rgba({accent_rgb[0]},{accent_rgb[1]},{accent_rgb[2]},.55)",
+    }
+
+
+def _visual_palette(variant: website_mocks.MockVariant, color_override: dict | None = None) -> dict[str, str]:
     # Each variant gets its own accent/ground pairing and corner radius so the
     # eight concepts read as distinct identities, not one template re-skinned.
     # Palettes are deliberately steered off common defaults (Tailwind blue-500,
@@ -539,7 +592,7 @@ def _visual_palette(variant: website_mocks.MockVariant) -> dict[str, str]:
             "hero_overlay_b": "rgba(198,90,122,.52)",
         },
     }
-    return palettes.get(
+    base = palettes.get(
         (variant.type_id, variant.version_id),
         {
             "accent": variant.accent,
@@ -555,6 +608,9 @@ def _visual_palette(variant: website_mocks.MockVariant) -> dict[str, str]:
             "hero_overlay_b": "rgba(17,24,39,.90)",
         },
     )
+    if color_override and color_override.get("accent") and color_override.get("secondary"):
+        return _derive_palette_from_colors(color_override["accent"], color_override["secondary"], base["radius"])
+    return base
 
 
 PHOTO_SETS = {
@@ -591,6 +647,18 @@ def _photo_urls(mock_type: str, category: str = "") -> list[str]:
     if mock_type == "sports" and category_key in PHOTO_SETS:
         return PHOTO_SETS[category_key]
     return PHOTO_SETS.get(mock_type) or PHOTO_SETS["preschool"]
+
+
+def _resolve_photos(lead: dict, mock_type: str, category: str) -> list[str]:
+    """Real business photos (a `_website_mock_photos` override — 3+ URLs or
+    local paths) take priority; falls back to the stock category photo set
+    when there aren't enough real ones. Every signature section indexes up
+    to photos[2], so fewer than 3 real photos isn't usable — fall back
+    entirely rather than mixing a partial real set with stock filler."""
+    override = lead.get("_website_mock_photos")
+    if isinstance(override, list) and len(override) >= 3:
+        return override[:3]
+    return _photo_urls(mock_type, category)
 
 
 def _photo_style(photo_url: str) -> str:
@@ -785,44 +853,136 @@ def _site_domain(website: str) -> str:
     return re.sub(r"^www\.", "", netloc)
 
 
-def _site_signal_for_lead(lead: dict, variant: website_mocks.MockVariant) -> dict:
-    """Real content pulled from the lead's current homepage: program names
-    (for personalizing card titles) and one representative quote (for an
-    'in their own words' pull-quote). Falls back to empty when the site
-    can't be fetched, so rendering always degrades gracefully."""
-    override_labels = lead.get("_website_mock_site_anchors")
-    override_quote = lead.get("_website_mock_site_quote")
-    if override_labels is not None or override_quote is not None:
-        labels: list[str] = []
-        if isinstance(override_labels, str):
-            labels = [_anchor_title_case(part) for part in override_labels.split("|") if _clean(part)]
-        elif isinstance(override_labels, list):
-            labels = [_anchor_title_case(part) for part in override_labels if _clean(part)]
-        return {"labels": labels, "quote": _clean(override_quote)}
+# --- Reusable content-signal extraction -------------------------------------
+# Everything below this line down to render_mock_concepts()/write_mock_files()
+# has no Google Sheets dependency and no assumption that "website" is the only
+# source of real content. A future pipeline that hands in Google/Yelp review
+# text (or any other block of prose about a business) instead of a website
+# should call content_signal_from_text() directly and skip
+# content_signal_from_website() entirely.
 
-    website = _clean(lead.get("website"))
+
+def content_signal_from_text(
+    text: str,
+    *,
+    mock_type: str,
+    category: str,
+    school_name: str,
+    link_text: str = "",
+) -> dict:
+    """Pure extraction: real program-name labels and one representative quote
+    from any block of prose about a business — a homepage's text, review
+    text, anything else. Source-agnostic; callers obtain the text however
+    they want (fetch a site, call a reviews API, paste in a doc) and hand it
+    here. Falls back to empty lists/strings on unusable input, never raises."""
+    signal = f"{_clean(text)} {_clean(link_text)}".strip()
+    labels = _site_anchor_labels_from_text(
+        signal,
+        mock_type=mock_type,
+        category=category,
+        school_name=school_name,
+    )
+    quote = _site_quote_from_text(text)
+    return {"labels": labels, "quote": quote}
+
+
+def content_signal_from_website(
+    website: str,
+    *,
+    mock_type: str,
+    category: str,
+    school_name: str,
+) -> dict:
+    """Convenience wrapper for today's only content source: fetch a
+    business's own marketing site and extract a content signal from it.
+    Degrades to an empty signal (never raises) when the site can't be
+    fetched, so rendering always has something safe to work with."""
+    website = _clean(website)
     if not website:
         return {"labels": [], "quote": ""}
 
     page = fetcher.fetch(website)
     if page.error:
-        logger.info(
-            "Skipping site content for %s: %s",
-            _clean(lead.get("id")) or _clean(lead.get("name")) or website,
-            page.error,
-        )
+        logger.info("Skipping site content for %s: %s", school_name or website, page.error)
         return {"labels": [], "quote": ""}
 
     link_text = " ".join(_clean(link.get("text")) for link in page.outbound_links)
-    signal = f"{page.text} {link_text}"
-    labels = _site_anchor_labels_from_text(
-        signal,
+    return content_signal_from_text(
+        page.text,
+        mock_type=mock_type,
+        category=category,
+        school_name=school_name,
+        link_text=link_text,
+    )
+
+
+def content_signal_from_reviews(
+    reviews: list[dict] | str,
+    *,
+    mock_type: str,
+    category: str,
+    school_name: str,
+) -> dict:
+    """Extract a content signal from review text — either Google Places API
+    review dicts ({author, rating, text, publish_time}, see src/places.py) or
+    a plain pasted block of review text (e.g. copied from a Yelp page).
+    Reviews are a *better* source for the quote than a business's own site
+    copy — it's a real customer's words, not marketing copy — so callers
+    combining this with a website signal should prefer this quote first
+    (see merge_content_signals)."""
+    if isinstance(reviews, str):
+        combined_text = reviews
+    else:
+        combined_text = " ".join(_clean(r.get("text")) for r in reviews if isinstance(r, dict))
+    return content_signal_from_text(
+        combined_text,
+        mock_type=mock_type,
+        category=category,
+        school_name=school_name,
+    )
+
+
+def merge_content_signals(signals: list[dict]) -> dict:
+    """Combine multiple content signals (website, Google reviews, pasted
+    Yelp text, an informational page — any mix, any order) into one. Labels
+    merge and dedupe across all sources, preserving first-seen order. The
+    quote is taken from the first source that has one — so callers should
+    pass signals in priority order (e.g. reviews before website, since a real
+    customer quote beats paraphrased marketing copy)."""
+    labels: list[str] = []
+    seen_label_keys: set[str] = set()
+    quote = ""
+    for signal in signals:
+        if not signal:
+            continue
+        for label in signal.get("labels", []):
+            key = _anchor_key(label)
+            if not key or key in seen_label_keys:
+                continue
+            seen_label_keys.add(key)
+            labels.append(label)
+        if not quote and signal.get("quote"):
+            quote = signal["quote"]
+    return {"labels": labels, "quote": quote}
+
+
+def _site_signal_for_lead(lead: dict, variant: website_mocks.MockVariant) -> dict:
+    """Sheet-driven adapter: honors the `_website_mock_site_anchors`/
+    `_website_mock_site_quote` overrides (used by tests and by manually
+    curated leads), otherwise fetches the lead's website. New reusable call
+    sites should use content_signal_from_website/content_signal_from_text
+    directly instead of routing through a lead dict."""
+    override_labels = lead.get("_website_mock_site_anchors")
+    override_quote = lead.get("_website_mock_site_quote")
+    if override_labels is not None or override_quote is not None:
+        return {"labels": _precomputed_site_anchors(lead), "quote": _clean(override_quote)}
+
+    return content_signal_from_website(
+        lead.get("website"),
         mock_type=variant.type_id,
         category=_clean(lead.get("category")),
         school_name=_clean(lead.get("name")),
     )
-    quote = _site_quote_from_text(page.text)
-    return {"labels": labels, "quote": quote}
 
 
 def _render_site_anchors(labels: list[str]) -> str:
@@ -1411,7 +1571,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     intro = _hero_intro(variant.type_id, variant.version_id, school_name)
     palette = {
         key: html.escape(value, quote=True)
-        for key, value in _visual_palette(variant).items()
+        for key, value in _visual_palette(variant, lead.get("_website_mock_color_override")).items()
     }
     accent = palette["accent"]
     secondary = palette["secondary"]
@@ -1430,7 +1590,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
         _clean(lead.get("category")),
     )
     items = _personalize_items(items, site_anchor_labels)
-    photos = _photo_urls(variant.type_id, _clean(lead.get("category")))
+    photos = _resolve_photos(lead, variant.type_id, _clean(lead.get("category")))
     body = _render_variant_body(
         {
             "name": escaped_name,
@@ -2087,36 +2247,93 @@ def _candidate_rows(rows: list[dict], force: bool) -> list[dict]:
     return candidates
 
 
-def _render_candidate(lead: dict, output_dir: Path, base_url: str) -> list[dict]:
-    payload = website_mocks.build_payload(lead, base_url)
+def render_mock_concepts(
+    subject: dict,
+    *,
+    base_url: str,
+    mock_type: str = "",
+    versions: str = "auto",
+    content_signal: dict | None = None,
+) -> list[dict]:
+    """The reusable core, with no Google Sheets dependency: given a business
+    (id/name/category/city/state/phone/website) and an already-extracted
+    content signal (or none), render every requested mock concept and return
+    each as {type, version, label, url, preview_url, html}. Pass a website in
+    `subject` and no `content_signal` to fetch+extract automatically, or pass
+    a `content_signal` you built yourself (e.g. from review text via
+    content_signal_from_text()) to skip fetching entirely.
+
+    This is the one place that turns a business + content signal into
+    rendered pages — the Sheet-driven CLI and any future standalone script
+    (reviews-based or otherwise) should both go through this function rather
+    than duplicating the render loop.
+    """
+    resolved_type = website_mocks.normalize_mock_type(mock_type, category=_clean(subject.get("category")))
+    payload = website_mocks.build_payload(
+        {**subject, "website_mock_type": resolved_type, "website_mock_versions": versions},
+        base_url,
+    )
     if not payload:
         return []
 
-    lead_id = _clean(lead.get("id"))
-    mock_type = website_mocks.normalize_mock_type(
-        _clean(lead.get("website_mock_type")),
-        category=_clean(lead.get("category")),
-    )
     variants = {
         f"{variant.type_id}-{variant.version_id}": variant
-        for variant in website_mocks.variants_for(mock_type, _clean(lead.get("website_mock_versions")))
+        for variant in website_mocks.variants_for(resolved_type, versions)
     }
-    site_signal = {"labels": [], "quote": ""}
-    if variants:
-        site_signal = _site_signal_for_lead(lead, next(iter(variants.values())))
-    render_lead = dict(lead)
-    render_lead["_website_mock_site_anchors"] = site_signal["labels"]
-    render_lead["_website_mock_site_quote"] = site_signal["quote"]
+    if content_signal is None:
+        content_signal = (
+            content_signal_from_website(
+                subject.get("website"),
+                mock_type=resolved_type,
+                category=_clean(subject.get("category")),
+                school_name=_clean(subject.get("name")),
+            )
+            if variants
+            else {"labels": [], "quote": ""}
+        )
+    render_subject = dict(subject)
+    render_subject["_website_mock_site_anchors"] = content_signal.get("labels", [])
+    render_subject["_website_mock_site_quote"] = content_signal.get("quote", "")
 
+    rendered = []
     for item in payload:
-        variant_key = f"{item['type']}-{item['version']}"
-        variant = variants.get(variant_key)
+        variant = variants.get(f"{item['type']}-{item['version']}")
         if not variant:
             continue
-        page_dir = output_dir / "mocks" / _slug(lead_id) / variant_key
+        rendered.append({**item, "html": _render_mock_html(render_subject, variant)})
+    return rendered
+
+
+def write_mock_files(output_dir: Path, subject_id: str, rendered: list[dict]) -> None:
+    """Write render_mock_concepts() output to disk as
+    {output_dir}/mocks/{subject_id-slug}/{type}-{version}/index.html."""
+    slug = _slug(subject_id)
+    for item in rendered:
+        page_dir = output_dir / "mocks" / slug / f"{item['type']}-{item['version']}"
         page_dir.mkdir(parents=True, exist_ok=True)
-        (page_dir / "index.html").write_text(_render_mock_html(render_lead, variant), encoding="utf-8")
-    return payload
+        (page_dir / "index.html").write_text(item["html"], encoding="utf-8")
+
+
+def _render_candidate(lead: dict, output_dir: Path, base_url: str) -> list[dict]:
+    """Sheet-driven adapter over render_mock_concepts()/write_mock_files()."""
+    override_labels = lead.get("_website_mock_site_anchors")
+    override_quote = lead.get("_website_mock_site_quote")
+    content_signal = None
+    if override_labels is not None or override_quote is not None:
+        content_signal = {"labels": _precomputed_site_anchors(lead), "quote": _clean(override_quote)}
+
+    rendered = render_mock_concepts(
+        lead,
+        base_url=base_url,
+        mock_type=_clean(lead.get("website_mock_type")),
+        versions=_clean(lead.get("website_mock_versions")),
+        content_signal=content_signal,
+    )
+    if not rendered:
+        return []
+
+    write_mock_files(output_dir, _clean(lead.get("id")), rendered)
+    return [{k: v for k, v in item.items() if k != "html"} for item in rendered]
 
 
 def _mock_send_status(lead: dict) -> dict[str, str]:

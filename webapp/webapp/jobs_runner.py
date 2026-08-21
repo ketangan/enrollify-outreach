@@ -31,6 +31,37 @@ def _python() -> str:
     return sys.executable
 
 
+def _opt(flag: str, value) -> list[str]:
+    """[flag, value] if value is truthy, else [] — for optional CLI args."""
+    return [flag, str(value)] if value else []
+
+
+def _build_generate_full_site_cmd(**kw) -> list[str]:
+    return [
+        _python(), "scripts/generate_full_site.py",
+        "--name", kw["name"],
+        "--category", kw["category"],
+        *_opt("--city", kw.get("city")),
+        *_opt("--state", kw.get("state")),
+        *_opt("--address", kw.get("address")),
+        *_opt("--phone", kw.get("phone")),
+        *_opt("--website", kw.get("website")),
+        *_opt("--info-pages", kw.get("info_pages")),
+        *_opt("--yelp-text", kw.get("yelp_text")),
+        "--google-reviews" if kw.get("use_google", True) else "--no-google-reviews",
+        "--versions", kw.get("versions") or "auto",
+        *_opt("--revision-notes", kw.get("revision_notes")),
+        *_opt("--subject-id", kw.get("subject_id")),
+        # The webapp always wants this generation recorded durably (Sheet),
+        # unlike ad-hoc CLI testing which defaults to not writing there.
+        "--record-to-sheet",
+        *_opt("--org-id", kw.get("org_id")),
+        *_opt("--theme", kw.get("theme")),
+        "--base-url", kw["base_url"],
+        "--output-dir", kw["output_dir"],
+    ]
+
+
 JOB_KIND_REGISTRY = {
     # Per-region Phase 1 (single zip)
     "phase1_next": lambda region, **kw: [
@@ -47,6 +78,8 @@ JOB_KIND_REGISTRY = {
     "downstream": None,  # special-cased
     # Full daily run
     "daily": lambda **kw: [_python(), "scripts/run_daily.py"],
+    # Full-site generator (new business, or a single-theme regeneration)
+    "generate_full_site": _build_generate_full_site_cmd,
 }
 
 
