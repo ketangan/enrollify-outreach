@@ -108,6 +108,8 @@ def test_dnc_reply_classifier_catches_clear_rejections():
         ("Re: Reimagining enrollment for smaller schools", "Stop"),
         ("Re: Reimagining enrollment for smaller schools", "We are happy with the system we have."),
         ("Re: Reimagining enrollment for smaller schools", "We're not in the market at this time."),
+        ("Re: Reimagining enrollment for smaller schools", "Not the right fit; thank you."),
+        ("Re: Reimagining enrollment for smaller schools", "Probably not a good fit for us."),
     ]
 
     reasons = [

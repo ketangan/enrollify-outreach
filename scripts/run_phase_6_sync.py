@@ -94,7 +94,7 @@ DNC_REPLY_PATTERNS = [
             r"\b("
             r"no thanks|no thank you|not interested|not in the market|not looking|"
             r"not at this time|not right now|we(?:'re| are) all set|all set|"
-            r"no need"
+            r"no need|not (?:(?:the|a) )?(?:(?:right|good|best) )?fit"
             r")\b",
             re.IGNORECASE,
         ),
