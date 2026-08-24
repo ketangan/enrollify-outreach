@@ -172,7 +172,7 @@ OWNER_TITLES = (
 )
 OWNER_CONTEXT_RE = re.compile(
     r"\b("
-    r"about me|teacher|educator|provider|director|owner|founder|principal|"
+    r"about me|teacher|tutor|tutoring|educator|provider|director|owner|founder|principal|"
     r"head of school|opened|opening|started|founded|licensed child care|"
     r"owned|operated|licensed childcare|preschool|school|studio|academy|program"
     r")\b",
@@ -181,7 +181,7 @@ OWNER_CONTEXT_RE = re.compile(
 OWNER_EXCERPT_RE = re.compile(
     r"\b("
     r"about me|meet|owner|provider|director|founder|principal|head of school|"
-    r"executive director|teacher|parents|families|prospective family|"
+    r"executive director|teacher|tutor|tutoring|parents|families|prospective family|"
     r"history|philosophy|owned|operated|sincerely|welcome|my name is|"
     r"i am|i'm|i’m|contact|email|application|admissions?|enrollment|"
     r"tour|get in touch"
@@ -273,13 +273,14 @@ def _extract_emails(text: str) -> list[str]:
     return cleaned
 
 
-def _clean_owner_name(raw_name: str) -> str:
+def _clean_owner_name(raw_name: str, *, allow_single: bool = False) -> str:
     """Normalize a likely person name and reject obvious school/org phrases."""
     name = re.sub(r"\s+", " ", (raw_name or "").strip(" ,.;:!?\n\t"))
     if not name:
         return ""
     words = name.split()
-    if len(words) < 2 or len(words) > 4:
+    min_words = 1 if allow_single else 2
+    if len(words) < min_words or len(words) > 4:
         return ""
     allowed_particles = {"de", "del", "de la", "la", "van", "von"}
     for word in words:
@@ -310,6 +311,8 @@ def _infer_owner_title(context: str) -> str:
     for needle, title in title_order:
         if needle in context_lower:
             return title
+    if "tutor" in context_lower or "tutoring" in context_lower:
+        return "Owner/Operator"
     if (
         "home" in context_lower
         and ("preschool" in context_lower or "child care" in context_lower)
@@ -443,7 +446,9 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
         ),
     ]
     first_person_pattern = re.compile(
-        rf"\b(?:my name is|i am|i'm|i’m)\s+{PERSON_NAME}\b",
+        rf"\b(?:my name is|i am|i'm|i’m)\s+"
+        rf"({PERSON_NAME_PATTERN}|[A-Z][a-zA-Z'’.-]+)\b"
+        rf"(?=\s*(?:[,.;:!?]|and\b|&|\n|$))",
         re.IGNORECASE,
     )
 
@@ -516,7 +521,7 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
                     )
 
         for match in first_person_pattern.finditer(text):
-            name = _clean_owner_name(match.group(1))
+            name = _clean_owner_name(match.group(1), allow_single=True)
             if not name:
                 continue
             window = text[max(0, match.start() - 250):match.end() + 450]

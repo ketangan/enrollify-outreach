@@ -65,6 +65,62 @@ def test_find_owner_recovers_hidden_garden_first_person_bio(monkeypatch):
     assert "deterministic_email_fallback" in result.reason
 
 
+def test_find_owner_accepts_first_name_from_strong_tutor_about_me_bio(monkeypatch):
+    home_url = "https://growthbyguidance.com/"
+    about_url = "https://growthbyguidance.com/about.html"
+    home_text = (
+        "Growth By Guidance Tutoring That Makes Sense! "
+        "Contact Information Email: growthbyguidance@gmail.com"
+    )
+    about_text = (
+        "About Me Hi, I'm Nick and I've been tutoring students for over five years, "
+        "starting in academies during high school and college, and continuing with "
+        "personalized one-on-one sessions in recent years."
+    )
+
+    def fake_fetch(url):
+        normalized = url.rstrip("/")
+        if normalized == home_url.rstrip("/"):
+            return FetchedPage(
+                url=home_url,
+                status_code=200,
+                text=home_text,
+                raw_html_snippet=home_text.lower(),
+                outbound_links=[
+                    {"href": about_url, "text": "About Me"},
+                    {"href": "mailto:growthbyguidance@gmail.com", "text": "growthbyguidance@gmail.com"},
+                ],
+            )
+        if normalized == about_url.rstrip("/"):
+            return FetchedPage(
+                url=about_url,
+                status_code=200,
+                text=about_text,
+                raw_html_snippet=about_text.lower(),
+                outbound_links=[],
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+
+    result = owner_finder.find_owner(
+        home_url,
+        _FakeClient(),
+        name="Growth By Guidance",
+        category="tutoring",
+        city="Torrance",
+        state="CA",
+    )
+
+    assert result.owner_name == "Nick"
+    assert result.owner_title == "Owner/Operator"
+    assert result.owner_source_url == about_url
+    assert result.best_email == "growthbyguidance@gmail.com"
+    assert result.email_confidence == "medium"
+    assert "deterministic_owner:first_person_owner_bio" in result.reason
+    assert "deterministic_email_fallback" in result.reason
+
+
 def test_find_owner_recovers_discovery_garden_wix_history_and_application_pages(monkeypatch):
     base = "https://discoverygardenece.wixsite.com/my-site"
     history_url = f"{base}/our-history-and-philosophy"
