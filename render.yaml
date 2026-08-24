@@ -41,3 +41,15 @@ services:
         sync: false
       - key: GOOGLE_SHEETS_CREDENTIALS_PATH
         value: /etc/secrets/google-service-account.json
+      - key: SITE_GENERATOR_ACCESS_KEY
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        value: pontora-generated-sites
+      - key: GENERATED_SITES_BASE_URL
+        value: https://sites.mypontora.com
