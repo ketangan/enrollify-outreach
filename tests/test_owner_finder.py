@@ -121,6 +121,65 @@ def test_find_owner_accepts_first_name_from_strong_tutor_about_me_bio(monkeypatc
     assert "deterministic_email_fallback" in result.reason
 
 
+def test_find_owner_prefers_first_person_name_over_business_name_after_owner_header(monkeypatch):
+    home_url = "https://www.thelittlecenter.com/"
+    about_url = "https://www.thelittlecenter.com/about-us"
+    contact_url = "https://www.thelittlecenter.com/contact"
+    about_text = (
+        "Owner & Program Director Founder & Director "
+        "Hi, I’m Eliana, founder of The Little Center, LLC. "
+        "I find joy in running a small business as an educator, business owner, and mother."
+    )
+    contact_text = "Contact us at thelittlecenter77@gmail.com"
+
+    def fake_fetch(url):
+        normalized = url.rstrip("/")
+        if normalized == home_url.rstrip("/"):
+            return FetchedPage(
+                url=home_url,
+                status_code=200,
+                text="The Little Center",
+                outbound_links=[
+                    {"href": contact_url, "text": "Contact"},
+                    {"href": about_url, "text": "About Us"},
+                ],
+            )
+        if normalized == about_url.rstrip("/"):
+            return FetchedPage(
+                url=about_url,
+                status_code=200,
+                text=about_text,
+                raw_html_snippet=about_text.lower(),
+                outbound_links=[],
+            )
+        if normalized == contact_url.rstrip("/"):
+            return FetchedPage(
+                url=contact_url,
+                status_code=200,
+                text=contact_text,
+                raw_html_snippet=contact_text.lower(),
+                outbound_links=[],
+            )
+        return FetchedPage(url=url, status_code=404, error="http_404")
+
+    monkeypatch.setattr(owner_finder.fetcher, "fetch", fake_fetch)
+
+    result = owner_finder.find_owner(
+        home_url,
+        _FakeClient(),
+        name="The Little Center",
+        category="daycare",
+        city="Torrance",
+        state="CA",
+    )
+
+    assert result.owner_name == "Eliana"
+    assert result.owner_name != "Little Center"
+    assert result.owner_source_url == about_url
+    assert result.best_email == "thelittlecenter77@gmail.com"
+    assert "deterministic_owner:first_person_owner_bio" in result.reason
+
+
 def test_find_owner_recovers_discovery_garden_wix_history_and_application_pages(monkeypatch):
     base = "https://discoverygardenece.wixsite.com/my-site"
     history_url = f"{base}/our-history-and-philosophy"
@@ -613,6 +672,12 @@ def test_extract_emails_normalizes_spaced_addresses():
     assert owner_finder._extract_emails("Email: hifipreschool @gmail.com") == [
         "hifipreschool@gmail.com",
     ]
+
+
+def test_extract_emails_filters_webador_platform_support():
+    assert owner_finder._extract_emails(
+        "support@webador.com thelittlecenter77@gmail.com"
+    ) == ["thelittlecenter77@gmail.com"]
 
 
 def test_pick_best_email_uses_page_order_for_weak_candidates():

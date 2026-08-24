@@ -36,6 +36,7 @@ EMAIL_BLOCKLIST_PATTERNS = [
     r"@wixpress\.com",
     r"filler@godaddy\.com",
     r"@squarespace\.com",
+    r"@webador\.com",
     r"@example\.com",
     r"@domain\.com",
     r"@gmail\.com$",  # careful: many small schools DO use gmail. Don't block.
@@ -199,7 +200,10 @@ NON_PERSON_NAME_WORDS = {
     "co",
     "contact",
     "call",
+    "center",
+    "childcare",
     "director",
+    "daycare",
     "early",
     "education",
     "email",
@@ -223,6 +227,8 @@ NON_PERSON_NAME_WORDS = {
     "team",
     "teacher",
     "today",
+    "studio",
+    "tutoring",
     "llc",
     "inc",
     "corp",
@@ -479,6 +485,20 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
                         reason="compound_director_title_pattern",
                     )
 
+        for match in first_person_pattern.finditer(text):
+            name = _clean_owner_name(match.group(1), allow_single=True)
+            if not name:
+                continue
+            window = text[max(0, match.start() - 250):match.end() + 450]
+            if not OWNER_CONTEXT_RE.search(window):
+                continue
+            return OwnerCandidate(
+                name=name,
+                title=_infer_owner_title(window),
+                source_url=page.url,
+                reason="first_person_owner_bio",
+            )
+
         for match in strong_title_anchor_pattern.finditer(text):
             if _is_bad_title_anchor_context(
                 text,
@@ -519,20 +539,6 @@ def _extract_owner_candidate(pages: list[fetcher.FetchedPage]) -> OwnerCandidate
                         source_url=page.url,
                         reason="explicit_owner_title_pattern",
                     )
-
-        for match in first_person_pattern.finditer(text):
-            name = _clean_owner_name(match.group(1), allow_single=True)
-            if not name:
-                continue
-            window = text[max(0, match.start() - 250):match.end() + 450]
-            if not OWNER_CONTEXT_RE.search(window):
-                continue
-            return OwnerCandidate(
-                name=name,
-                title=_infer_owner_title(window),
-                source_url=page.url,
-                reason="first_person_owner_bio",
-            )
 
     return OwnerCandidate()
 

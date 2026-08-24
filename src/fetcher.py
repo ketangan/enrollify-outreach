@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
@@ -144,6 +145,11 @@ def _extract_canva_bootstrap_text(html: str) -> str:
     return " ".join(chunks)
 
 
+def _normalize_visible_text(text: str) -> str:
+    """Convert decorative Unicode letters to normal text for matching."""
+    return unicodedata.normalize("NFKC", text or "")
+
+
 @dataclass
 class FetchedPage:
     url: str
@@ -249,7 +255,7 @@ def fetch(url: str) -> FetchedPage:
     seen = set()
     for a in soup.find_all("a", href=True):
         href = a.get("href", "").strip()
-        text = a.get_text(" ", strip=True)
+        text = _normalize_visible_text(a.get_text(" ", strip=True))
         if not href or href.startswith(("#", "javascript:", "tel:")):
             continue
         abs_url = urljoin(url, href)
@@ -261,9 +267,9 @@ def fetch(url: str) -> FetchedPage:
             break
 
     # Extract text
-    text = soup.get_text(" ", strip=True)
+    text = _normalize_visible_text(soup.get_text(" ", strip=True))
     if canva_text:
-        text = f"{text} {canva_text}".strip()
+        text = f"{text} {_normalize_visible_text(canva_text)}".strip()
     text = re.sub(r"\s+", " ", text)
     if len(text) > MAX_TEXT_PER_PAGE:
         text = text[:MAX_TEXT_PER_PAGE]
