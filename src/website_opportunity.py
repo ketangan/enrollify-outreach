@@ -92,6 +92,19 @@ MANUAL_ENROLLMENT_METHOD_MARKERS = (
     "manual",
 )
 
+# DATED_HOST_MARKERS only catches these builders on their free subdomain
+# (e.g. "xyz.wixsite.com"). Once a business buys a custom domain, the
+# hostname check goes blind even though the site is still template-built —
+# but the builder leaves a fingerprint in <meta name="generator">, so we
+# check that too. Scored lower than DATED_HOST_MARKERS (a paid custom
+# domain is a weaker "dated" signal than still being on a free subdomain).
+GENERATOR_BUILDER_MARKERS = {
+    "wix.com website builder": "built with Wix",
+    "weebly": "built with Weebly",
+    "godaddy website builder": "built with GoDaddy Website Builder",
+    "ueni": "built with UENI",
+}
+
 
 def _clean(value) -> str:
     return str(value or "").strip()
@@ -128,6 +141,15 @@ def _combined_signal(page: fetcher.FetchedPage) -> str:
     return f"{page.text} {page.raw_html_snippet} {links}".lower()
 
 
+def _generator_tag(raw_html: str) -> str:
+    for tag in re.findall(r"<meta\b[^>]*>", raw_html, re.I):
+        if re.search(r'name=["\']generator["\']', tag, re.I):
+            match = re.search(r'content=["\']([^"\']*)["\']', tag, re.I)
+            if match:
+                return match.group(1).lower()
+    return ""
+
+
 def evaluate_page_for_mock(lead: dict, page: fetcher.FetchedPage) -> WebsiteOpportunity:
     mock_type = website_mocks.normalize_mock_type(
         _clean(lead.get("website_mock_type")),
@@ -161,12 +183,23 @@ def evaluate_page_for_mock(lead: dict, page: fetcher.FetchedPage) -> WebsiteOppo
     reasons: list[str] = []
     has_website_refresh_signal = False
 
+    host_marker_matched = False
     for marker, label in DATED_HOST_MARKERS.items():
         if marker in host or marker in _clean(website).lower():
             score += 3
             has_website_refresh_signal = True
             reasons.append(label)
+            host_marker_matched = True
             break
+
+    if not host_marker_matched:
+        generator = _generator_tag(page.raw_html_snippet)
+        for marker, label in GENERATOR_BUILDER_MARKERS.items():
+            if marker in generator:
+                score += 2
+                has_website_refresh_signal = True
+                reasons.append(label)
+                break
 
     raw = page.raw_html_snippet.lower()
     if "<frameset" in raw or re.search(r"<frame[\s>]", raw):

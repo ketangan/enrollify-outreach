@@ -80,3 +80,61 @@ def test_manual_enrollment_and_http_alone_do_not_suggest_mock():
 
     assert result.score == 2
     assert not result.should_suggest
+
+
+def test_wix_generator_tag_on_custom_domain_suggests_mock():
+    lead = {
+        "category": "music",
+        "website": "https://www.worldfamedmasters.com/",
+        "enrollment_method": "contact_form_qualify",
+    }
+    page = _page(
+        url="https://www.worldfamedmasters.com/",
+        text="Private lessons and band programs. Contact us to register your student.",
+        raw='<meta name="generator" content="wix.com website builder"/>',
+    )
+
+    result = website_opportunity.evaluate_page_for_mock(lead, page)
+
+    assert result.should_suggest
+    assert "built with Wix" in result.reason_text
+
+
+def test_wix_generator_tag_does_not_double_count_with_wixsite_host():
+    lead = {
+        "category": "music",
+        "website": "https://example.wixsite.com/studio",
+        "enrollment_method": "contact_form_qualify",
+    }
+    page = _page(
+        url="https://example.wixsite.com/studio",
+        text="Private lessons and summer programs. Contact us to register.",
+        raw='<meta name="generator" content="wix.com website builder"/>',
+    )
+
+    result = website_opportunity.evaluate_page_for_mock(lead, page)
+
+    assert result.reasons.count("hosted on wixsite.com") == 1
+    assert "built with Wix" not in result.reason_text
+    assert result.score == 4
+
+
+def test_unrecognized_generator_tag_does_not_add_signal():
+    lead = {
+        "category": "preschool",
+        "website": "https://modernpreschool.example",
+        "enrollment_method": "contact_form_qualify",
+    }
+    page = _page(
+        url="https://modernpreschool.example",
+        text=(
+            "Welcome to Modern Preschool. Explore classrooms, meet our teachers, "
+            "review tuition, schedule a tour, and start your application today."
+        ),
+        raw='<meta name="generator" content="WordPress 6.4"/>',
+    )
+
+    result = website_opportunity.evaluate_page_for_mock(lead, page)
+
+    assert not result.should_suggest
+    assert result.score < 2
