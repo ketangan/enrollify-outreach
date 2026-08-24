@@ -265,9 +265,9 @@ def _program_blurbs(
         if variant_id == "community":
             return [
                 ("Long-term families", "Multi-year families and staff longevity are the trust signal, not a slogan."),
-                ("Daily rhythm", "Care, learning, meals, rest, and family updates are easy to understand."),
+                ("Family traditions", "Recurring events and rituals families look forward to year after year."),
                 ("Parent involvement", "Ways to be part of the school, not just drop off and pick up."),
-                ("Openings", "Parents can ask about availability or start enrollment from one clear place."),
+                ("Join the community", "How new families get folded in, not just placed on a roster."),
             ]
         return [
             ("First visit", "A warm introduction that makes the school feel organized before a tour is scheduled."),
@@ -288,15 +288,15 @@ def _program_blurbs(
             return [
                 ("Group classes", "Ensemble and group options are as visible as private lessons."),
                 ("Play-along sessions", "Students can see what playing with others actually looks like."),
-                ("Teacher fit", "Instructor experience and teaching approach sit where parents expect them."),
-                ("Fast inquiry", "Parent and student details are captured before the first phone call."),
+                ("Ensemble coaching", "How instructors balance individual growth with group sound and timing."),
+                ("Group placement", "Students are placed by level so a first rehearsal feels right, not overwhelming."),
             ]
         if variant_id == "academy":
             return [
                 ("Curriculum path", "What comes after the first lesson is visible, not a surprise."),
                 ("Grade milestones", "Progress is framed around real milestones, not vague encouragement."),
-                ("Teacher fit", "Instructor experience and teaching approach sit where parents expect them."),
-                ("Fast inquiry", "Parent and student details are captured before the first phone call."),
+                ("Instructor credentials", "Who's teaching, their training, and how progress gets assessed."),
+                ("Placement check", "A quick starting-point assessment so lessons begin at the right level."),
             ]
         return [
             ("Private lessons", "Instruments, levels, and scheduling options are easy to scan."),
@@ -324,8 +324,8 @@ def _program_blurbs(
             return [
                 ("Competitive levels", "The path from beginner to competitive team is laid out, not implied."),
                 ("Tryout process", "What it takes to make the roster is visible before someone has to ask."),
-                ("Coach confidence", "Families see who teaches, how students are supported, and what parents can expect."),
-                ("Trial sessions", "Parents can request a first class without extra back-and-forth."),
+                ("Coaching staff", "Who leads training, their competitive background, and coaching philosophy."),
+                ("Roster requirements", "Time commitment, gear, and eligibility spelled out before tryouts."),
             ]
         if category == "martial_arts":
             return [
@@ -336,9 +336,9 @@ def _program_blurbs(
             ]
         return [
             ("Youth classes", "Programs are grouped by age, level, and family goal."),
-            ("Camps and clinics", "Seasonal offerings get a clean, high-energy presentation."),
-            ("Trial sessions", "Parents can request a first class without extra back-and-forth."),
-            ("Availability", "Capacity and waitlist language can be handled before follow-up."),
+            ("Skill progression", "Belts, levels, or milestones make improvement visible week to week."),
+            ("Drop-in trial", "A first class is one click away, no phone tag required."),
+            ("Class finder", "Filter by age and day to land on the right session fast."),
         ]
 
     return [(program, "Clear details, easy next steps, and a direct inquiry path for families.")
@@ -613,52 +613,146 @@ def _visual_palette(variant: website_mocks.MockVariant, color_override: dict | N
     return base
 
 
+# Each variant within a category gets its own themed 3-photo set, distinct
+# from its siblings — e.g. music-performance shows stage/recital energy
+# while music-academy shows structured curriculum shots. Sharing one pool
+# per category (the old layout) meant sibling variants using stock-photo
+# fallback showed identical images, undercutting photography as one of the
+# two axes (with layout) meant to make the 4 concepts feel genuinely
+# different.
 PHOTO_SETS = {
-    "music": [
-        "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1525201548942-d8732f6617a0?auto=format&fit=crop&w=1400&q=80",
-    ],
-    "preschool": [
-        "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1587654780291-39c9404d746b?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1542810634-71277d95dcbb?auto=format&fit=crop&w=1400&q=80",
-    ],
-    "sports": [
-        "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1526232761682-d26e03ac148e?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1400&q=80",
-    ],
-    "martial_arts": [
-        "https://images.unsplash.com/photo-1555597673-b21d5c935865?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1549719386-74dfcbf7dbed?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1495555687398-3f50d6e79e1e?auto=format&fit=crop&w=1400&q=80",
-    ],
-    "swim": [
-        "https://images.unsplash.com/photo-1530549387789-4c1017266635?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1526232761682-d26e03ac148e?auto=format&fit=crop&w=1400&q=80",
-        "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1400&q=80",
-    ],
+    "music": {
+        "studio": [
+            "https://images.unsplash.com/photo-1696522732406-065ef560da8c?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1758687126741-86737c57c210?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1761243839303-618ae0906300?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "performance": [
+            "https://images.unsplash.com/photo-1667386428097-74781c692dfb?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1752300761305-e9fb356f6e3c?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1748597603497-2860de84bf11?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "collective": [
+            "https://images.unsplash.com/photo-1481886756534-97af88ccb438?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1632433796103-83acf2ae78b6?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1667384443065-b15c7caa4160?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "academy": [
+            "https://images.unsplash.com/photo-1780039298271-f3e1318eb3ae?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1700308232146-99cdff546a7c?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1577877777751-3f1ec20a0715?auto=format&fit=crop&w=1400&q=80",
+        ],
+    },
+    "preschool": {
+        "warm": [
+            "https://images.unsplash.com/photo-1761208663763-c4d30657c910?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1786292949404-084cbd10c7b1?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1587323655395-b1c77a12c89a?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "structured": [
+            "https://images.unsplash.com/photo-1786290595171-fbbcb3b01ae1?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1777056491418-d4ff81a4ad92?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1588075592405-d3d4f0846961?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "explorer": [
+            "https://images.unsplash.com/photo-1606080255438-f908756a0169?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1601034188350-4154a8d1e9c7?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1690748747428-d5226f2af24d?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "community": [
+            "https://images.unsplash.com/photo-1588075592446-265fd1e6e76f?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1772419130717-e0630e3e4f28?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1616089804390-b2daa80dbf02?auto=format&fit=crop&w=1400&q=80",
+        ],
+    },
+    "sports": {
+        "action": [
+            "https://images.unsplash.com/photo-1622659097972-68f1d8c1829f?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1638364729288-442e77e8c4a4?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1710118098563-375f84503f11?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "trust": [
+            "https://images.unsplash.com/photo-1526494661200-9d7cfd4b2404?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1529932398402-e0b30f66a559?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1646743934941-d5808d1fd351?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "camp": [
+            "https://images.unsplash.com/photo-1623059059856-1635328a41e3?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1784568537415-3020f0515741?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1576490252381-c97ccb950043?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "team": [
+            "https://images.unsplash.com/photo-1748111405983-d1b10316eb83?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1548077880-656c402b344e?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1752681304960-bd4e018a04bb?auto=format&fit=crop&w=1400&q=80",
+        ],
+    },
+    "martial_arts": {
+        "action": [
+            "https://images.unsplash.com/photo-1516684991026-4c3032a2b4fd?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1530417838433-4b24dd3f72d4?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1656653122984-cb28b29f67db?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "trust": [
+            "https://images.unsplash.com/photo-1656653424873-8491cd7bf5f8?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1550759807-6419ff64a5e9?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1554302242-40743152783a?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "camp": [
+            "https://images.unsplash.com/photo-1601878458462-487dd38a06f1?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1555597408-bda2ca384d49?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1738835934988-ed0d238e8299?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "team": [
+            "https://images.unsplash.com/photo-1529566193698-bc394165d541?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1599677100022-fa8aba7d2467?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1688632106590-39547edc1112?auto=format&fit=crop&w=1400&q=80",
+        ],
+    },
+    "swim": {
+        "action": [
+            "https://images.unsplash.com/photo-1521851562770-de70f34424b7?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1519311726-5cced7383240?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1627540458907-47a427507e20?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "trust": [
+            "https://images.unsplash.com/photo-1726800820564-2eaecaa66b37?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1726800789235-e2c75e169eae?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1557469778-0b3269a1cc7a?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "camp": [
+            "https://images.unsplash.com/photo-1648090272983-440e86555e8e?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1521220609214-a8552380c7a4?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1725245250763-f6fbdeddbb64?auto=format&fit=crop&w=1400&q=80",
+        ],
+        "team": [
+            "https://images.unsplash.com/photo-1778141580577-a11dfebb96cc?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1592484806287-7bc9c8af5405?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1619334910286-c613d0d1a4d1?auto=format&fit=crop&w=1400&q=80",
+        ],
+    },
 }
 
 
-def _photo_urls(mock_type: str, category: str = "") -> list[str]:
+def _photo_urls(mock_type: str, version_id: str, category: str = "") -> list[str]:
     category_key = _clean(category).lower()
     if mock_type == "sports" and category_key in PHOTO_SETS:
-        return PHOTO_SETS[category_key]
-    return PHOTO_SETS.get(mock_type) or PHOTO_SETS["preschool"]
+        variant_sets = PHOTO_SETS[category_key]
+    else:
+        variant_sets = PHOTO_SETS.get(mock_type) or PHOTO_SETS["preschool"]
+    return variant_sets.get(version_id) or next(iter(variant_sets.values()))
 
 
-def _resolve_photos(lead: dict, mock_type: str, category: str) -> list[str]:
+def _resolve_photos(lead: dict, mock_type: str, version_id: str, category: str) -> list[str]:
     """Real business photos (a `_website_mock_photos` override — 3+ URLs or
-    local paths) take priority; falls back to the stock category photo set
-    when there aren't enough real ones. Every signature section indexes up
-    to photos[2], so fewer than 3 real photos isn't usable — fall back
-    entirely rather than mixing a partial real set with stock filler."""
+    local paths) take priority; falls back to the variant's themed stock
+    photo set when there aren't enough real ones. Every signature section
+    indexes up to photos[2], so fewer than 3 real photos isn't usable — fall
+    back entirely rather than mixing a partial real set with stock filler."""
     override = lead.get("_website_mock_photos")
     if isinstance(override, list) and len(override) >= 3:
         return override[:3]
-    return _photo_urls(mock_type, category)
+    return _photo_urls(mock_type, version_id, category)
 
 
 def _photo_style(photo_url: str) -> str:
@@ -1170,19 +1264,68 @@ def _render_enrollment_panel(ctx: dict, items: list[tuple[str, str]]) -> str:
 """
 
 
-def _render_hero(ctx: dict, cta_label: str, hero_photo: str) -> str:
+def _render_enrollment_cta(ctx: dict, items: list[tuple[str, str]]) -> str:
+    # Confident and low-friction: one headline, one button, no visible form
+    # fields. Fits variants where the ask is "let's talk," not "fill this out."
+    flow = _flow_config(ctx)
+    return f"""
+      <section class="enrollment-cta" id="next-step">
+        <div class="enrollment-cta__inner">
+          <p class="section-kicker">{html.escape(flow["kicker"])}</p>
+          <h2>{html.escape(flow["headline"])}</h2>
+          <p>{html.escape(flow["intro"])}</p>
+          <div class="enrollment-cta__actions">
+            <button type="button">{html.escape(flow["button"])}</button>
+            <p class="contact-line">Or reach out directly: {ctx["contact"]}</p>
+          </div>
+        </div>
+      </section>
+"""
+
+
+def _render_enrollment_steps(ctx: dict, items: list[tuple[str, str]]) -> str:
+    # Frames the close as "what happens next," not a form to fill out —
+    # fits variants already built around a path/curriculum framing.
+    flow = _flow_config(ctx)
+    steps = [
+        ("01", "Reach out", flow["intro"]),
+        ("02", "Hear back fast", flow["next_step"]),
+        ("03", "Get started", f'"{flow["button"]}" is the only step left after that.'),
+    ]
+    steps_html = "\n".join(
+        f'<li><span>{num}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></li>'
+        for num, title, body in steps
+    )
+    return f"""
+      <section class="enrollment-steps" id="next-step">
+        <div class="enrollment-steps__head">
+          <p class="section-kicker">{html.escape(flow["kicker"])}</p>
+          <h2>{html.escape(flow["headline"])}</h2>
+        </div>
+        <ol class="enrollment-steps__row">{steps_html}</ol>
+        <div class="enrollment-steps__cta">
+          <button type="button">{html.escape(flow["button"])}</button>
+          <p class="contact-line">Or reach out directly: {ctx["contact"]}</p>
+        </div>
+      </section>
+"""
+
+
+def _hero_quote_or_anchors(ctx: dict) -> tuple[str, str]:
     # Quote and anchor chips both signal "I actually read your site" — showing
     # both stacks two devices doing the same job. Prefer the quote (more
     # specific, more human); fall back to chips only when there's no quote.
-    quote_html = ""
-    anchors_html = ""
     if ctx.get("site_quote"):
         quote_html = (
             f'<blockquote class="site-quote">“{html.escape(ctx["site_quote"])}”'
             f'<cite>From {html.escape(ctx["site_domain"])}, their current site</cite></blockquote>'
         )
-    else:
-        anchors_html = ctx["site_anchors_html"]
+        return quote_html, ""
+    return "", ctx["site_anchors_html"]
+
+
+def _render_hero(ctx: dict, cta_label: str, hero_photo: str) -> str:
+    quote_html, anchors_html = _hero_quote_or_anchors(ctx)
     return f"""
       <section class="hero-bleed" {_hero_photo_style(hero_photo)}>
         <div class="hero-bleed__content">
@@ -1192,6 +1335,74 @@ def _render_hero(ctx: dict, cta_label: str, hero_photo: str) -> str:
           {quote_html}
           {anchors_html}
           <a class="primary light" href="#next-step">{html.escape(cta_label)}</a>
+        </div>
+      </section>
+"""
+
+
+def _render_hero_split(ctx: dict, cta_label: str, hero_photo: str) -> str:
+    # A poster-style alternative to the full-bleed hero: a solid-color panel
+    # carries the headline and CTA, with photography confined to one side
+    # rather than behind the whole viewport.
+    quote_html, anchors_html = _hero_quote_or_anchors(ctx)
+    return f"""
+      <section class="hero-split">
+        <div class="hero-split__panel">
+          <p class="eyebrow">{ctx["category"]} in {ctx["city"]}</p>
+          <h1>{ctx["headline"]}</h1>
+          <p>{ctx["intro"]}</p>
+          {quote_html}
+          {anchors_html}
+          <a class="primary light" href="#next-step">{html.escape(cta_label)}</a>
+        </div>
+        <div class="hero-split__photo" {_hero_photo_style(hero_photo)}></div>
+      </section>
+"""
+
+
+def _render_hero_type(ctx: dict, cta_label: str) -> str:
+    # No photography at all — headline typography carries the whole hero.
+    # Reserved for variants whose signature section is already photo-heavy
+    # (so the page doesn't lean entirely on a single stock image repeated
+    # at two sizes) or whose personality is more "clear and direct" than
+    # "photographed."
+    quote_html, anchors_html = _hero_quote_or_anchors(ctx)
+    return f"""
+      <section class="hero-type">
+        <div class="hero-type__content">
+          <p class="eyebrow">{ctx["category"]} in {ctx["city"]}</p>
+          <h1>{ctx["headline"]}</h1>
+          <p>{ctx["intro"]}</p>
+          {quote_html}
+          {anchors_html}
+          <a class="primary light" href="#next-step">{html.escape(cta_label)}</a>
+        </div>
+      </section>
+"""
+
+
+def _render_hero_collage(ctx: dict, cta_label: str, photo_a: str, photo_b: str) -> str:
+    # Two offset photos instead of one dominant image or none — distinct
+    # from both the full-bleed and split-panel treatments, and reintroduces
+    # real photography for variants whose signature section has none.
+    quote_html, anchors_html = _hero_quote_or_anchors(ctx)
+    photo_style = (
+        f"style=\"--photo-a: url('{html.escape(photo_a, quote=True)}'); "
+        f"--photo-b: url('{html.escape(photo_b, quote=True)}')\""
+    )
+    return f"""
+      <section class="hero-collage">
+        <div class="hero-collage__panel">
+          <p class="eyebrow">{ctx["category"]} in {ctx["city"]}</p>
+          <h1>{ctx["headline"]}</h1>
+          <p>{ctx["intro"]}</p>
+          {quote_html}
+          {anchors_html}
+          <a class="primary light" href="#next-step">{html.escape(cta_label)}</a>
+        </div>
+        <div class="hero-collage__photos" {photo_style}>
+          <div class="hero-collage__photo hero-collage__photo--a"></div>
+          <div class="hero-collage__photo hero-collage__photo--b"></div>
         </div>
       </section>
 """
@@ -1497,62 +1708,78 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
     type_id = ctx["type_id"]
     version_id = ctx["version_id"]
     photos = ctx["photos"]
-    enrollment_panel = _render_enrollment_panel(ctx, items)
 
+    # Every variant picks its own combination of hero shape, signature
+    # section, and enrollment-close shape. No two siblings in the same
+    # category repeat the same (hero, close) pair, and the pairing is chosen
+    # for fit — e.g. a curriculum-path variant closes with numbered steps,
+    # not a form — not shuffled for coverage alone.
     if type_id == "preschool" and version_id == "structured":
-        hero = _render_hero(ctx, "See enrollment steps", photos[0])
+        hero = _render_hero_split(ctx, "See enrollment steps", photos[0])
         signature = _render_admissions_path(ctx)
+        enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-preschool-structured"
     elif type_id == "preschool" and version_id == "explorer":
-        hero = _render_hero(ctx, "See this week's theme", photos[1])
+        hero = _render_hero_type(ctx, "See this week's theme")
         signature = _render_explorer_spotlight(ctx)
+        enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-preschool-explorer"
     elif type_id == "preschool" and version_id == "community":
-        hero = _render_hero(ctx, "Start the conversation", photos[0])
+        hero = _render_hero_collage(ctx, "Start the conversation", photos[0], photos[1])
         signature = _render_community_reasons(ctx)
+        enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-preschool-community"
     elif type_id == "preschool":
         hero = _render_hero(ctx, "Ask about openings", photos[0])
         signature = _render_day_timeline(ctx)
+        enrollment = _render_enrollment_cta(ctx, items)
         layout_class = "mock-layout-preschool-warm"
     elif type_id == "music" and version_id == "performance":
-        hero = _render_hero(ctx, "Book a trial lesson", photos[2])
+        hero = _render_hero_split(ctx, "Book a trial lesson", photos[2])
         signature = _render_showcase_marquee(ctx, items)
+        enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-music-performance"
     elif type_id == "music" and version_id == "collective":
-        hero = _render_hero(ctx, "Join a group class", photos[1])
+        hero = _render_hero_type(ctx, "Join a group class")
         signature = _render_collective_lineup(ctx)
+        enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-music-collective"
     elif type_id == "music" and version_id == "academy":
-        hero = _render_hero(ctx, "See the curriculum", photos[2])
+        hero = _render_hero_collage(ctx, "See the curriculum", photos[0], photos[1])
         signature = _render_academy_path(ctx)
+        enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-music-academy"
     elif type_id == "music":
         hero = _render_hero(ctx, "Find the right lesson", photos[0])
         signature = _render_lesson_scroll(ctx, items)
+        enrollment = _render_enrollment_cta(ctx, items)
         layout_class = "mock-layout-music-studio"
     elif type_id == "sports" and version_id == "trust":
-        hero = _render_hero(ctx, "Ask us anything", photos[0])
+        hero = _render_hero_split(ctx, "Ask us anything", photos[0])
         signature = _render_parent_qa(ctx)
+        enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-sports-trust"
     elif type_id == "sports" and version_id == "camp":
-        hero = _render_hero(ctx, "Reserve a spot", photos[2])
+        hero = _render_hero_type(ctx, "Reserve a spot")
         signature = _render_camp_calendar(ctx)
+        enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-sports-camp"
     elif type_id == "sports" and version_id == "team":
-        hero = _render_hero(ctx, "Ask about tryouts", photos[1])
+        hero = _render_hero_collage(ctx, "Ask about tryouts", photos[0], photos[1])
         signature = _render_team_roster(ctx)
+        enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-sports-team"
     else:
         hero = _render_hero(ctx, "Claim a trial spot", photos[1])
         signature = _render_stat_block(ctx)
+        enrollment = _render_enrollment_cta(ctx, items)
         layout_class = "mock-layout-sports-action"
 
     return f"""
     <main class="mock-layout {layout_class}">
       {hero}
       {signature}
-      {enrollment_panel}
+      {enrollment}
     </main>
 """
 
@@ -1590,7 +1817,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
         _clean(lead.get("category")),
     )
     items = _personalize_items(items, site_anchor_labels)
-    photos = _resolve_photos(lead, variant.type_id, _clean(lead.get("category")))
+    photos = _resolve_photos(lead, variant.type_id, variant.version_id, _clean(lead.get("category")))
     body = _render_variant_body(
         {
             "name": escaped_name,
@@ -1780,12 +2007,116 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       color: white;
     }}
     .hero-bleed__content {{ max-width: 760px; }}
-    .hero-bleed h1, .hero-bleed p, .hero-bleed .eyebrow {{ color: white; }}
-    .hero-bleed .site-anchors span {{ color: rgba(255,255,255,.72); }}
-    .hero-bleed .site-anchors b {{
+    .hero-bleed h1, .hero-bleed p, .hero-bleed .eyebrow,
+    .hero-split__panel h1, .hero-split__panel p, .hero-split__panel .eyebrow,
+    .hero-type h1, .hero-type p, .hero-type .eyebrow,
+    .hero-collage__panel h1, .hero-collage__panel p, .hero-collage__panel .eyebrow {{ color: white; }}
+    .hero-bleed .site-anchors span,
+    .hero-split__panel .site-anchors span,
+    .hero-type .site-anchors span,
+    .hero-collage__panel .site-anchors span {{ color: rgba(255,255,255,.72); }}
+    .hero-bleed .site-anchors b,
+    .hero-split__panel .site-anchors b,
+    .hero-type .site-anchors b,
+    .hero-collage__panel .site-anchors b {{
       color: white;
       background: rgba(255,255,255,.14);
       border-color: rgba(255,255,255,.3);
+    }}
+
+    /* Hero: split-panel — solid-color panel carries the headline, photo confined to one side */
+    .hero-split {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 78vh;
+    }}
+    .hero-split__panel {{
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      padding: clamp(28px, 5vw, 72px);
+      padding-top: clamp(120px, 14vw, 190px);
+      background: var(--secondary);
+    }}
+    .hero-split__panel .primary.light {{ align-self: flex-start; }}
+    .hero-split__photo {{
+      background-image: var(--hero-photo);
+      background-size: cover;
+      background-position: center;
+      min-height: 260px;
+    }}
+
+    /* Hero: typographic — no photography, oversized type carries the hero.
+       A soft accent-colored glow gives the space texture instead of a flat
+       empty color field; padding is content-driven, not a fixed tall vh,
+       so there's no dead space below the fold. */
+    .hero-type {{
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      padding: clamp(140px, 17vw, 220px) clamp(24px, 6vw, 80px) clamp(64px, 8vw, 110px);
+      background: var(--secondary);
+    }}
+    .hero-type::before {{
+      content: "";
+      position: absolute;
+      width: min(60vw, 640px);
+      height: min(60vw, 640px);
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: .18;
+      filter: blur(90px);
+      right: -12%;
+      top: -22%;
+      pointer-events: none;
+    }}
+    .hero-type__content {{ max-width: 760px; position: relative; z-index: 1; }}
+    .hero-type h1 {{ font-size: clamp(52px, 8.5vw, 108px); line-height: .98; letter-spacing: -.01em; }}
+
+    /* Hero: photo collage — two offset photos, not one dominant image */
+    .hero-collage {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 78vh;
+    }}
+    .hero-collage__panel {{
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      padding: clamp(28px, 5vw, 72px);
+      padding-top: clamp(120px, 14vw, 190px);
+      background: var(--secondary);
+    }}
+    .hero-collage__panel .primary.light {{ align-self: flex-start; }}
+    .hero-collage__photos {{
+      position: relative;
+      display: grid;
+      place-items: center;
+      padding: 36px;
+      background: var(--paper);
+    }}
+    .hero-collage__photo {{
+      background-size: cover;
+      background-position: center;
+      border-radius: var(--radius);
+      box-shadow: 0 24px 60px rgba(0,0,0,.18);
+    }}
+    .hero-collage__photo--a {{
+      width: 78%;
+      aspect-ratio: 4 / 5;
+      background-image: var(--photo-a);
+    }}
+    .hero-collage__photo--b {{
+      position: absolute;
+      width: 46%;
+      aspect-ratio: 4 / 5;
+      background-image: var(--photo-b);
+      right: 20px;
+      bottom: 20px;
+      border: 4px solid white;
     }}
     .site-quote {{
       margin: 18px 0 4px;
@@ -2178,6 +2509,85 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       font-size: 15px;
       cursor: default;
     }}
+
+    /* Enrollment: CTA banner — one headline, one button, no visible form */
+    .enrollment-cta {{
+      padding-top: clamp(56px, 7vw, 96px);
+      padding-bottom: clamp(56px, 7vw, 96px);
+      background: var(--secondary);
+      color: white;
+      text-align: center;
+    }}
+    .enrollment-cta__inner {{ max-width: 620px; margin: 0 auto; }}
+    .enrollment-cta h2 {{ color: white; font-size: clamp(28px, 4vw, 46px); }}
+    .enrollment-cta p {{ color: rgba(255,255,255,.82); }}
+    .enrollment-cta .section-kicker {{ color: var(--accent); }}
+    .enrollment-cta__actions {{ margin-top: 26px; display: grid; gap: 14px; justify-items: center; }}
+    .enrollment-cta__actions button {{
+      min-height: 52px;
+      padding: 0 34px;
+      border: 0;
+      border-radius: var(--radius);
+      background: var(--accent);
+      color: var(--secondary);
+      font-weight: 900;
+      font-size: 16px;
+      cursor: default;
+    }}
+    .enrollment-cta .contact-line {{ color: rgba(255,255,255,.7); }}
+    .enrollment-cta .contact-line a {{ color: white; }}
+
+    /* Enrollment: steps-close — "what happens next," not a form to fill out */
+    .enrollment-steps {{
+      padding-top: clamp(56px, 7vw, 96px);
+      padding-bottom: clamp(56px, 7vw, 96px);
+      background: var(--paper);
+      border-top: 1px solid var(--line);
+    }}
+    .enrollment-steps__head {{ max-width: 640px; margin: 0 auto 36px; text-align: center; }}
+    .enrollment-steps__row {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 20px;
+      max-width: 1020px;
+      margin: 0 auto;
+      list-style: none;
+      padding: 0;
+    }}
+    .enrollment-steps__row li {{
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 22px;
+    }}
+    .enrollment-steps__row span {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      font-weight: 900;
+      font-size: 13px;
+      margin-bottom: 14px;
+    }}
+    .enrollment-steps__row h3 {{ font-size: 17px; margin: 0 0 6px; }}
+    .enrollment-steps__row p {{ font-size: 14px; color: var(--muted); margin: 0; line-height: 1.45; }}
+    .enrollment-steps__cta {{ text-align: center; margin-top: 32px; }}
+    .enrollment-steps__cta button {{
+      min-height: 50px;
+      padding: 0 30px;
+      border: 0;
+      border-radius: var(--radius);
+      background: var(--secondary);
+      color: white;
+      font-weight: 900;
+      font-size: 15px;
+      cursor: default;
+    }}
+    .enrollment-steps__cta .contact-line {{ margin-top: 14px; }}
     .concept-note {{
       font-size: 13px;
       color: #667085;
@@ -2197,10 +2607,17 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       .stat-block__row div, .showcase-marquee__row article {{ border: 0; border-top: 1px solid rgba(255,255,255,.16); }}
       .stat-block__row div:first-child, .showcase-marquee__row article:first-child {{ border-top: 0; }}
       .team-roster__row div {{ border-top: 1px solid rgba(255,255,255,.14); }}
+      .hero-split {{ grid-template-columns: 1fr; }}
+      .hero-split__photo {{ min-height: 220px; order: -1; }}
+      .hero-collage {{ grid-template-columns: 1fr; }}
+      .hero-collage__photos {{ min-height: 320px; order: -1; }}
+      .enrollment-steps__row {{ grid-template-columns: 1fr; }}
     }}
     @media (max-width: 580px) {{
       .hero-bleed {{ min-height: 72vh; }}
+      .hero-split__panel, .hero-collage__panel, .hero-type {{ padding-top: 100px; }}
       .primary {{ width: 100%; }}
+      .enrollment-cta__actions button, .enrollment-steps__cta button {{ width: 100%; }}
       h1 {{ font-size: 40px; }}
     }}
   </style>

@@ -238,6 +238,45 @@ def test_all_four_variants_per_category_render_without_error():
         assert len(seen_layout_classes) == 4
 
 
+def test_sibling_variants_never_share_hero_and_enrollment_shape_together():
+    # Regression: hero and enrollment used to be one universal shape reused
+    # by all 4 variants, so every concept had the same skeleton (photo hero
+    # -> content -> form) no matter how different the middle section was.
+    hero_markers = {
+        "hero-bleed": '<section class="hero-bleed"',
+        "hero-split": '<section class="hero-split">',
+        "hero-type": '<section class="hero-type">',
+        "hero-collage": '<section class="hero-collage">',
+    }
+    enrollment_markers = {
+        "panel": '<div class="enrollment-panel">',
+        "cta": '<section class="enrollment-cta"',
+        "steps": '<section class="enrollment-steps"',
+    }
+    lead_by_type = {
+        "preschool": _lead(category="preschool"),
+        "music": _lead(category="music"),
+        "sports": _lead(category="martial_arts"),
+    }
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        lead = lead_by_type[mock_type]
+        seen_pairs = set()
+        seen_heroes = set()
+        for variant in variants:
+            rendered = generate_website_mocks._render_mock_html(lead, variant)
+            hero_shape = next(name for name, marker in hero_markers.items() if marker in rendered)
+            enrollment_shape = next(
+                name for name, marker in enrollment_markers.items() if marker in rendered
+            )
+            pair = (hero_shape, enrollment_shape)
+            assert pair not in seen_pairs, f"{mock_type}/{variant.version_id} repeats {pair}"
+            seen_pairs.add(pair)
+            seen_heroes.add(hero_shape)
+        # The first thing anyone sees flipping between concepts is the hero —
+        # each of the 4 variants in a category must use a different one.
+        assert seen_heroes == set(hero_markers), f"{mock_type} reuses a hero shape: {seen_heroes}"
+
+
 def test_mock_copy_avoids_meta_template_language():
     forbidden = [
         "A warmer welcome",
@@ -288,6 +327,27 @@ def test_mock_versions_use_distinct_visual_palettes():
     assert "--paper: #f6faf6;" in trust
 
 
+def test_sibling_variants_never_share_stock_photos():
+    # Regression: PHOTO_SETS used to be one pool per category, so any two
+    # variants relying on the stock fallback (no real business photos)
+    # rendered identical imagery. Each variant now gets its own themed set.
+    for category, variants in generate_website_mocks.PHOTO_SETS.items():
+        mock_type = "sports" if category in ("sports", "martial_arts", "swim") else category
+        lead_category = category if category in ("martial_arts", "swim") else ""
+        photo_sets = {
+            version_id: set(
+                generate_website_mocks._resolve_photos({}, mock_type, version_id, lead_category)
+            )
+            for version_id in variants
+        }
+        version_ids = list(photo_sets)
+        for i, a in enumerate(version_ids):
+            for b in version_ids[i + 1:]:
+                assert not (photo_sets[a] & photo_sets[b]), (
+                    f"{category}: {a} and {b} share stock photos"
+                )
+
+
 def test_site_anchor_labels_extract_factual_program_details():
     labels = generate_website_mocks._site_anchor_labels_from_text(
         (
@@ -320,7 +380,7 @@ def test_rendered_mock_includes_precomputed_site_detail_anchors():
     assert "<b>Trial lessons</b>" in rendered
 
 
-def test_rendered_mock_uses_site_details_in_enrollment_flow():
+def test_rendered_mock_uses_site_details_in_signature_section():
     lead = _lead()
     lead["_website_mock_site_anchors"] = [
         "private guitar lessons",
@@ -331,14 +391,30 @@ def test_rendered_mock_uses_site_details_in_enrollment_flow():
 
     assert rendered.count('id="next-step"') == 1
     assert rendered.count('id="programs"') == 1
+    # Real program names from the current site should replace the generic
+    # card titles in the lesson-path signature section.
+    assert "<h3>Private guitar lessons</h3>" in rendered
+    assert "<h3>Recitals</h3>" in rendered
+    assert "<h3>Trial lessons</h3>" in rendered
+
+
+def test_rendered_mock_uses_site_details_in_enrollment_pills():
+    # "performance" is one of the music variants that keeps the full
+    # form-panel enrollment shape, which is where option pills live —
+    # "studio" now uses the lighter CTA-banner shape with no form at all.
+    lead = _lead()
+    lead["_website_mock_site_anchors"] = [
+        "private guitar lessons",
+        "recitals",
+        "trial lessons",
+    ]
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "performance"))
+
     assert '<div class="mock-form" aria-label="Sample inquiry flow">' in rendered
     assert '<label>Program interest</label>' in rendered
     assert '<span class="option-pill">Private guitar lessons</span>' in rendered
     assert '<span class="option-pill">Recitals</span>' in rendered
     assert '<span class="option-pill">Trial lessons</span>' in rendered
-    # Real program names from the current site should replace the generic
-    # card titles in the lesson-path signature section, not just the pills.
-    assert "<h3>Private guitar lessons</h3>" in rendered
 
 
 def test_rendered_mock_quotes_real_site_copy_in_hero():
@@ -377,7 +453,10 @@ def test_swim_mock_uses_swim_specific_enrollment_flow():
         "_website_mock_site_anchors": ["swim lessons", "water safety", "trial classes"],
     }
 
-    rendered = generate_website_mocks._render_mock_html(lead, _variant("sports", "action"))
+    # "camp" is one of the sports variants that keeps the full form-panel
+    # enrollment shape (visible field labels); "action" now uses the
+    # lighter CTA-banner shape, which has no form fields to assert on.
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("sports", "camp"))
 
     assert "Swim lesson interest turns into a level-aware request." in rendered
     assert "<label>Swimmer age</label>" in rendered
