@@ -1360,22 +1360,30 @@ def _render_hero_split(ctx: dict, cta_label: str, hero_photo: str) -> str:
 """
 
 
-def _render_hero_type(ctx: dict, cta_label: str) -> str:
-    # No photography at all — headline typography carries the whole hero.
-    # Reserved for variants whose signature section is already photo-heavy
-    # (so the page doesn't lean entirely on a single stock image repeated
-    # at two sizes) or whose personality is more "clear and direct" than
-    # "photographed."
+def _render_hero_masthead(ctx: dict, cta_label: str) -> str:
+    # No photography and no centered box — a masthead composition instead:
+    # a full-width oversized headline band up top (the type itself is the
+    # only "image"), then a divider rule and a distinct two-zone row below
+    # (intro/proof on one side, the CTA pinned to the other). Structurally
+    # this is a grid of zones, not one block with things centered in it —
+    # deliberately different from the single-column hero-bleed and the
+    # even 50/50 split of hero-split/hero-collage.
     quote_html, anchors_html = _hero_quote_or_anchors(ctx)
     return f"""
-      <section class="hero-type">
-        <div class="hero-type__content">
+      <section class="hero-masthead">
+        <div class="hero-masthead__top">
           <p class="eyebrow">{ctx["category"]} in {ctx["city"]}</p>
           <h1>{ctx["headline"]}</h1>
-          <p>{ctx["intro"]}</p>
-          {quote_html}
-          {anchors_html}
-          <a class="primary light" href="#next-step">{html.escape(cta_label)}</a>
+        </div>
+        <div class="hero-masthead__row">
+          <div class="hero-masthead__intro">
+            <p>{ctx["intro"]}</p>
+            {quote_html}
+            {anchors_html}
+          </div>
+          <div class="hero-masthead__action">
+            <a class="primary light" href="#next-step">{html.escape(cta_label)}</a>
+          </div>
         </div>
       </section>
 """
@@ -1720,7 +1728,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-preschool-structured"
     elif type_id == "preschool" and version_id == "explorer":
-        hero = _render_hero_type(ctx, "See this week's theme")
+        hero = _render_hero_masthead(ctx, "See this week's theme")
         signature = _render_explorer_spotlight(ctx)
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-preschool-explorer"
@@ -1740,7 +1748,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-music-performance"
     elif type_id == "music" and version_id == "collective":
-        hero = _render_hero_type(ctx, "Join a group class")
+        hero = _render_hero_masthead(ctx, "Join a group class")
         signature = _render_collective_lineup(ctx)
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-music-collective"
@@ -1760,7 +1768,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-sports-trust"
     elif type_id == "sports" and version_id == "camp":
-        hero = _render_hero_type(ctx, "Reserve a spot")
+        hero = _render_hero_masthead(ctx, "Reserve a spot")
         signature = _render_camp_calendar(ctx)
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-sports-camp"
@@ -2009,15 +2017,15 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-bleed__content {{ max-width: 760px; }}
     .hero-bleed h1, .hero-bleed p, .hero-bleed .eyebrow,
     .hero-split__panel h1, .hero-split__panel p, .hero-split__panel .eyebrow,
-    .hero-type h1, .hero-type p, .hero-type .eyebrow,
+    .hero-masthead h1, .hero-masthead p, .hero-masthead .eyebrow,
     .hero-collage__panel h1, .hero-collage__panel p, .hero-collage__panel .eyebrow {{ color: white; }}
     .hero-bleed .site-anchors span,
     .hero-split__panel .site-anchors span,
-    .hero-type .site-anchors span,
+    .hero-masthead .site-anchors span,
     .hero-collage__panel .site-anchors span {{ color: rgba(255,255,255,.72); }}
     .hero-bleed .site-anchors b,
     .hero-split__panel .site-anchors b,
-    .hero-type .site-anchors b,
+    .hero-masthead .site-anchors b,
     .hero-collage__panel .site-anchors b {{
       color: white;
       background: rgba(255,255,255,.14);
@@ -2047,33 +2055,36 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       min-height: 260px;
     }}
 
-    /* Hero: typographic — no photography, oversized type carries the hero.
-       A soft accent-colored glow gives the space texture instead of a flat
-       empty color field; padding is content-driven, not a fixed tall vh,
-       so there's no dead space below the fold. */
-    .hero-type {{
-      position: relative;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      padding: clamp(140px, 17vw, 220px) clamp(24px, 6vw, 80px) clamp(64px, 8vw, 110px);
+    /* Hero: masthead — no photography, and no single centered box either.
+       A full-width oversized headline band up top (the type is the only
+       "image" here), a divider rule, then a distinct two-zone row below:
+       intro/proof on one side, the CTA pinned to the other. A grid of
+       zones, not one block with things centered inside it — deliberately
+       different in composition from hero-bleed's single column and
+       hero-split/hero-collage's even 50/50 split. */
+    .hero-masthead {{
+      padding: clamp(130px, 15vw, 200px) clamp(24px, 6vw, 80px) 0;
       background: var(--secondary);
     }}
-    .hero-type::before {{
-      content: "";
-      position: absolute;
-      width: min(60vw, 640px);
-      height: min(60vw, 640px);
-      border-radius: 50%;
-      background: var(--accent);
-      opacity: .18;
-      filter: blur(90px);
-      right: -12%;
-      top: -22%;
-      pointer-events: none;
+    .hero-masthead__top {{
+      border-bottom: 1px solid rgba(255,255,255,.18);
+      padding-bottom: clamp(28px, 4vw, 48px);
     }}
-    .hero-type__content {{ max-width: 760px; position: relative; z-index: 1; }}
-    .hero-type h1 {{ font-size: clamp(52px, 8.5vw, 108px); line-height: .98; letter-spacing: -.01em; }}
+    .hero-masthead__top h1 {{
+      max-width: 1100px;
+      font-size: clamp(46px, 8.5vw, 122px);
+      line-height: .95;
+      letter-spacing: -.02em;
+    }}
+    .hero-masthead__row {{
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: clamp(24px, 4vw, 60px);
+      align-items: end;
+      padding: clamp(28px, 4vw, 48px) 0 clamp(56px, 7vw, 96px);
+    }}
+    .hero-masthead__intro p {{ max-width: 520px; }}
+    .hero-masthead__action {{ display: flex; justify-content: flex-end; }}
 
     /* Hero: photo collage — two offset photos, not one dominant image */
     .hero-collage {{
@@ -2611,11 +2622,13 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       .hero-split__photo {{ min-height: 220px; order: -1; }}
       .hero-collage {{ grid-template-columns: 1fr; }}
       .hero-collage__photos {{ min-height: 320px; order: -1; }}
+      .hero-masthead__row {{ grid-template-columns: 1fr; }}
+      .hero-masthead__action {{ justify-content: flex-start; }}
       .enrollment-steps__row {{ grid-template-columns: 1fr; }}
     }}
     @media (max-width: 580px) {{
       .hero-bleed {{ min-height: 72vh; }}
-      .hero-split__panel, .hero-collage__panel, .hero-type {{ padding-top: 100px; }}
+      .hero-split__panel, .hero-collage__panel, .hero-masthead {{ padding-top: 100px; }}
       .primary {{ width: 100%; }}
       .enrollment-cta__actions button, .enrollment-steps__cta button {{ width: 100%; }}
       h1 {{ font-size: 40px; }}

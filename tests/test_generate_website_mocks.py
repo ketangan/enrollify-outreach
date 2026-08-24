@@ -142,7 +142,7 @@ def test_render_mock_concepts_works_without_a_sheet_row_or_fetch():
     version_ids = {item["version"] for item in rendered}
     assert version_ids == {"studio", "performance", "collective", "academy"}
     for item in rendered:
-        assert "<h1>" in item["html"]
+        assert "<h1" in item["html"]
         assert "Riverside Music Collective" in item["html"]
         assert item["url"].startswith("https://mocks.mypontora.com/mocks/standalone-001/")
 
@@ -231,7 +231,7 @@ def test_all_four_variants_per_category_render_without_error():
         seen_layout_classes = set()
         for variant in variants:
             rendered = generate_website_mocks._render_mock_html(lead, variant)
-            assert "<h1>" in rendered
+            assert "<h1" in rendered
             layout_class = f"mock-layout-{mock_type}-{variant.version_id}"
             assert layout_class in rendered
             seen_layout_classes.add(layout_class)
@@ -245,7 +245,7 @@ def test_sibling_variants_never_share_hero_and_enrollment_shape_together():
     hero_markers = {
         "hero-bleed": '<section class="hero-bleed"',
         "hero-split": '<section class="hero-split">',
-        "hero-type": '<section class="hero-type">',
+        "hero-masthead": '<section class="hero-masthead">',
         "hero-collage": '<section class="hero-collage">',
     }
     enrollment_markers = {
