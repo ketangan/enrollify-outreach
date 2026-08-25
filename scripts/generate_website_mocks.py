@@ -1125,122 +1125,721 @@ def _render_option_pills(labels: list[str]) -> str:
     )
 
 
+# --- Per-variant identity layer ---------------------------------------------
+# Layout alone was not enough to make four sibling concepts read as four
+# different studios' work: every page still shared one typeface pairing, one
+# header, one page shell and one section rhythm, so the eye registered "same
+# site, different middle section". VARIANT_STYLE is the second axis. Within a
+# category no two variants may share a display face, header shape, secondary
+# band, page shell or footer — enforced by
+# test_sibling_variants_never_share_identity_tokens.
+#
+# Cross-category reuse is deliberate and fine: a prospect only ever receives
+# the four concepts for their own category, so "distinct" is a within-category
+# property, not a global one.
+VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
+    ("preschool", "warm"): {
+        "display_font": "'Fraunces', ui-serif, Georgia, serif",
+        "body_font": "'Nunito Sans', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Fraunces:opsz,wght@9..144,500..700", "Nunito+Sans:wght@400..900"],
+        # Pinned low instead of font-optical-sizing:auto: at large display
+        # sizes Fraunces' automatic high-opsz instance swaps in a swashy,
+        # big-looped lowercase f that reads as broken rather than characterful.
+        "display_vf": '"opsz" 18',
+        "display_case": "none",
+        "display_tracking": "-0.005em",
+        "display_weight": "620",
+        "h1_size": "clamp(44px, 6.4vw, 92px)",
+        "header": "edge",
+        "band": "pull-quote",
+        "footer": "minimal",
+        "shell": "wide",
+    },
+    ("preschool", "structured"): {
+        "display_font": "'Source Serif 4', ui-serif, Georgia, serif",
+        "body_font": "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Source+Serif+4:opsz,wght@8..60,400..700", "IBM+Plex+Sans:wght@400;500;600;700"],
+        "display_vf": '"opsz" 40',
+        "display_case": "none",
+        "display_tracking": "-0.012em",
+        "display_weight": "640",
+        "h1_size": "clamp(40px, 5.6vw, 80px)",
+        "header": "bar",
+        "band": "side-note",
+        "footer": "columns",
+        "shell": "inset",
+    },
+    ("preschool", "explorer"): {
+        "display_font": "'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif",
+        "body_font": "'Outfit', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Bricolage+Grotesque:opsz,wght@12..96,400..800", "Outfit:wght@300..800"],
+        "display_vf": '"opsz" 48',
+        "display_case": "none",
+        "display_tracking": "-0.025em",
+        "display_weight": "760",
+        "h1_size": "clamp(44px, 6.6vw, 94px)",
+        "header": "stack",
+        "band": "coverage",
+        "footer": "strip",
+        "shell": "narrow",
+    },
+    ("preschool", "community"): {
+        "display_font": "'Instrument Serif', ui-serif, Georgia, serif",
+        "body_font": "'Karla', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Instrument+Serif:ital@0;1", "Karla:wght@400..800"],
+        "display_vf": "normal",
+        "display_case": "none",
+        "display_tracking": "-0.01em",
+        "display_weight": "400",
+        "h1_size": "clamp(50px, 7.2vw, 108px)",
+        "header": "rail",
+        "band": "photo-strip",
+        "footer": "rule",
+        "shell": "rail",
+    },
+    ("music", "studio"): {
+        "display_font": "'Space Grotesk', ui-sans-serif, system-ui, sans-serif",
+        "body_font": "'Inter', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Space+Grotesk:wght@400..700", "Inter:wght@400..900"],
+        "display_vf": "normal",
+        "display_case": "none",
+        "display_tracking": "-0.035em",
+        "display_weight": "700",
+        "h1_size": "clamp(42px, 6vw, 86px)",
+        "header": "edge",
+        "band": "slots",
+        "footer": "strip",
+        "shell": "wide",
+    },
+    ("music", "performance"): {
+        "display_font": "'Playfair Display', ui-serif, Georgia, serif",
+        "body_font": "'Jost', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Playfair+Display:wght@400..900", "Jost:wght@300..700"],
+        "display_vf": "normal",
+        "display_case": "none",
+        "display_tracking": "-0.018em",
+        "display_weight": "700",
+        "h1_size": "clamp(46px, 6.6vw, 98px)",
+        "header": "stack",
+        "band": "pull-quote",
+        "footer": "rule",
+        "shell": "narrow",
+    },
+    ("music", "collective"): {
+        "display_font": "'Fraunces', ui-serif, Georgia, serif",
+        "body_font": "'Karla', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Fraunces:opsz,wght@9..144,500..700", "Karla:wght@400..800"],
+        "display_vf": '"opsz" 18',
+        "display_case": "none",
+        "display_tracking": "-0.005em",
+        "display_weight": "600",
+        "h1_size": "clamp(44px, 6.2vw, 88px)",
+        "header": "rail",
+        "band": "coverage",
+        "footer": "columns",
+        "shell": "rail",
+    },
+    ("music", "academy"): {
+        "display_font": "'Barlow Condensed', ui-sans-serif, system-ui, sans-serif",
+        "body_font": "'Barlow', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Barlow+Condensed:wght@400;500;600;700", "Barlow:wght@400;500;600;700"],
+        "display_vf": "normal",
+        "display_case": "uppercase",
+        "display_tracking": "0.03em",
+        "display_weight": "600",
+        "h1_size": "clamp(48px, 7.4vw, 104px)",
+        "header": "bar",
+        "band": "photo-strip",
+        "footer": "minimal",
+        "shell": "inset",
+    },
+    ("sports", "action"): {
+        "display_font": "'Anton', ui-sans-serif, system-ui, sans-serif",
+        "body_font": "'Inter', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Anton", "Inter:wght@400..900"],
+        "display_vf": "normal",
+        "display_case": "uppercase",
+        "display_tracking": "0.005em",
+        "display_weight": "400",
+        "h1_size": "clamp(50px, 7.8vw, 112px)",
+        "header": "edge",
+        "band": "photo-strip",
+        "footer": "strip",
+        "shell": "wide",
+    },
+    ("sports", "trust"): {
+        "display_font": "'Lora', ui-serif, Georgia, serif",
+        "body_font": "'Karla', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Lora:wght@400..700", "Karla:wght@400..800"],
+        "display_vf": "normal",
+        "display_case": "none",
+        "display_tracking": "-0.012em",
+        "display_weight": "600",
+        "h1_size": "clamp(40px, 5.4vw, 76px)",
+        "header": "bar",
+        "band": "coverage",
+        "footer": "columns",
+        "shell": "inset",
+    },
+    ("sports", "camp"): {
+        "display_font": "'Fredoka', ui-sans-serif, system-ui, sans-serif",
+        "body_font": "'Nunito Sans', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Fredoka:wght@300..600", "Nunito+Sans:wght@400..900"],
+        "display_vf": "normal",
+        "display_case": "none",
+        "display_tracking": "-0.012em",
+        "display_weight": "600",
+        "h1_size": "clamp(44px, 6.4vw, 92px)",
+        "header": "stack",
+        "band": "figures",
+        "footer": "minimal",
+        "shell": "narrow",
+    },
+    ("sports", "team"): {
+        "display_font": "'Archivo Black', ui-sans-serif, system-ui, sans-serif",
+        "body_font": "'Barlow', ui-sans-serif, system-ui, sans-serif",
+        "fonts": ["Archivo+Black", "Barlow:wght@400;500;600;700"],
+        "display_vf": "normal",
+        "display_case": "uppercase",
+        "display_tracking": "-0.01em",
+        "display_weight": "400",
+        "h1_size": "clamp(36px, 4.8vw, 68px)",
+        "header": "rail",
+        "band": "side-note",
+        "footer": "rule",
+        "shell": "rail",
+    },
+}
+
+DEFAULT_VARIANT_STYLE = VARIANT_STYLE[("preschool", "warm")]
+
+# Page shells change the container itself, not just its contents: how wide the
+# site runs, how much air sits between bands, and whether the page reads as a
+# full-bleed site, a bound document, or something with a spine.
+SHELL_TOKENS = {
+    "wide": {"gutter": "clamp(20px, 5vw, 72px)", "section_y": "clamp(56px, 7vw, 96px)"},
+    "inset": {"gutter": "clamp(20px, 4vw, 56px)", "section_y": "clamp(46px, 5vw, 74px)"},
+    "narrow": {"gutter": "clamp(24px, 8vw, 140px)", "section_y": "clamp(72px, 9vw, 128px)"},
+    "rail": {"gutter": "clamp(20px, 4.5vw, 64px)", "section_y": "clamp(52px, 6vw, 86px)"},
+}
+
+# Overlay ("edge") and sticky ("bar") headers float above the hero, so the hero
+# has to reserve room for them. In-flow headers ("stack", "rail") do not.
+HEADER_HERO_TOP = {
+    "edge": "clamp(116px, 14vw, 190px)",
+    "bar": "clamp(116px, 14vw, 190px)",
+    "stack": "clamp(44px, 6vw, 80px)",
+    "rail": "clamp(44px, 6vw, 80px)",
+}
+
+
+def variant_style(type_id: str, version_id: str) -> dict[str, str]:
+    return VARIANT_STYLE.get((_clean(type_id), _clean(version_id)), DEFAULT_VARIANT_STYLE)
+
+
+def _google_fonts_link(style: dict) -> str:
+    families = "&".join(f"family={family}" for family in style["fonts"])
+    href = f"https://fonts.googleapis.com/css2?{families}&display=swap"
+    return f'<link href="{html.escape(href, quote=True)}" rel="stylesheet">'
+
+
+# --- Header shapes ----------------------------------------------------------
+
+
+def _render_topbar(ctx: dict) -> str:
+    shape = ctx["header_shape"]
+    name = ctx["name"]
+    initial = ctx["initial"]
+    if shape == "stack":
+        return f"""
+    <header class="topbar topbar-stack">
+      <div class="brand">{name}</div>
+      <nav>
+        <a href="#programs">Programs</a>
+        <a href="#next-step" class="nav-cta">Start enrollment</a>
+      </nav>
+    </header>
+"""
+    if shape == "edge":
+        return f"""
+    <header class="topbar topbar-edge">
+      <div class="brand"><span class="brand-mark">{initial}</span>{name}</div>
+      <nav>
+        <a href="#programs">Programs</a>
+        <a href="#next-step" class="nav-cta">Start enrollment</a>
+      </nav>
+    </header>
+"""
+    if shape == "rail":
+        return f"""
+    <header class="topbar topbar-rail">
+      <div class="brand">{name}</div>
+      <nav>
+        <a href="#programs">Programs</a>
+        <a href="#next-step" class="nav-cta">Start enrollment</a>
+      </nav>
+    </header>
+"""
+    return f"""
+    <header class="topbar topbar-bar">
+      <div class="brand"><span class="brand-mark">{initial}</span>{name}</div>
+      <nav>
+        <a href="#programs">Programs</a>
+        <a href="#next-step" class="nav-cta">Start enrollment</a>
+      </nav>
+    </header>
+"""
+
+
+# --- Secondary band ---------------------------------------------------------
+# A second content band per variant, chosen so no two siblings carry the same
+# one. This is what stops all four concepts having the identical three-beat
+# rhythm (hero, one section, close) that made them feel interchangeable.
+
+
+def _band_phrases(ctx: dict, items: list[tuple[str, str]]) -> list[str]:
+    phrases: list[str] = []
+    seen: set[str] = set()
+    extras = {
+        "preschool": ["Tours by appointment", "Openings this term", "Ages and schedules"],
+        "music": ["Trial lessons", "All levels welcome", "Recital season"],
+        "sports": ["First class free", "All skill levels", "Sessions all year"],
+    }.get(ctx["type_id"], [])
+    for raw in list(ctx.get("site_anchor_labels", [])) + [t for t, _b in items] + extras:
+        label = _anchor_title_case(raw)
+        key = _anchor_key(label)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        phrases.append(label)
+        if len(phrases) >= 7:
+            break
+    return phrases
+
+
+# Scrolling marquee removed: an auto-animating strip of phrases is a dated
+# device, it fights the reduced-motion preference, and it carries no
+# information a static row would not. Replaced by a concrete availability
+# grid, which is the thing a parent scanning a lessons page actually wants.
+BAND_SLOTS = {
+    "music": (
+        "Open lesson times this week",
+        [("Mon", ["4:00", "5:30"]), ("Tue", ["3:30", "6:00"]), ("Wed", ["4:30"]),
+         ("Thu", ["3:00", "5:00"]), ("Sat", ["9:30", "11:00"])],
+    ),
+    "preschool": (
+        "Tour times this week",
+        [("Mon", ["9:30"]), ("Tue", ["9:30", "2:00"]), ("Wed", ["2:00"]),
+         ("Thu", ["9:30", "2:00"]), ("Fri", ["9:30"])],
+    ),
+    "sports": (
+        "Open class times this week",
+        [("Mon", ["4:00", "5:30"]), ("Tue", ["4:00"]), ("Wed", ["4:00", "5:30"]),
+         ("Thu", ["4:00"]), ("Sat", ["10:00", "11:30"])],
+    ),
+}
+
+
+def _render_band_slots(ctx: dict, items: list[tuple[str, str]]) -> str:
+    heading, days = BAND_SLOTS.get(ctx["type_id"], BAND_SLOTS["music"])
+    cells = "".join(
+        f'<div class="band-slots__day"><b>{html.escape(day)}</b>'
+        + "".join(f"<span>{html.escape(t)}</span>" for t in times)
+        + "</div>"
+        for day, times in days
+    )
+    return f"""
+      <section class="band band-slots">
+        <div class="band-slots__head">
+          <p class="section-kicker">This week</p>
+          <h2>{html.escape(heading)}.</h2>
+        </div>
+        <div class="band-slots__grid">{cells}</div>
+      </section>
+"""
+
+
+BAND_PULL_QUOTES = {
+    ("preschool", "warm"): (
+        "Families remember how the first visit felt long after they forget the brochure.",
+        "What we tell every new parent",
+    ),
+    ("music", "performance"): (
+        "A lesson is the practice. The performance is the reason anyone practices.",
+        "How we teach here",
+    ),
+}
+
+
+def _render_band_pull_quote(ctx: dict, items: list[tuple[str, str]]) -> str:
+    line, label = BAND_PULL_QUOTES.get(
+        (ctx["type_id"], ctx["version_id"]),
+        ("Every family should know their next step before they pick up the phone.", "How we work"),
+    )
+    return f"""
+      <section class="band band-quote">
+        <p class="band-quote__label">{html.escape(label)}</p>
+        <p class="band-quote__line">{html.escape(line)}</p>
+        <p class="band-quote__by">{ctx["name"]} &middot; {ctx["city"]}</p>
+      </section>
+"""
+
+
+BAND_SIDE_NOTES = {
+    ("preschool", "structured"): (
+        "Why the order matters",
+        "Families rarely stall because they dislike a school. They stall because they "
+        "cannot tell what happens after the tour. Publishing the sequence up front — "
+        "inquiry, visit, application, placement — removes the one unknown that keeps "
+        "an interested parent from committing.",
+    ),
+    ("sports", "team"): (
+        "What tryouts actually ask for",
+        "Competitive programs lose good athletes to guesswork. Stating the time "
+        "commitment, the gear, the eligibility window and the evaluation criteria "
+        "before tryouts means the families who show up already know what they are "
+        "signing up for.",
+    ),
+}
+
+
+def _render_band_side_note(ctx: dict, items: list[tuple[str, str]]) -> str:
+    label, body = BAND_SIDE_NOTES.get(
+        (ctx["type_id"], ctx["version_id"]),
+        ("Why it matters", "Clear next steps turn casual interest into a real inquiry."),
+    )
+    return f"""
+      <section class="band band-note">
+        <p class="band-note__label">{html.escape(label)}</p>
+        <p class="band-note__body">{html.escape(body)}</p>
+      </section>
+"""
+
+
+def _render_band_coverage(ctx: dict, items: list[tuple[str, str]]) -> str:
+    entries = _band_phrases(ctx, items)[:6]
+    rows = "".join(f"<li>{html.escape(entry)}</li>" for entry in entries)
+    return f"""
+      <section class="band band-coverage">
+        <div class="band-coverage__head">
+          <p class="section-kicker">All in one place</p>
+          <h2>Everything a parent asks on the first call.</h2>
+        </div>
+        <ul class="band-coverage__list">{rows}</ul>
+      </section>
+"""
+
+
+BAND_FIGURES = {
+    "preschool": [("6", "age groups on one page"), ("2 min", "to request a tour"), ("0", "PDFs to download")],
+    "music": [("3", "lesson paths to compare"), ("1", "form, not a phone tag loop"), ("0", "dead contact pages")],
+    "sports": [("6", "dated sessions this season"), ("2 min", "to reserve a spot"), ("0", "phone calls required")],
+}
+
+
+def _render_band_figures(ctx: dict, items: list[tuple[str, str]]) -> str:
+    figures = BAND_FIGURES.get(ctx["type_id"], BAND_FIGURES["preschool"])
+    cells = "".join(
+        f"<div><b>{html.escape(value)}</b><span>{html.escape(label)}</span></div>"
+        for value, label in figures
+    )
+    return f"""
+      <section class="band band-figures">
+        <div class="band-figures__row">{cells}</div>
+      </section>
+"""
+
+
+BAND_STRIP_CAPTIONS = {
+    "preschool": ["In the classroom", "Outside every day", "Pickup"],
+    "music": ["Lesson rooms", "Practice", "Performance"],
+    "sports": ["Training", "Coaching", "Competition"],
+}
+
+
+def _render_band_photo_strip(ctx: dict, items: list[tuple[str, str]]) -> str:
+    photos = ctx["photos"]
+    captions = BAND_STRIP_CAPTIONS.get(ctx["type_id"], BAND_STRIP_CAPTIONS["preschool"])
+    cells = "".join(
+        f'<div class="band-strip__cell" {_photo_style(photos[idx % len(photos)])}>'
+        f"<span>{html.escape(caption)}</span></div>"
+        for idx, caption in enumerate(captions)
+    )
+    return f"""
+      <section class="band band-strip">{cells}</section>
+"""
+
+
+BAND_RENDERERS = {
+    "slots": _render_band_slots,
+    "pull-quote": _render_band_pull_quote,
+    "side-note": _render_band_side_note,
+    "coverage": _render_band_coverage,
+    "figures": _render_band_figures,
+    "photo-strip": _render_band_photo_strip,
+}
+
+
+def _render_band(ctx: dict, items: list[tuple[str, str]]) -> str:
+    renderer = BAND_RENDERERS.get(ctx["band_shape"], _render_band_coverage)
+    return renderer(ctx, items)
+
+
+# --- Footer shapes ----------------------------------------------------------
+
+
+def _render_footer(ctx: dict, items: list[tuple[str, str]]) -> str:
+    shape = ctx["footer_shape"]
+    name = ctx["name"]
+    city = ctx["city"]
+    category = ctx["category"]
+    contact = ctx["contact"]
+    links = _band_phrases(ctx, items)[:6]
+
+    if shape == "columns":
+        col_a = "".join(f"<li>{html.escape(link)}</li>" for link in links[:3])
+        col_b = "".join(f"<li>{html.escape(link)}</li>" for link in links[3:6]) or "<li>Visit us</li>"
+        return f"""
+    <footer class="site-footer footer-columns">
+      <div class="footer-columns__brand">
+        <b>{name}</b>
+        <span>{category} in {city}</span>
+      </div>
+      <div class="footer-columns__col"><h4>Programs</h4><ul>{col_a}</ul></div>
+      <div class="footer-columns__col"><h4>Visit</h4><ul>{col_b}</ul></div>
+      <div class="footer-columns__col"><h4>Contact</h4><p>{contact}</p></div>
+    </footer>
+"""
+    if shape == "strip":
+        # Replaced the oversized-wordmark-on-accent slab: at 100px on a
+        # saturated fill it read as an unfinished placeholder rather than a
+        # deliberate sign-off, and it repeated the name the header already
+        # carries. This does the three jobs a footer has - who, where to go
+        # next, how to reach them - on one quiet row.
+        nav_links = "".join(f"<span>{html.escape(link)}</span>" for link in links[:5])
+        return f"""
+    <footer class="site-footer footer-strip">
+      <div class="footer-strip__brand">
+        <b>{name}</b>
+        <span>{category} in {city}</span>
+      </div>
+      <div class="footer-strip__nav">{nav_links}</div>
+      <div class="footer-strip__cta">
+        <span>{contact}</span>
+        <a href="#next-step">Get in touch</a>
+      </div>
+    </footer>
+"""
+    if shape == "rule":
+        return f"""
+    <footer class="site-footer footer-rule">
+      <div class="footer-rule__col"><b>{name}</b><span>{category}</span></div>
+      <div class="footer-rule__col"><span>{city}</span><span>Visits by appointment</span></div>
+      <div class="footer-rule__col">{contact}</div>
+    </footer>
+"""
+    return f"""
+    <footer class="site-footer footer-minimal">
+      <span><b>{name}</b> &middot; {category} in {city}</span>
+      <span>{contact}</span>
+    </footer>
+"""
+
+
 def _flow_config(ctx: dict) -> dict:
+    """Copy and fields for the closing lead form.
+
+    This section used to be written in Pontora's voice — "the page gathers the
+    details staff need", "the school gets a useful lead, not a blank contact
+    form message". That is pitch copy addressed to the owner, sitting inside a
+    mock of their own public site, where the reader is a parent. Every string
+    here is now written the way the school would write it to a family.
+
+    `fields` are single default values, not slash-lists: "Beginner", not
+    "Beginner / returning / advanced". A control showing three options
+    separated by slashes reads as a broken input, not as a dropdown.
+    """
     type_id = ctx["type_id"]
     version_id = ctx["version_id"]
     category = _clean(ctx.get("raw_category")).lower()
 
     if type_id == "preschool":
         return {
-            "kicker": "Enrollment-ready flow",
-            "headline": "Tours, openings, and family details start in one place.",
+            "kicker": "Enrollment",
+            "headline": "Tell us about your child and we'll take it from there.",
             "intro": (
-                "Instead of sending parents into email back-and-forth, the page gathers "
-                "the details staff need before the first response."
+                "A few details now means our first reply can name real openings "
+                "and real tour times, instead of asking you to call back."
             ),
             "fields": [
-                ("Child age", "Toddler / Preschool / Pre-K"),
-                ("Preferred start", "Now / Fall / Flexible"),
-                ("Parent question", "Tour, openings, schedule, or application"),
+                ("Child age", "2 years"),
+                ("Preferred start", "This fall"),
+                ("What you're after", "A tour"),
             ],
-            "button": "Request tour or openings",
-            "next_step": "Staff receives a clean inquiry with the child's age, timing, and program interest.",
+            "contact_fields": [
+                ("Parent name", "First and last"),
+                ("Email", "you@email.com"),
+                ("Phone", "(000) 000-0000"),
+            ],
+            "button": "Request a tour",
+            "assurance": "We reply within one business day. No mailing list.",
+            "next_step": (
+                "You'll hear back with your child's age group, what's actually open, "
+                "and two tour times to choose from."
+            ),
         }
 
     if type_id == "music":
         if version_id == "performance":
-            headline = "Trial requests connect to goals, not just contact info."
+            headline = "Book a trial lesson and we'll match the teacher to the student."
             button = "Request a trial lesson"
         else:
-            headline = "Lesson inquiries capture fit before the callback."
-            button = "Find a lesson match"
+            headline = "Tell us who's playing and we'll find the right fit."
+            button = "Find a lesson time"
         return {
-            "kicker": "Enrollment-ready flow",
+            "kicker": "Start lessons",
             "headline": headline,
             "intro": (
-                "Parents can share level, focus, and schedule constraints before anyone "
-                "has to chase details over email."
+                "Two minutes here saves a week of phone tag. Tell us the level and "
+                "when you're free, and we'll come back with real times."
             ),
             "fields": [
-                ("Student level", "Beginner / returning / advanced"),
-                ("Lesson goal", "Start lessons / change teacher / performance prep"),
-                ("Schedule window", "Weekdays / weekends / flexible"),
+                ("Student level", "Beginner"),
+                ("Lesson goal", "Start lessons"),
+                ("Best days", "Weekday evenings"),
+            ],
+            "contact_fields": [
+                ("Parent or student name", "First and last"),
+                ("Email", "you@email.com"),
+                ("Phone", "(000) 000-0000"),
             ],
             "button": button,
-            "next_step": "The school gets a useful lead, not a blank contact-form message.",
+            "assurance": "We reply within one business day with two or three times that fit.",
+            "next_step": (
+                "You'll get a teacher suggestion and specific lesson times, "
+                "not a form receipt."
+            ),
         }
 
     if type_id == "sports":
         if category == "swim":
             return {
-                "kicker": "Enrollment-ready flow",
-                "headline": "Swim lesson interest turns into a level-aware request.",
+                "kicker": "Swim lessons",
+                "headline": "Tell us about your swimmer and we'll start them at the right level.",
                 "intro": (
-                    "Parents can share swimmer age, water comfort, and timing before "
-                    "staff recommends the right class."
+                    "Age and water comfort are all we need to recommend a class. "
+                    "No evaluation visit required first."
                 ),
                 "fields": [
-                    ("Swimmer age", "Toddler / child / teen"),
-                    ("Water comfort", "New swimmer / some experience / stroke work"),
-                    ("Preferred days", "Weekdays / weekends / flexible"),
+                    ("Swimmer age", "4 years"),
+                    ("Water comfort", "New swimmer"),
+                    ("Preferred days", "Weekday evenings"),
+                ],
+                "contact_fields": [
+                    ("Parent name", "First and last"),
+                    ("Email", "you@email.com"),
+                    ("Phone", "(000) 000-0000"),
                 ],
                 "button": "Request swim evaluation",
-                "next_step": "Staff can reply with the right level, schedule, and next available opening.",
+                "assurance": "We reply within one business day with the right level and times.",
+                "next_step": (
+                    "You'll hear back with a recommended level, the class times that "
+                    "have room, and the next available start date."
+                ),
             }
         if category == "martial_arts":
             return {
-                "kicker": "Enrollment-ready flow",
-                "headline": "A trial-class path that answers parent questions early.",
+                "kicker": "First class",
+                "headline": "Book a first class and we'll put your child in the right group.",
                 "intro": (
-                    "Families choose age group, experience, and schedule preference before "
-                    "the first class is booked."
+                    "Age and experience are enough to place a new student. "
+                    "No uniform or commitment needed to try."
                 ),
                 "fields": [
-                    ("Student age", "Kids / teens / adults"),
-                    ("Experience", "First class / returning / belt rank"),
-                    ("Training goal", "Confidence, fitness, competition, or self-defense"),
+                    ("Student age", "7 years"),
+                    ("Experience", "First class"),
+                    ("Training goal", "Confidence"),
+                ],
+                "contact_fields": [
+                    ("Parent name", "First and last"),
+                    ("Email", "you@email.com"),
+                    ("Phone", "(000) 000-0000"),
                 ],
                 "button": "Request trial class",
-                "next_step": "The academy can match the family to the right class without extra sorting.",
+                "assurance": "We reply within one business day. Nothing to pay to try a class.",
+                "next_step": (
+                    "You'll get the class that fits your child's age and experience, "
+                    "plus what to bring on the first day."
+                ),
             }
         return {
-            "kicker": "Enrollment-ready flow",
-            "headline": "Program interest becomes a clear trial request.",
+            "kicker": "Get started",
+            "headline": "Tell us who's joining and we'll find the right session.",
             "intro": (
-                "Families can share age, level, and availability up front so the first "
-                "reply is specific."
+                "Age, experience and when you're free are all we need to point you "
+                "at the right group."
             ),
             "fields": [
-                ("Participant age", "Child / teen / adult"),
-                ("Experience", "Beginner / returning / competitive"),
-                ("Best timing", "After school / evenings / weekend"),
+                ("Participant age", "9 years"),
+                ("Experience", "Beginner"),
+                ("Best timing", "After school"),
+            ],
+            "contact_fields": [
+                ("Parent name", "First and last"),
+                ("Email", "you@email.com"),
+                ("Phone", "(000) 000-0000"),
             ],
             "button": "Request first session",
-            "next_step": "Staff can respond with the right program and next available slot.",
+            "assurance": "We reply within one business day with open sessions.",
+            "next_step": (
+                "You'll hear back with the right program, the next open slot, "
+                "and what the first session looks like."
+            ),
         }
 
     return {
-        "kicker": "Enrollment-ready flow",
-        "headline": "Every interested family gets one clear next step.",
-        "intro": "The page captures program interest, timing, and questions before staff follows up.",
+        "kicker": "Get started",
+        "headline": "Tell us what you're looking for and we'll point you the right way.",
+        "intro": "A few details now means our first reply can be specific.",
         "fields": [
-            ("Student age", "Child / teen / adult"),
-            ("Program interest", "Class / trial / enrollment"),
-            ("Best timing", "Weekday / weekend / flexible"),
+            ("Student age", "9 years"),
+            ("Program interest", "A class"),
+            ("Best timing", "Weekday evenings"),
+        ],
+        "contact_fields": [
+            ("Your name", "First and last"),
+            ("Email", "you@email.com"),
+            ("Phone", "(000) 000-0000"),
         ],
         "button": "Request information",
-        "next_step": "Staff gets the context needed to reply clearly.",
+        "assurance": "We reply within one business day.",
+        "next_step": "You'll hear back with real options and a clear next step.",
     }
+
+
+def _render_form_fields(flow: dict, *, field_class: str, input_class: str) -> str:
+    """Shared field markup for both lead-form shapes. Long values get the full
+    row so a two-column grid never squeezes 'Weekday evenings' onto two lines."""
+    rows = []
+    for label, value in flow["fields"]:
+        wide = " " + field_class + "--wide" if len(value) > 14 else ""
+        rows.append(
+            f'<div class="{field_class}{wide}"><label>{html.escape(label)}</label>'
+            f'<div class="{input_class} {input_class}--select">{html.escape(value)}</div></div>'
+        )
+    for label, value in flow.get("contact_fields", []):
+        wide = " " + field_class + "--wide" if len(label) > 14 else ""
+        rows.append(
+            f'<div class="{field_class}{wide}"><label>{html.escape(label)}</label>'
+            f'<div class="{input_class} {input_class}--placeholder">{html.escape(value)}</div></div>'
+        )
+    return "\n".join(rows)
 
 
 def _render_enrollment_panel(ctx: dict, items: list[tuple[str, str]]) -> str:
     flow = _flow_config(ctx)
     choices = _choice_labels(ctx.get("site_anchor_labels", []), items)
-    field_rows = "\n".join(
-        f'<div class="mock-field"><label>{html.escape(label)}</label>'
-        f'<div class="input-line">{html.escape(value)}</div></div>'
-        for label, value in flow["fields"]
-    )
+    field_rows = _render_form_fields(flow, field_class="mock-field", input_class="input-line")
     return f"""
       <section class="enrollment-section" id="next-step">
         <div class="enrollment-panel">
@@ -1248,18 +1847,52 @@ def _render_enrollment_panel(ctx: dict, items: list[tuple[str, str]]) -> str:
             <p class="section-kicker">{html.escape(flow["kicker"])}</p>
             <h2>{html.escape(flow["headline"])}</h2>
             <p>{html.escape(flow["intro"])}</p>
-            <div class="next-step-note"><b>After submit</b><span>{html.escape(flow["next_step"])}</span></div>
-            <p class="contact-line">Or reach out directly: {ctx["contact"]}</p>
+            <div class="next-step-note"><b>What happens next</b><span>{html.escape(flow["next_step"])}</span></div>
+            <p class="contact-line">Prefer to call? {ctx["contact"]}</p>
           </div>
           <div class="mock-form" aria-label="Sample inquiry flow">
-            <div class="mock-field option-field">
+            <div class="mock-field mock-field--wide option-field">
               <label>Program interest</label>
               <div class="option-pills">{_render_option_pills(choices)}</div>
             </div>
             {field_rows}
-            <button type="button">{html.escape(flow["button"])}</button>
+            <div class="mock-field mock-field--wide mock-field--action">
+              <button type="button">{html.escape(flow["button"])}</button>
+              <p class="form-assurance">{html.escape(flow["assurance"])}</p>
+            </div>
           </div>
         </div>
+      </section>
+"""
+
+
+def _render_enrollment_inline(ctx: dict, items: list[tuple[str, str]]) -> str:
+    # A centred, card-less lead form with underlined fields rather than boxed
+    # ones. Same content as the panel, deliberately quieter: for variants whose
+    # page already carries a heavy signature section and does not need a second
+    # bordered slab at the bottom.
+    flow = _flow_config(ctx)
+    choices = _choice_labels(ctx.get("site_anchor_labels", []), items)
+    field_rows = _render_form_fields(flow, field_class="inline-field", input_class="inline-input")
+    return f"""
+      <section class="enrollment-inline" id="next-step">
+        <div class="enrollment-inline__head">
+          <p class="section-kicker">{html.escape(flow["kicker"])}</p>
+          <h2>{html.escape(flow["headline"])}</h2>
+          <p>{html.escape(flow["intro"])}</p>
+        </div>
+        <div class="enrollment-inline__form" aria-label="Sample inquiry flow">
+          <div class="inline-field inline-field--wide">
+            <label>Program interest</label>
+            <div class="option-pills">{_render_option_pills(choices)}</div>
+          </div>
+          {field_rows}
+          <div class="inline-field inline-field--action">
+            <button type="button">{html.escape(flow["button"])}</button>
+            <p class="form-assurance">{html.escape(flow["assurance"])}</p>
+          </div>
+        </div>
+        <p class="contact-line enrollment-inline__contact">Prefer to call? {ctx["contact"]}</p>
       </section>
 """
 
@@ -1369,6 +2002,14 @@ def _render_hero_masthead(ctx: dict, cta_label: str) -> str:
     # deliberately different from the single-column hero-bleed and the
     # even 50/50 split of hero-split/hero-collage.
     quote_html, anchors_html = _hero_quote_or_anchors(ctx)
+    # The masthead is type-led by design, but with nothing else on it the
+    # section rendered as one flat full-viewport colour block. A photo row
+    # along the bottom edge breaks that up without turning it into a
+    # photo hero and competing with hero-bleed.
+    gallery = "".join(
+        f'<div class="hero-masthead__shot" {_photo_style(photo)}></div>'
+        for photo in ctx["photos"][:3]
+    )
     return f"""
       <section class="hero-masthead">
         <div class="hero-masthead__top">
@@ -1385,6 +2026,7 @@ def _render_hero_masthead(ctx: dict, cta_label: str) -> str:
             <a class="primary light" href="#next-step">{html.escape(cta_label)}</a>
           </div>
         </div>
+        <div class="hero-masthead__gallery">{gallery}</div>
       </section>
 """
 
@@ -1718,10 +2360,12 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
     photos = ctx["photos"]
 
     # Every variant picks its own combination of hero shape, signature
-    # section, and enrollment-close shape. No two siblings in the same
-    # category repeat the same (hero, close) pair, and the pairing is chosen
-    # for fit — e.g. a curriculum-path variant closes with numbered steps,
-    # not a form — not shuffled for coverage alone.
+    # section, secondary band, and enrollment-close shape. No two siblings in
+    # the same category repeat the same (hero, close) pair or the same band,
+    # and the pairing is chosen for fit — e.g. a curriculum-path variant
+    # closes with numbered steps, not a form — not shuffled for coverage
+    # alone. The typeface pairing, header shape, page shell and footer come
+    # from VARIANT_STYLE and are likewise unique within a category.
     if type_id == "preschool" and version_id == "structured":
         hero = _render_hero_split(ctx, "See enrollment steps", photos[0])
         signature = _render_admissions_path(ctx)
@@ -1760,7 +2404,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
     elif type_id == "music":
         hero = _render_hero(ctx, "Find the right lesson", photos[0])
         signature = _render_lesson_scroll(ctx, items)
-        enrollment = _render_enrollment_cta(ctx, items)
+        enrollment = _render_enrollment_inline(ctx, items)
         layout_class = "mock-layout-music-studio"
     elif type_id == "sports" and version_id == "trust":
         hero = _render_hero_split(ctx, "Ask us anything", photos[0])
@@ -1783,13 +2427,68 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         enrollment = _render_enrollment_cta(ctx, items)
         layout_class = "mock-layout-sports-action"
 
+    band = _render_band(ctx, items)
+
     return f"""
     <main class="mock-layout {layout_class}">
       {hero}
       {signature}
+      {band}
       {enrollment}
     </main>
 """
+
+
+def _relative_luminance(rgb: tuple[int, int, int]) -> float:
+    """WCAG 2.x relative luminance. _perceived_lightness() is a cheap YIQ
+    approximation and is fine for the "is this dark enough to be a hero
+    background" clamp, but it is not accurate enough to choose text colour:
+    mid-saturation oranges and greens land either side of any fixed threshold
+    while their actual contrast ratios differ by 2x."""
+    channels = []
+    for value in rgb:
+        c = value / 255
+        channels.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast_ratio(hex_a: str, hex_b: str) -> float:
+    la = _relative_luminance(_hex_to_rgb(hex_a))
+    lb = _relative_luminance(_hex_to_rgb(hex_b))
+    lighter, darker = max(la, lb), min(la, lb)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+AA_CONTRAST = 4.5
+
+
+def _on_accent_color(accent_hex: str, fallback_ink: str) -> str:
+    """Text colour for anything sitting on the accent fill (ticker, footer
+    slab, rail brand block, CTA button, step numerals).
+
+    Hard-coded white left several variants reading their own ticker at about
+    2.5:1. Picking the better of white/ink was an improvement but still landed
+    two thirds of the palettes between 3.8:1 and 4.3:1 — under AA for the 13px
+    and 15px labels this colour is actually used on. So: take white if it
+    clears AA, otherwise walk the variant's own ink toward black until it does.
+    Deriving from ink rather than jumping straight to #000 keeps the result
+    inside the variant's palette instead of introducing a foreign neutral."""
+    try:
+        if _contrast_ratio("#ffffff", accent_hex) >= AA_CONTRAST:
+            return "#ffffff"
+        ink_rgb = _hex_to_rgb(fallback_ink)
+    except (ValueError, IndexError):
+        return "#ffffff"
+
+    best, best_ratio = fallback_ink, _contrast_ratio(fallback_ink, accent_hex)
+    for step in range(0, 11):
+        candidate = _rgb_to_hex(_mix_rgb(ink_rgb, (0, 0, 0), step / 10))
+        ratio = _contrast_ratio(candidate, accent_hex)
+        if ratio >= AA_CONTRAST:
+            return candidate
+        if ratio > best_ratio:
+            best, best_ratio = candidate, ratio
+    return best if best_ratio >= _contrast_ratio("#ffffff", accent_hex) else "#ffffff"
 
 
 def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
@@ -1804,10 +2503,15 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     website = _clean(lead.get("website"))
     headline = _hero_headline(variant.type_id, variant.version_id, school_name)
     intro = _hero_intro(variant.type_id, variant.version_id, school_name)
+    raw_palette = _visual_palette(variant, lead.get("_website_mock_color_override"))
     palette = {
         key: html.escape(value, quote=True)
-        for key, value in _visual_palette(variant, lead.get("_website_mock_color_override")).items()
+        for key, value in raw_palette.items()
     }
+    style = variant_style(variant.type_id, variant.version_id)
+    shell = SHELL_TOKENS.get(style["shell"], SHELL_TOKENS["wide"])
+    hero_top = HEADER_HERO_TOP.get(style["header"], HEADER_HERO_TOP["bar"])
+    on_accent = _on_accent_color(raw_palette["accent"], raw_palette["ink"])
     accent = palette["accent"]
     secondary = palette["secondary"]
     escaped_name = html.escape(school_name)
@@ -1826,25 +2530,29 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     )
     items = _personalize_items(items, site_anchor_labels)
     photos = _resolve_photos(lead, variant.type_id, variant.version_id, _clean(lead.get("category")))
-    body = _render_variant_body(
-        {
-            "name": escaped_name,
-            "category": escaped_category,
-            "city": escaped_city,
-            "headline": escaped_headline,
-            "intro": escaped_intro,
-            "contact": contact,
-            "site_anchors_html": site_anchors_html,
-            "site_anchor_labels": site_anchor_labels,
-            "site_quote": site_quote,
-            "site_domain": _site_domain(website),
-            "photos": photos,
-            "type_id": variant.type_id,
-            "version_id": variant.version_id,
-            "raw_category": _clean(lead.get("category")),
-        },
-        items,
-    )
+    ctx = {
+        "name": escaped_name,
+        "initial": escaped_name[:1] or "P",
+        "category": escaped_category,
+        "city": escaped_city,
+        "headline": escaped_headline,
+        "intro": escaped_intro,
+        "contact": contact,
+        "site_anchors_html": site_anchors_html,
+        "site_anchor_labels": site_anchor_labels,
+        "site_quote": site_quote,
+        "site_domain": _site_domain(website),
+        "photos": photos,
+        "type_id": variant.type_id,
+        "version_id": variant.version_id,
+        "raw_category": _clean(lead.get("category")),
+        "header_shape": style["header"],
+        "band_shape": style["band"],
+        "footer_shape": style["footer"],
+    }
+    body = _render_variant_body(ctx, items)
+    topbar = _render_topbar(ctx)
+    footer = _render_footer(ctx, items)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -1854,7 +2562,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
   <title>{escaped_name} - Website Concept</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500..700&family=Inter:wght@400..900&display=swap" rel="stylesheet">
+  {_google_fonts_link(style)}
   <style>
     :root {{
       --accent: {accent};
@@ -1868,47 +2576,75 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       --radius: {palette["radius"]};
       --hero-overlay-a: {palette["hero_overlay_a"]};
       --hero-overlay-b: {palette["hero_overlay_b"]};
+      --on-accent: {on_accent};
+      /* Per-variant identity tokens. Typeface pairing, page shell and section
+         rhythm are what stop four sibling concepts reading as one template in
+         four colourways — see VARIANT_STYLE. */
+      --display-font: {style["display_font"]};
+      --body-font: {style["body_font"]};
+      --display-vf: {style["display_vf"]};
+      --display-case: {style["display_case"]};
+      --display-tracking: {style["display_tracking"]};
+      --display-weight: {style["display_weight"]};
+      --h1-size: {style["h1_size"]};
+      --gutter: {shell["gutter"]};
+      --section-y: {shell["section_y"]};
+      --hero-top: {hero_top};
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: var(--body-font);
       color: var(--ink);
       background: var(--paper);
     }}
     a {{ color: inherit; }}
-    h1, h2 {{
-      font-family: "Fraunces", ui-serif, Georgia, serif;
-      /* Pinned low instead of font-optical-sizing:auto: at large display
-         sizes Fraunces' automatic high-opsz instance swaps in a swashy,
-         big-looped lowercase f that reads as broken rather than characterful. */
-      font-variation-settings: "opsz" 18;
-      font-weight: 620;
+    h1, h2, h3 {{
+      font-family: var(--display-font);
+      /* Pinned per variant rather than font-optical-sizing:auto: at large
+         display sizes Fraunces' automatic high-opsz instance swaps in a
+         swashy, big-looped lowercase f that reads as broken rather than
+         characterful. Non-variable faces get "normal". */
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
+      text-transform: var(--display-case);
+      letter-spacing: var(--display-tracking);
     }}
+    h1 {{ font-size: var(--h1-size); line-height: .98; margin: 0 0 24px; }}
+    h2 {{ font-size: clamp(28px, 3.8vw, 52px); line-height: 1.03; margin: 0 0 18px; }}
+    h3 {{ font-size: 21px; line-height: 1.16; margin: 14px 0 8px; }}
+    p {{ color: var(--muted); font-size: 17px; line-height: 1.58; margin: 0; letter-spacing: 0; }}
     @media (prefers-reduced-motion: no-preference) {{
       a, button, .day-timeline__strip article, .lesson-scroll__track article, .option-pill {{
         transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease;
       }}
     }}
-    .page {{ min-height: 100vh; overflow: hidden; }}
-    .topbar {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 22px clamp(20px, 5vw, 72px);
-      background: rgba(255,255,255,.9);
-      border-bottom: 1px solid var(--line);
-      position: sticky;
-      top: 0;
-      z-index: 5;
-      backdrop-filter: blur(12px);
+
+    /* Page shell: how wide the site runs and whether it reads as a
+       full-bleed site, a bound document, or something with a spine. */
+    .page {{ min-height: 100vh; overflow: hidden; position: relative; }}
+    body.shell-inset {{ background: var(--soft); }}
+    body.shell-inset .page {{
+      max-width: 1240px;
+      margin: 0 auto;
+      background: var(--paper);
+      border-inline: 1px solid var(--line);
+      box-shadow: 0 0 80px rgba(0,0,0,.12);
     }}
+    body.shell-rail .page {{ border-left: 12px solid var(--accent); }}
+
+    /* Header shapes. One per sibling variant: the chrome is the first thing
+       the eye lands on, so an identical topbar made four concepts read as
+       one site no matter how different the sections below were. */
+    .topbar {{ position: relative; z-index: 5; }}
     .brand {{
       display: flex;
       gap: 12px;
       align-items: center;
-      font-weight: 850;
-      letter-spacing: 0;
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
+      letter-spacing: var(--display-tracking);
       font-size: 20px;
     }}
     .brand-mark {{
@@ -1920,9 +2656,80 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       place-items: center;
       color: white;
       font-weight: 900;
+      flex: none;
     }}
     nav {{ display: flex; gap: 24px; align-items: center; color: var(--muted); font-weight: 650; }}
     nav a {{ text-decoration: none; }}
+    .topbar-bar {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 22px var(--gutter);
+      background: rgba(255,255,255,.9);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(12px);
+    }}
+    .topbar-stack {{
+      display: grid;
+      justify-items: center;
+      gap: 14px;
+      padding: 28px var(--gutter) 20px;
+      background: var(--paper);
+      border-bottom: 1px solid var(--line);
+      text-align: center;
+    }}
+    .topbar-stack .brand {{ font-size: 22px; text-transform: uppercase; letter-spacing: .18em; }}
+    .topbar-stack nav {{ font-size: 12px; text-transform: uppercase; letter-spacing: .14em; gap: 28px; }}
+    .topbar-stack .nav-cta {{
+      background: none;
+      color: var(--ink);
+      padding: 0 0 3px;
+      border-radius: 0;
+      border-bottom: 2px solid var(--accent);
+    }}
+    .topbar-edge {{
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px var(--gutter);
+      background: transparent;
+    }}
+    .topbar-edge .brand {{ color: #fff; }}
+    .topbar-edge .brand-mark {{
+      background: rgba(255,255,255,.16);
+      border: 1px solid rgba(255,255,255,.42);
+      border-radius: 999px;
+    }}
+    .topbar-edge nav {{ color: rgba(255,255,255,.8); }}
+    .topbar-edge .nav-cta {{
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.4);
+      color: #fff;
+    }}
+    .topbar-rail {{
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: stretch;
+      background: var(--secondary);
+    }}
+    .topbar-rail .brand {{
+      background: var(--accent);
+      color: var(--on-accent);
+      padding: 20px 28px;
+      font-size: 19px;
+    }}
+    .topbar-rail nav {{
+      justify-content: flex-end;
+      padding: 0 var(--gutter);
+      color: rgba(255,255,255,.76);
+    }}
+    .topbar-rail .nav-cta {{ background: #fff; color: var(--secondary); border-radius: 0; }}
     .nav-cta, .primary {{
       display: inline-flex;
       align-items: center;
@@ -1975,8 +2782,10 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       gap: 10px;
       margin: 0 0 22px;
       color: var(--muted);
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .1em;
     }}
     .eyebrow::before {{
       content: "";
@@ -1984,19 +2793,16 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       height: 10px;
       border-radius: 999px;
       background: var(--accent);
+      flex: none;
     }}
-    h1, h2, h3, p {{ letter-spacing: 0; }}
-    h1 {{ font-size: clamp(44px, 6.4vw, 92px); line-height: .96; margin: 0 0 24px; }}
-    h2 {{ font-size: clamp(30px, 4vw, 56px); line-height: 1; margin: 0 0 18px; }}
-    h3 {{ font-size: 22px; line-height: 1.15; margin: 14px 0 8px; }}
-    p {{ color: var(--muted); font-size: 18px; line-height: 1.58; margin: 0; }}
-    .mock-layout section {{ padding-inline: clamp(20px, 5vw, 72px); }}
+    .mock-layout section {{ padding-inline: var(--gutter); }}
     figure {{ margin: 0; }}
     .section-kicker {{
       color: var(--accent);
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 900;
       text-transform: uppercase;
+      letter-spacing: .1em;
       margin-bottom: 12px;
     }}
 
@@ -2005,9 +2811,10 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       min-height: 84vh;
       display: flex;
       align-items: flex-end;
-      padding: clamp(20px, 5vw, 72px);
-      padding-top: clamp(120px, 16vw, 210px);
-      background:
+      padding: var(--gutter);
+      padding-top: var(--hero-top);
+      background-color: var(--secondary);
+      background-image:
         linear-gradient(180deg, var(--hero-overlay-a) 0%, transparent 30%, var(--hero-overlay-b) 100%),
         var(--hero-photo);
       background-size: cover;
@@ -2044,11 +2851,12 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       justify-content: center;
       gap: 4px;
       padding: clamp(28px, 5vw, 72px);
-      padding-top: clamp(120px, 14vw, 190px);
+      padding-top: var(--hero-top);
       background: var(--secondary);
     }}
     .hero-split__panel .primary.light {{ align-self: flex-start; }}
     .hero-split__photo {{
+      background-color: var(--soft);
       background-image: var(--hero-photo);
       background-size: cover;
       background-position: center;
@@ -2059,11 +2867,9 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
        A full-width oversized headline band up top (the type is the only
        "image" here), a divider rule, then a distinct two-zone row below:
        intro/proof on one side, the CTA pinned to the other. A grid of
-       zones, not one block with things centered inside it — deliberately
-       different in composition from hero-bleed's single column and
-       hero-split/hero-collage's even 50/50 split. */
+       zones, not one block with things centered inside it. */
     .hero-masthead {{
-      padding: clamp(130px, 15vw, 200px) clamp(24px, 6vw, 80px) 0;
+      padding: var(--hero-top) clamp(24px, 6vw, 80px) 0;
       background: var(--secondary);
     }}
     .hero-masthead__top {{
@@ -2072,16 +2878,15 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     }}
     .hero-masthead__top h1 {{
       max-width: 1100px;
-      font-size: clamp(46px, 8.5vw, 122px);
+      font-size: clamp(46px, 8.5vw, 118px);
       line-height: .95;
-      letter-spacing: -.02em;
     }}
     .hero-masthead__row {{
       display: grid;
       grid-template-columns: 1.4fr 1fr;
       gap: clamp(24px, 4vw, 60px);
       align-items: end;
-      padding: clamp(28px, 4vw, 48px) 0 clamp(56px, 7vw, 96px);
+      padding: clamp(28px, 4vw, 48px) 0 clamp(24px, 3vw, 34px);
     }}
     .hero-masthead__intro p {{ max-width: 520px; }}
     .hero-masthead__action {{ display: flex; justify-content: flex-end; }}
@@ -2098,7 +2903,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       justify-content: center;
       gap: 4px;
       padding: clamp(28px, 5vw, 72px);
-      padding-top: clamp(120px, 14vw, 190px);
+      padding-top: var(--hero-top);
       background: var(--secondary);
     }}
     .hero-collage__panel .primary.light {{ align-self: flex-start; }}
@@ -2110,6 +2915,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background: var(--paper);
     }}
     .hero-collage__photo {{
+      background-color: var(--soft);
       background-size: cover;
       background-position: center;
       border-radius: var(--radius);
@@ -2133,8 +2939,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       margin: 18px 0 4px;
       padding-left: 18px;
       border-left: 3px solid var(--accent);
-      font-family: "Fraunces", serif;
-      font-variation-settings: "opsz" 18;
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
       font-weight: 500;
       font-style: italic;
       font-size: 19px;
@@ -2145,7 +2951,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .site-quote cite {{
       display: block;
       margin-top: 8px;
-      font-family: Inter, sans-serif;
+      font-family: var(--body-font);
       font-style: normal;
       font-size: 12px;
       font-weight: 800;
@@ -2155,7 +2961,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     }}
 
     /* Signature: preschool-warm — a real day, hour by hour */
-    .day-timeline {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .day-timeline {{ padding-top: var(--section-y); padding-bottom: var(--section-y); }}
     .day-timeline__head {{ max-width: 640px; margin-bottom: 32px; }}
     .day-timeline__strip {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }}
     .day-timeline__strip article {{
@@ -2166,6 +2972,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       flex-direction: column;
       justify-content: flex-end;
       color: white;
+      background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.74)), var(--photo);
       background-size: cover;
       background-position: center;
@@ -2178,7 +2985,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .day-timeline__strip p {{ font-size: 14px; color: rgba(255,255,255,.84); line-height: 1.4; }}
 
     /* Signature: preschool-structured — the actual admissions sequence */
-    .admissions-path {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .admissions-path {{ padding-top: var(--section-y); padding-bottom: var(--section-y); }}
     .admissions-path__head {{ max-width: 640px; margin-bottom: 40px; }}
     .admissions-path__steps {{
       list-style: none;
@@ -2218,13 +3025,14 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       margin-top: 14px;
       min-height: 120px;
       border-radius: var(--radius);
+      background-color: var(--soft);
       background-image: var(--photo);
       background-size: cover;
       background-position: center;
     }}
 
     /* Signature: music-studio — an overlapping, hand-arranged lesson scroll */
-    .lesson-scroll {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); background: var(--soft); }}
+    .lesson-scroll {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--soft); }}
     .lesson-scroll__head {{ max-width: 640px; margin-bottom: 28px; }}
     .lesson-scroll__track {{
       display: flex;
@@ -2243,6 +3051,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       flex-direction: column;
       justify-content: flex-end;
       color: white;
+      background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.76)), var(--photo);
       background-size: cover;
       background-position: center;
@@ -2255,8 +3064,9 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .lesson-scroll__track p {{ font-size: 14px; color: rgba(255,255,255,.84); }}
 
     /* Signature: music-performance — a ticket-stub marquee, not a card grid */
-    .showcase-marquee {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); background: var(--secondary); color: white; }}
+    .showcase-marquee {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--secondary); color: white; }}
     .showcase-marquee h2, .showcase-marquee .section-kicker {{ color: white; }}
+    .showcase-marquee .section-kicker {{ color: var(--accent); }}
     .showcase-marquee__row {{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2267,9 +3077,9 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .showcase-marquee__row article:last-child {{ border-right: 0; }}
     .showcase-marquee__row span {{
       display: block;
-      font-family: "Fraunces", serif;
-      font-variation-settings: "opsz" 18;
-      font-weight: 600;
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
       font-size: 22px;
       margin-bottom: 10px;
       color: var(--accent);
@@ -2277,15 +3087,15 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .showcase-marquee__row p {{ color: rgba(255,255,255,.76); font-size: 15px; }}
 
     /* Signature: sports-action — a scoreboard, information not decoration */
-    .stat-block {{ padding-top: clamp(48px, 6vw, 88px); padding-bottom: clamp(48px, 6vw, 88px); background: var(--ink); }}
+    .stat-block {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--ink); }}
     .stat-block__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; text-align: center; }}
     .stat-block__row div {{ padding: 22px 12px; border-left: 1px solid rgba(255,255,255,.16); }}
     .stat-block__row div:first-child {{ border-left: 0; }}
     .stat-block__row b {{
       display: block;
-      font-family: "Fraunces", serif;
-      font-variation-settings: "opsz" 18;
-      font-weight: 600;
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
       font-size: clamp(40px, 6vw, 68px);
       color: var(--accent);
       line-height: 1;
@@ -2301,7 +3111,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     }}
 
     /* Signature: sports-trust — calm, text-led answers, no photos competing */
-    .parent-qa {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); background: var(--soft); }}
+    .parent-qa {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--soft); }}
     .parent-qa__head {{ max-width: 640px; margin-bottom: 32px; }}
     .parent-qa__grid {{
       display: grid;
@@ -2317,7 +3127,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .parent-qa__grid p {{ font-size: 15px; }}
 
     /* Signature: preschool-explorer — one featured theme, not an equal grid */
-    .explorer-spotlight {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .explorer-spotlight {{ padding-top: var(--section-y); padding-bottom: var(--section-y); }}
     .explorer-spotlight__head {{ max-width: 640px; margin-bottom: 32px; }}
     .explorer-spotlight__layout {{
       display: grid;
@@ -2333,6 +3143,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       flex-direction: column;
       justify-content: flex-end;
       color: white;
+      background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.72)), var(--photo);
       background-size: cover;
       background-position: center;
@@ -2347,7 +3158,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .explorer-spotlight__list p {{ font-size: 14px; }}
 
     /* Signature: preschool-community — plain statements, no photos, no numbers */
-    .community-reasons {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); background: var(--soft); }}
+    .community-reasons {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--soft); }}
     .community-reasons__head {{ max-width: 640px; margin-bottom: 32px; }}
     .community-reasons__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }}
     .community-reasons__row div {{ border-top: 3px solid var(--accent); padding-top: 16px; }}
@@ -2355,7 +3166,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .community-reasons__row p {{ font-size: 15px; }}
 
     /* Signature: music-collective — vertical photo-on-top cards, not overlaid text */
-    .collective-lineup {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .collective-lineup {{ padding-top: var(--section-y); padding-bottom: var(--section-y); }}
     .collective-lineup__head {{ max-width: 640px; margin-bottom: 28px; }}
     .collective-lineup__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }}
     .collective-lineup__row article {{
@@ -2368,6 +3179,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       content: "";
       display: block;
       height: 150px;
+      background-color: var(--soft);
       background-image: var(--photo);
       background-size: cover;
       background-position: center;
@@ -2376,7 +3188,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .collective-lineup__row p {{ font-size: 14px; margin: 0 18px 18px; }}
 
     /* Signature: music-academy — a vertical curriculum ladder, text only */
-    .academy-path {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .academy-path {{ padding-top: var(--section-y); padding-bottom: var(--section-y); }}
     .academy-path__head {{ max-width: 640px; margin-bottom: 32px; }}
     .academy-path__steps {{
       list-style: none;
@@ -2405,7 +3217,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .academy-path__steps p {{ font-size: 15px; }}
 
     /* Signature: sports-camp — a skewed, high-energy dated calendar */
-    .camp-calendar {{ padding-top: clamp(56px, 7vw, 96px); padding-bottom: clamp(56px, 7vw, 96px); }}
+    .camp-calendar {{ padding-top: var(--section-y); padding-bottom: var(--section-y); }}
     .camp-calendar__head {{ max-width: 640px; margin-bottom: 30px; }}
     .camp-calendar__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }}
     .camp-calendar__row article {{
@@ -2416,6 +3228,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       flex-direction: column;
       justify-content: flex-end;
       color: white;
+      background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.72)), var(--photo);
       background-size: cover;
       background-position: center;
@@ -2426,19 +3239,169 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .camp-calendar__row p {{ font-size: 14px; color: rgba(255,255,255,.84); }}
 
     /* Signature: sports-team — a bold roster board, text only */
-    .team-roster {{ padding-top: clamp(48px, 6vw, 88px); padding-bottom: clamp(48px, 6vw, 88px); background: var(--ink); }}
+    .team-roster {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--ink); }}
     .team-roster .section-kicker, .team-roster h2 {{ color: white; }}
+    .team-roster .section-kicker {{ color: var(--accent); }}
     .team-roster__head {{ max-width: 640px; margin-bottom: 30px; }}
     .team-roster__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }}
     .team-roster__row div {{ padding: 20px; border: 1px solid rgba(255,255,255,.14); border-radius: var(--radius); }}
-    .team-roster__row b {{ display: block; color: var(--accent); font-family: "Fraunces", serif; font-variation-settings: "opsz" 18; font-size: 34px; }}
+    .team-roster__row b {{ display: block; color: var(--accent); font-family: var(--display-font); font-variation-settings: var(--display-vf); font-size: 34px; }}
     .team-roster__row h3 {{ color: white; margin: 10px 0 6px; font-size: 18px; }}
     .team-roster__row p {{ color: rgba(255,255,255,.7); font-size: 14px; }}
 
+    /* Secondary bands. One per sibling variant, so the four concepts do not
+       all run hero -> one section -> close in the same three beats. */
+    .band {{ padding-inline: var(--gutter); }}
+    .band-slots {{ padding-block: var(--section-y); background: var(--soft); }}
+    .band-slots__head {{ max-width: 620px; margin-bottom: 26px; }}
+    .band-slots__grid {{
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }}
+    .band-slots__day {{
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px 14px;
+    }}
+    .band-slots__day b {{
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .14em;
+      color: var(--muted);
+    }}
+    .band-slots__day span {{
+      display: block;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 700;
+      text-align: center;
+    }}
+    .band-slots__day span:hover {{ border-color: var(--accent); }}
+    .band-quote {{
+      padding-block: var(--section-y);
+      text-align: center;
+      background: var(--paper);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }}
+    .band-quote__label {{
+      text-transform: uppercase;
+      letter-spacing: .16em;
+      font-size: 12px;
+      font-weight: 900;
+      color: var(--accent);
+      margin-bottom: 20px;
+    }}
+    .band-quote__line {{
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
+      letter-spacing: var(--display-tracking);
+      font-size: clamp(26px, 3.6vw, 46px);
+      line-height: 1.16;
+      color: var(--ink);
+      max-width: 900px;
+      margin: 0 auto;
+    }}
+    .band-quote__by {{
+      margin-top: 22px;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-weight: 800;
+    }}
+    .band-note {{
+      padding-block: var(--section-y);
+      display: grid;
+      grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+      gap: clamp(20px, 4vw, 56px);
+      background: var(--soft);
+    }}
+    .band-note__label {{
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
+      font-size: 15px;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--accent);
+      border-top: 2px solid var(--accent);
+      padding-top: 14px;
+    }}
+    .band-note__body {{ font-size: clamp(17px, 1.6vw, 21px); line-height: 1.6; max-width: 780px; color: var(--ink); }}
+    .band-coverage {{ padding-block: var(--section-y); }}
+    .band-coverage__head {{ max-width: 620px; margin-bottom: 26px; }}
+    .band-coverage__list {{
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0 clamp(20px, 4vw, 48px);
+    }}
+    .band-coverage__list li {{
+      padding: 15px 0;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }}
+    .band-coverage__list li::before {{
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 2px;
+      background: var(--accent);
+      flex: none;
+    }}
+    .band-figures {{ padding-block: var(--section-y); background: var(--soft); }}
+    .band-figures__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(16px, 3vw, 32px); }}
+    .band-figures__row div {{ background: white; border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; }}
+    .band-figures__row b {{
+      display: block;
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
+      font-size: clamp(38px, 5vw, 60px);
+      line-height: 1;
+      color: var(--accent);
+    }}
+    .band-figures__row span {{ display: block; margin-top: 12px; color: var(--muted); font-size: 14px; font-weight: 700; }}
+    .band-strip {{ padding-inline: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+    .band-strip__cell {{
+      min-height: clamp(200px, 26vw, 320px);
+      background-color: var(--soft);
+      background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.62)), var(--photo);
+      background-size: cover;
+      background-position: center;
+      display: flex;
+      align-items: flex-end;
+      padding: 18px;
+    }}
+    .band-strip__cell span {{
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .14em;
+    }}
+
     /* Shared enrollment panel */
     .enrollment-section {{
-      padding-top: 54px;
-      padding-bottom: 54px;
+      padding-top: var(--section-y);
+      padding-bottom: var(--section-y);
       background: linear-gradient(180deg, var(--paper), var(--soft));
       border-top: 1px solid var(--line);
     }}
@@ -2455,7 +3418,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       padding: clamp(24px, 4vw, 44px);
       box-shadow: 0 24px 70px rgba(15, 40, 80, .12);
     }}
-    .enrollment-copy h2 {{ font-size: clamp(30px, 4vw, 52px); }}
+    .enrollment-copy h2 {{ font-size: clamp(28px, 3.6vw, 46px); }}
     .next-step-note {{
       display: grid;
       gap: 6px;
@@ -2469,62 +3432,165 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .next-step-note span {{ color: var(--muted); line-height: 1.45; }}
     .contact-line {{ margin-top: 16px; font-size: 14px; color: var(--muted); }}
     .contact-line a {{ color: var(--accent); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }}
+    /* Lead form. The previous version had three problems a real form does
+       not: 900-weight all-caps labels shouting over their own values, fake
+       inputs reading "Beginner / returning / advanced" like a broken select,
+       and no name, email or phone field - so the lead form captured no lead.
+       Labels are now quiet and small, values read as a chosen default with a
+       chevron, and the contact fields are the point of the section. */
     .mock-form {{
       display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 14px;
+      align-content: start;
       background: var(--paper);
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      padding: 20px;
+      padding: clamp(18px, 2.4vw, 26px);
     }}
-    .mock-field {{ display: grid; gap: 8px; }}
+    .mock-field {{ display: grid; gap: 7px; min-width: 0; }}
+    .mock-field--wide {{ grid-column: 1 / -1; }}
     .mock-field label {{
-      color: var(--ink);
-      font-size: 13px;
-      font-weight: 900;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
       text-transform: uppercase;
+      letter-spacing: .11em;
     }}
     .input-line {{
-      min-height: 46px;
+      min-height: 44px;
       display: flex;
       align-items: center;
-      padding: 12px 14px;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 11px 13px;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: white;
-      color: var(--muted);
-      font-weight: 700;
+      border-radius: calc(var(--radius) - 1px);
+      background: #fff;
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 600;
     }}
+    .input-line--placeholder {{ color: var(--muted); font-weight: 500; }}
+    .input-line--select::after, .inline-input--select::after {{
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: translateY(-2px) rotate(45deg);
+      flex: none;
+    }}
+    .mock-field--action {{ display: grid; gap: 10px; margin-top: 4px; }}
     .option-pills {{ display: flex; flex-wrap: wrap; gap: 8px; }}
     .option-pill {{
       display: inline-flex;
       align-items: center;
       min-height: 34px;
-      padding: 8px 11px;
+      padding: 7px 12px;
       border-radius: 999px;
-      background: white;
+      background: #fff;
       border: 1px solid var(--line);
-      color: var(--ink);
-      font-size: 14px;
-      font-weight: 800;
+      color: var(--muted);
+      font-size: 13.5px;
+      font-weight: 650;
       line-height: 1.1;
     }}
-    .option-pill:hover {{ border-color: var(--accent); background: var(--soft); }}
+    .option-pill:hover {{ border-color: var(--accent); color: var(--ink); }}
+    /* First chip renders as the selected state so the control reads as a
+       choice already made, not an empty row of buttons. Kept as a
+       :first-child rule rather than a class so the markup stays uniform. */
+    .option-pills .option-pill:first-child {{
+      background: var(--secondary);
+      border-color: var(--secondary);
+      color: #fff;
+    }}
+    .form-assurance {{ font-size: 12px; color: var(--muted); margin: 0; text-align: center; }}
     .mock-form button {{
-      min-height: 50px;
+      min-height: 48px;
       border: 0;
-      border-radius: var(--radius);
+      border-radius: calc(var(--radius) - 1px);
       background: var(--secondary);
       color: white;
-      font-weight: 900;
+      font-weight: 800;
       font-size: 15px;
       cursor: default;
     }}
 
+    /* Enrollment: inline lead form - centred, card-less, underlined fields.
+       Same content as the panel, quieter, for pages whose signature section
+       is already heavy and does not need a second bordered slab. */
+    .enrollment-inline {{
+      padding-top: var(--section-y);
+      padding-bottom: var(--section-y);
+      background: var(--paper);
+      border-top: 1px solid var(--line);
+    }}
+    .enrollment-inline__head {{ max-width: 620px; margin: 0 auto 34px; text-align: center; }}
+    .enrollment-inline__head p {{ margin-inline: auto; max-width: 520px; }}
+    .enrollment-inline__form {{
+      max-width: 760px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px;
+    }}
+    .inline-field {{ display: grid; gap: 9px; min-width: 0; }}
+    .inline-field--wide {{ grid-column: 1 / -1; }}
+    .inline-field label {{
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }}
+    .inline-input {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 34px;
+      padding: 0 2px 9px;
+      border-bottom: 2px solid var(--line);
+      color: var(--ink);
+      font-size: 16px;
+      font-weight: 600;
+    }}
+    .inline-input--placeholder {{ color: var(--muted); font-weight: 500; }}
+    .inline-field--action {{ grid-column: 1 / -1; display: grid; gap: 12px; justify-items: center; margin-top: 8px; }}
+    .inline-field--action button {{
+      min-height: 52px;
+      padding: 0 36px;
+      border: 0;
+      border-radius: var(--radius);
+      background: var(--accent);
+      color: var(--on-accent);
+      font-weight: 800;
+      font-size: 15px;
+      cursor: default;
+    }}
+    .enrollment-inline__contact {{ text-align: center; margin-top: 26px; }}
+
+    /* Masthead hero photo row */
+    .hero-masthead__gallery {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding-bottom: clamp(28px, 4vw, 56px);
+    }}
+    .hero-masthead__shot {{
+      aspect-ratio: 5 / 3;
+      border-radius: var(--radius);
+      background-color: rgba(255,255,255,.09);
+      background-image: var(--photo);
+      background-size: cover;
+      background-position: center;
+    }}
+
     /* Enrollment: CTA banner — one headline, one button, no visible form */
     .enrollment-cta {{
-      padding-top: clamp(56px, 7vw, 96px);
-      padding-bottom: clamp(56px, 7vw, 96px);
+      padding-top: var(--section-y);
+      padding-bottom: var(--section-y);
       background: var(--secondary);
       color: white;
       text-align: center;
@@ -2540,7 +3606,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       border: 0;
       border-radius: var(--radius);
       background: var(--accent);
-      color: var(--secondary);
+      color: var(--on-accent);
       font-weight: 900;
       font-size: 16px;
       cursor: default;
@@ -2550,8 +3616,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
 
     /* Enrollment: steps-close — "what happens next," not a form to fill out */
     .enrollment-steps {{
-      padding-top: clamp(56px, 7vw, 96px);
-      padding-bottom: clamp(56px, 7vw, 96px);
+      padding-top: var(--section-y);
+      padding-bottom: var(--section-y);
       background: var(--paper);
       border-top: 1px solid var(--line);
     }}
@@ -2579,7 +3645,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       height: 32px;
       border-radius: 50%;
       background: var(--accent);
-      color: white;
+      color: var(--on-accent);
       font-weight: 900;
       font-size: 13px;
       margin-bottom: 14px;
@@ -2599,10 +3665,124 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       cursor: default;
     }}
     .enrollment-steps__cta .contact-line {{ margin-top: 14px; }}
+
+    /* Footer shapes. One per sibling variant. */
+    .site-footer {{ padding-inline: var(--gutter); }}
+    .site-footer a {{ text-decoration: underline; text-underline-offset: 3px; }}
+    .footer-minimal {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: space-between;
+      align-items: center;
+      padding-block: 30px;
+      border-top: 1px solid var(--line);
+      background: var(--paper);
+      font-size: 14px;
+      color: var(--muted);
+    }}
+    .footer-columns {{
+      display: grid;
+      grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr));
+      gap: clamp(20px, 3vw, 40px);
+      padding-block: clamp(36px, 5vw, 64px);
+      background: var(--secondary);
+      color: rgba(255,255,255,.78);
+    }}
+    .footer-columns__brand b {{
+      display: block;
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
+      text-transform: var(--display-case);
+      letter-spacing: var(--display-tracking);
+      font-size: 24px;
+      color: #fff;
+    }}
+    .footer-columns__brand span {{ display: block; margin-top: 10px; font-size: 14px; }}
+    .footer-columns__col h4 {{
+      margin: 0 0 14px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--accent);
+    }}
+    .footer-columns__col ul {{ list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; font-size: 14px; }}
+    .footer-columns__col p {{ font-size: 14px; color: rgba(255,255,255,.78); }}
+    .footer-strip {{
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.5fr) auto;
+      gap: clamp(18px, 3vw, 44px);
+      align-items: center;
+      padding-block: clamp(26px, 3.6vw, 46px);
+      border-top: 1px solid var(--line);
+      background: var(--paper);
+    }}
+    .footer-strip__brand b {{
+      display: block;
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
+      text-transform: var(--display-case);
+      letter-spacing: var(--display-tracking);
+      font-size: 20px;
+      color: var(--ink);
+    }}
+    .footer-strip__brand span {{ display: block; margin-top: 6px; font-size: 13px; color: var(--muted); }}
+    .footer-strip__nav {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 20px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--muted);
+    }}
+    .footer-strip__cta {{
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      justify-content: flex-end;
+      font-size: 13px;
+      color: var(--muted);
+    }}
+    .footer-strip__cta a {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 42px;
+      padding: 0 20px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      text-decoration: none;
+      white-space: nowrap;
+    }}
+    .footer-rule {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 20px;
+      padding-block: clamp(28px, 4vw, 52px);
+      border-top: 2px solid var(--ink);
+      background: var(--paper);
+      font-size: 14px;
+      color: var(--muted);
+    }}
+    .footer-rule__col {{ display: grid; gap: 7px; align-content: start; }}
+    .footer-rule__col b {{
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-weight: var(--display-weight);
+      text-transform: var(--display-case);
+      letter-spacing: var(--display-tracking);
+      font-size: 19px;
+      color: var(--ink);
+    }}
+
     .concept-note {{
       font-size: 13px;
       color: #667085;
-      padding: 18px clamp(20px, 5vw, 72px);
+      padding: 18px var(--gutter);
       background: white;
       border-top: 1px solid var(--line);
     }}
@@ -2610,9 +3790,16 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       nav {{ display: none; }}
       .day-timeline__strip, .admissions-path__steps, .stat-block__row, .showcase-marquee__row,
       .parent-qa__grid, .explorer-spotlight__layout, .community-reasons__row,
-      .collective-lineup__row, .camp-calendar__row, .team-roster__row {{
+      .collective-lineup__row, .camp-calendar__row, .team-roster__row,
+      .band-coverage__list, .band-figures__row, .band-strip,
+      .footer-columns, .footer-rule, .footer-strip,
+      .mock-form, .enrollment-inline__form {{
         grid-template-columns: 1fr;
       }}
+      .band-slots__grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      .hero-masthead__gallery {{ grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }}
+      .footer-strip__cta {{ justify-content: flex-start; flex-wrap: wrap; }}
+      .band-note {{ grid-template-columns: 1fr; }}
       .admissions-path__steps::before {{ display: none; }}
       .enrollment-panel {{ grid-template-columns: 1fr; }}
       .stat-block__row div, .showcase-marquee__row article {{ border: 0; border-top: 1px solid rgba(255,255,255,.16); }}
@@ -2625,26 +3812,21 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       .hero-masthead__row {{ grid-template-columns: 1fr; }}
       .hero-masthead__action {{ justify-content: flex-start; }}
       .enrollment-steps__row {{ grid-template-columns: 1fr; }}
+      .topbar-rail {{ grid-template-columns: 1fr; }}
     }}
     @media (max-width: 580px) {{
       .hero-bleed {{ min-height: 72vh; }}
-      .hero-split__panel, .hero-collage__panel, .hero-masthead {{ padding-top: 100px; }}
       .primary {{ width: 100%; }}
       .enrollment-cta__actions button, .enrollment-steps__cta button {{ width: 100%; }}
       h1 {{ font-size: 40px; }}
     }}
   </style>
 </head>
-<body>
+<body class="shell-{style["shell"]}">
   <div class="page">
-    <header class="topbar">
-      <div class="brand"><span class="brand-mark">{escaped_name[:1] or "P"}</span>{escaped_name}</div>
-      <nav>
-        <a href="#programs">Programs</a>
-        <a href="#next-step" class="nav-cta">Start enrollment</a>
-      </nav>
-    </header>
+{topbar}
 {body}
+{footer}
     <div class="concept-note">
       Website concept prepared by Pontora for {escaped_name} after reviewing the current public site. This is a preview, not the live website.
     </div>

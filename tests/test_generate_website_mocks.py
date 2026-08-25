@@ -252,6 +252,11 @@ def test_sibling_variants_never_share_hero_and_enrollment_shape_together():
         "panel": '<div class="enrollment-panel">',
         "cta": '<section class="enrollment-cta"',
         "steps": '<section class="enrollment-steps"',
+        # Fourth close shape: a centred, card-less lead form. Added when
+        # music-studio needed an actual form rather than a bare CTA button.
+        # The invariant this test enforces is unchanged - only the set of
+        # shapes it knows how to name has grown.
+        "inline": '<section class="enrollment-inline"',
     }
     lead_by_type = {
         "preschool": _lead(category="preschool"),
@@ -458,7 +463,9 @@ def test_swim_mock_uses_swim_specific_enrollment_flow():
     # lighter CTA-banner shape, which has no form fields to assert on.
     rendered = generate_website_mocks._render_mock_html(lead, _variant("sports", "camp"))
 
-    assert "Swim lesson interest turns into a level-aware request." in rendered
+    # Fragment avoids the apostrophe, which html.escape() renders as &#x27;.
+    assert "Tell us about your swimmer and we" in rendered
+    assert "start them at the right level." in rendered
     assert "<label>Swimmer age</label>" in rendered
     assert "<label>Water comfort</label>" in rendered
     assert "Request swim evaluation" in rendered
@@ -553,3 +560,113 @@ def test_structured_preschool_admissions_path_is_a_real_sequence():
     assert "<span>01</span>" in rendered
     assert "<span>04</span>" in rendered
     assert rendered.count("<figure") == 1
+
+
+def test_every_variant_has_an_identity_style_entry():
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        for variant in variants:
+            key = (mock_type, variant.version_id)
+            assert key in generate_website_mocks.VARIANT_STYLE, f"missing style for {key}"
+            style = generate_website_mocks.VARIANT_STYLE[key]
+            assert style["shell"] in generate_website_mocks.SHELL_TOKENS
+            assert style["header"] in generate_website_mocks.HEADER_HERO_TOP
+            assert style["band"] in generate_website_mocks.BAND_RENDERERS
+
+
+def test_sibling_variants_never_share_identity_tokens():
+    # Layout alone was not enough: with one typeface pairing, one topbar and
+    # one page shell across all four concepts, a prospect read them as the
+    # same site in four colourways. Within a category these must all differ.
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        for token in ("display_font", "body_font", "header", "band", "footer", "shell"):
+            values = [
+                generate_website_mocks.VARIANT_STYLE[(mock_type, v.version_id)][token]
+                for v in variants
+            ]
+            assert len(set(values)) == len(values), (
+                f"{mock_type} reuses {token} across siblings: {values}"
+            )
+
+
+def test_sibling_variants_render_distinct_chrome_and_bands():
+    # The table above is the intent; this is the rendered proof.
+    header_markers = {
+        "bar": 'class="topbar topbar-bar"',
+        "stack": 'class="topbar topbar-stack"',
+        "edge": 'class="topbar topbar-edge"',
+        "rail": 'class="topbar topbar-rail"',
+    }
+    band_markers = {
+        "slots": '<section class="band band-slots">',
+        "pull-quote": '<section class="band band-quote">',
+        "side-note": '<section class="band band-note">',
+        "coverage": '<section class="band band-coverage">',
+        "figures": '<section class="band band-figures">',
+        "photo-strip": '<section class="band band-strip">',
+    }
+    footer_markers = {
+        "minimal": 'class="site-footer footer-minimal"',
+        "columns": 'class="site-footer footer-columns"',
+        "strip": 'class="site-footer footer-strip"',
+        "rule": 'class="site-footer footer-rule"',
+    }
+    lead_by_type = {
+        "preschool": _lead(category="preschool"),
+        "music": _lead(category="music"),
+        "sports": _lead(category="martial_arts"),
+    }
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        lead = lead_by_type[mock_type]
+        seen = {"header": set(), "band": set(), "footer": set(), "font": set()}
+        for variant in variants:
+            rendered = generate_website_mocks._render_mock_html(lead, variant)
+            header = next(n for n, m in header_markers.items() if m in rendered)
+            band = next(n for n, m in band_markers.items() if m in rendered)
+            footer = next(n for n, m in footer_markers.items() if m in rendered)
+            font = re.search(r"--display-font: ([^;]+);", rendered).group(1)
+            for key, value in (("header", header), ("band", band), ("footer", footer), ("font", font)):
+                assert value not in seen[key], (
+                    f"{mock_type}/{variant.version_id} reuses {key}={value}"
+                )
+                seen[key].add(value)
+        assert len(seen["header"]) == 4
+        assert len(seen["band"]) == 4
+        assert len(seen["footer"]) == 4
+
+
+def test_overlay_headers_only_sit_on_heroes_that_are_dark_at_the_top():
+    # The "edge" topbar is transparent with white text. It is only legible
+    # over a hero whose top edge is a solid dark fill — hero-bleed's overlay
+    # gradient starts opaque, hero-collage's right half does not.
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        for variant in variants:
+            style = generate_website_mocks.VARIANT_STYLE[(mock_type, variant.version_id)]
+            if style["header"] != "edge":
+                continue
+            lead = _lead(category={"sports": "martial_arts"}.get(mock_type, mock_type))
+            rendered = generate_website_mocks._render_mock_html(lead, variant)
+            assert '<section class="hero-bleed"' in rendered, (
+                f"{mock_type}/{variant.version_id} puts an overlay header on a non-bleed hero"
+            )
+
+
+def test_on_accent_text_clears_aa_contrast_for_every_palette():
+    # --on-accent is used on 13px and 15px labels (ticker, footer slab line,
+    # step numerals), so 3:1 "large text" leniency does not apply.
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        for variant in variants:
+            palette = generate_website_mocks._visual_palette(variant)
+            on_accent = generate_website_mocks._on_accent_color(palette["accent"], palette["ink"])
+            ratio = generate_website_mocks._contrast_ratio(on_accent, palette["accent"])
+            assert ratio >= generate_website_mocks.AA_CONTRAST, (
+                f"{mock_type}/{variant.version_id}: {on_accent} on {palette['accent']} is {ratio:.2f}:1"
+            )
+
+
+def test_on_accent_prefers_white_only_when_white_actually_clears_aa():
+    # A near-black accent: white is both correct and sufficient.
+    assert generate_website_mocks._on_accent_color("#12312f", "#12312f") == "#ffffff"
+    # A bright yellow accent: white would be ~1.6:1, so it must go dark.
+    assert generate_website_mocks._on_accent_color("#f2b705", "#1d5c63") != "#ffffff"
+    # Garbage input degrades instead of raising.
+    assert generate_website_mocks._on_accent_color("not-a-colour", "#111111") == "#ffffff"
