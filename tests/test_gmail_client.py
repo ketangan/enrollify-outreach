@@ -1,7 +1,62 @@
 import base64
 from email.message import EmailMessage
 
+import pytest
+from googleapiclient.errors import HttpError
+
 from src import gmail_client
+
+
+class _FakeResp:
+    def __init__(self, status):
+        self.status = status
+        self.reason = "error"
+
+
+def _http_error(status):
+    return HttpError(_FakeResp(status), b'{"error": "boom"}')
+
+
+def test_execute_with_retry_retries_transient_server_error(monkeypatch):
+    monkeypatch.setattr(gmail_client.time, "sleep", lambda _seconds: None)
+    calls = {"n": 0}
+
+    class Request:
+        def execute(self):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise _http_error(500)
+            return {"ok": True}
+
+    assert gmail_client._execute_with_retry(Request()) == {"ok": True}
+    assert calls["n"] == 3
+
+
+def test_execute_with_retry_does_not_retry_client_error():
+    calls = {"n": 0}
+
+    class Request:
+        def execute(self):
+            calls["n"] += 1
+            raise _http_error(404)
+
+    with pytest.raises(HttpError):
+        gmail_client._execute_with_retry(Request())
+    assert calls["n"] == 1
+
+
+def test_execute_with_retry_raises_after_exhausting_attempts(monkeypatch):
+    monkeypatch.setattr(gmail_client.time, "sleep", lambda _seconds: None)
+    calls = {"n": 0}
+
+    class Request:
+        def execute(self):
+            calls["n"] += 1
+            raise _http_error(503)
+
+    with pytest.raises(HttpError):
+        gmail_client._execute_with_retry(Request(), max_attempts=3)
+    assert calls["n"] == 3
 
 
 def test_build_message_uses_pontora_sender():

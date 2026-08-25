@@ -20,6 +20,7 @@ import email
 import email.utils
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -29,6 +30,33 @@ from pathlib import Path
 from src import config
 
 logger = logging.getLogger(__name__)
+
+_RETRYABLE_HTTP_STATUSES = {500, 502, 503, 504}
+
+
+def _execute_with_retry(request, *, max_attempts: int = 3, base_delay: float = 2.0):
+    """Execute a Gmail API request, retrying transient server errors.
+
+    Gmail's API occasionally returns a bare 500 "Internal error encountered"
+    (backendError) on an otherwise-valid request — retrying the same request
+    typically succeeds. Client errors (4xx) aren't retried since trying again
+    won't fix them.
+    """
+    from googleapiclient.errors import HttpError
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return request.execute()
+        except HttpError as err:
+            status = getattr(err.resp, "status", None)
+            if status not in _RETRYABLE_HTTP_STATUSES or attempt == max_attempts:
+                raise
+            delay = base_delay * attempt
+            logger.warning(
+                "Gmail API transient error %s (attempt %d/%d). Retrying in %.1fs.",
+                status, attempt, max_attempts, delay,
+            )
+            time.sleep(delay)
 
 GMAIL_COMPOSE_SCOPE = "https://www.googleapis.com/auth/gmail.compose"
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
@@ -393,7 +421,7 @@ def _list_draft_ids(service, since_days: int) -> list[str]:
             pageToken=page_token,
             maxResults=100,
         )
-        resp = req.execute()
+        resp = _execute_with_retry(req)
         draft_ids.extend(d["id"] for d in resp.get("drafts", []))
         page_token = resp.get("nextPageToken")
         if not page_token:
@@ -411,7 +439,7 @@ def _list_message_ids(service, query: str) -> list[str]:
             pageToken=page_token,
             maxResults=100,
         )
-        resp = req.execute()
+        resp = _execute_with_retry(req)
         message_ids.extend(m["id"] for m in resp.get("messages", []))
         page_token = resp.get("nextPageToken")
         if not page_token:
@@ -424,11 +452,11 @@ def fetch_drafts(since_days: int = 90) -> list[DraftMessage]:
     service = get_service()
     drafts: list[DraftMessage] = []
     for draft_id in _list_draft_ids(service, since_days):
-        resource = service.users().drafts().get(
+        resource = _execute_with_retry(service.users().drafts().get(
             userId="me",
             id=draft_id,
             format="raw",
-        ).execute()
+        ))
         msg = _message_from_gmail_resource(resource)
         if not msg:
             continue
@@ -451,11 +479,11 @@ def fetch_sent_messages(since_days: int = 30) -> list[SentMessage]:
     service = get_service()
     results: list[SentMessage] = []
     for gmail_id in _list_message_ids(service, f"in:sent newer_than:{since_days}d"):
-        resource = service.users().messages().get(
+        resource = _execute_with_retry(service.users().messages().get(
             userId="me",
             id=gmail_id,
             format="raw",
-        ).execute()
+        ))
         msg = _message_from_gmail_resource(resource)
         if not msg:
             continue
@@ -497,11 +525,11 @@ def fetch_inbox_replies(since_days: int = 30, include_all: bool = False) -> list
             query = f"{query} -from:{sender}"
 
     for gmail_id in _list_message_ids(service, query):
-        resource = service.users().messages().get(
+        resource = _execute_with_retry(service.users().messages().get(
             userId="me",
             id=gmail_id,
             format="raw",
-        ).execute()
+        ))
         msg = _message_from_gmail_resource(resource)
         if not msg:
             continue
@@ -535,11 +563,11 @@ def fetch_inbox_raw_messages(since_days: int = 30) -> list[RawInboxMessage]:
     service = get_service()
     results: list[RawInboxMessage] = []
     for gmail_id in _list_message_ids(service, f"in:inbox newer_than:{since_days}d"):
-        resource = service.users().messages().get(
+        resource = _execute_with_retry(service.users().messages().get(
             userId="me",
             id=gmail_id,
             format="raw",
-        ).execute()
+        ))
         msg = _message_from_gmail_resource(resource)
         if not msg:
             continue
@@ -574,11 +602,11 @@ def fetch_sent_email_body(message_id: str) -> str:
         ids = _list_message_ids(service, query)
         if not ids:
             continue
-        resource = service.users().messages().get(
+        resource = _execute_with_retry(service.users().messages().get(
             userId="me",
             id=ids[0],
             format="raw",
-        ).execute()
+        ))
         msg = _message_from_gmail_resource(resource)
         if msg:
             return _extract_body(msg)
@@ -601,11 +629,11 @@ def find_sent_thread_id(message_id: str) -> str:
         ids = _list_message_ids(service, query)
         if not ids:
             continue
-        resource = service.users().messages().get(
+        resource = _execute_with_retry(service.users().messages().get(
             userId="me",
             id=ids[0],
             format="metadata",
-        ).execute()
+        ))
         return str(resource.get("threadId", ""))
 
     logger.warning("Sent Gmail thread not found for message-id %s", message_id[:50])
