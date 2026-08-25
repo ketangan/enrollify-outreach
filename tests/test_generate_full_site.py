@@ -316,6 +316,23 @@ def test_generate_full_site_uploads_to_r2_when_configured(monkeypatch, tmp_path)
     html_keys = [k for k in uploaded if k.endswith("index.html")]
     assert len(html_keys) == 4
 
+    # Each concept is two objects on R2: the real page at site.html, and a
+    # Desktop/Tablet/Phone preview shell at index.html that iframes it — the
+    # public URL (index.html) is what a prospect actually lands on.
+    site_keys = [k for k in uploaded if k.endswith("site.html")]
+    assert len(site_keys) == 4
+    for key in html_keys:
+        shell_html, content_type = uploaded[key]
+        shell_html = shell_html.decode("utf-8")
+        assert content_type == "text/html; charset=utf-8"
+        assert 'src="site.html"' in shell_html
+        assert '>Desktop<' in shell_html and '>Tablet<' in shell_html and '>Phone<' in shell_html
+        assert 'aria-pressed="true"' in shell_html  # Desktop selected by default
+    for key in site_keys:
+        site_html, _content_type = uploaded[key]
+        # The real rendered page content, not the shell.
+        assert b"<h1" in site_html
+
 
 def test_generate_full_site_falls_back_to_local_disk_when_r2_not_configured(monkeypatch, tmp_path):
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)

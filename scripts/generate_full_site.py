@@ -39,6 +39,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import logging
 import re
@@ -92,17 +93,80 @@ def _persist_photos(place: places.DiscoveredPlace | None, subject_id: str, outpu
     return urls
 
 
-def _persist_rendered(rendered: list[dict], subject_id: str, output_dir: Path) -> list[dict]:
+def _preview_shell_html(site_name: str) -> str:
+    """A thin wrapper page prospects land on: opens to a Desktop view of the
+    real site by default, with Desktop/Tablet/Phone buttons to switch. The
+    real site loads in an iframe rather than the wrapper resizing a plain
+    container, because the site's responsive layout is driven by real CSS
+    `@media` breakpoints, which respond to viewport width — an iframe gets
+    its own independent viewport, so setting *its* width to 820px/390px
+    correctly triggers the tablet/phone CSS. Shrinking a container div would
+    not: the desktop layout would just get squished, not actually switch."""
+    title = html.escape(f"{site_name} - Website Preview") if site_name else "Website Preview"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  html, body {{ margin: 0; height: 100%; background: #f4f2ee; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+  .toolbar {{
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px 16px; background: #fff; border-bottom: 1px solid #e4e1da;
+  }}
+  .toolbar button {{
+    border: 1px solid #e4e1da; background: #fff; border-radius: 999px;
+    padding: 7px 16px; font: inherit; font-weight: 600; color: #55524a; cursor: pointer;
+  }}
+  .toolbar button[aria-pressed="true"] {{ background: #1c1a16; color: #fff; border-color: #1c1a16; }}
+  .stage {{ height: calc(100% - 49px); display: flex; justify-content: center; padding: 20px; overflow: auto; }}
+  iframe {{ width: 100%; max-width: 100%; height: 100%; border: 0; background: #fff; transition: width .2s ease; box-shadow: 0 12px 40px rgba(0,0,0,.08); }}
+</style>
+</head>
+<body>
+  <div class="toolbar" role="group" aria-label="Preview size">
+    <button type="button" data-w="100%" aria-pressed="true">Desktop</button>
+    <button type="button" data-w="820px" aria-pressed="false">Tablet</button>
+    <button type="button" data-w="390px" aria-pressed="false">Phone</button>
+  </div>
+  <div class="stage"><iframe src="site.html" title="{title}"></iframe></div>
+  <script>
+    document.querySelectorAll('.toolbar button').forEach(function (btn) {{
+      btn.addEventListener('click', function () {{
+        document.querySelectorAll('.toolbar button').forEach(function (b) {{ b.setAttribute('aria-pressed', 'false'); }});
+        btn.setAttribute('aria-pressed', 'true');
+        document.querySelector('iframe').style.width = btn.dataset.w;
+      }});
+    }});
+  </script>
+</body>
+</html>
+"""
+
+
+def _persist_rendered(rendered: list[dict], subject_id: str, output_dir: Path, site_name: str = "") -> list[dict]:
     """Write rendered HTML to R2 when configured (durable, and given a
     clean /sites/ URL instead of whatever render_mock_concepts computed via
     the shared /mocks/ path convention), else local disk via
-    write_mock_files (fine locally, not durable on Render)."""
+    write_mock_files (fine locally, not durable on Render).
+
+    On R2, each concept becomes two objects: the real rendered page at
+    site.html, and a Desktop/Tablet/Phone preview shell at index.html that
+    loads it. The public URL still points at index.html, so prospects land
+    on the shell (Desktop by default) and everything already linking to
+    that URL (webapp UI, Sheet records, outreach emails) needs no changes.
+    Local-disk fallback (dev/testing only, not durable, not what a real
+    prospect sees) skips the shell and stays plain content, same as before."""
     if r2_storage.is_configured():
         persisted = []
+        shell_html = _preview_shell_html(site_name)
         for item in rendered:
-            key = f"sites/{subject_id}/{item['type']}-{item['version']}/index.html"
-            r2_storage.upload_bytes(key, item["html"].encode("utf-8"), "text/html; charset=utf-8")
-            public_url = r2_storage.public_url(key)
+            base_key = f"sites/{subject_id}/{item['type']}-{item['version']}"
+            r2_storage.upload_bytes(f"{base_key}/site.html", item["html"].encode("utf-8"), "text/html; charset=utf-8")
+            r2_storage.upload_bytes(f"{base_key}/index.html", shell_html.encode("utf-8"), "text/html; charset=utf-8")
+            public_url = r2_storage.public_url(f"{base_key}/index.html")
             persisted.append({**item, "url": public_url, "preview_url": public_url})
         return persisted
 
@@ -237,7 +301,7 @@ def generate_full_site(
     )
     if not rendered:
         return []
-    persisted = _persist_rendered(rendered, subject_id, output_dir)
+    persisted = _persist_rendered(rendered, subject_id, output_dir, site_name=name)
     return [{**{k: v for k, v in item.items() if k != "html"}, "subject_id": subject_id} for item in persisted]
 
 
