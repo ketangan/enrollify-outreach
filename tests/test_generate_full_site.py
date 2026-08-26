@@ -356,7 +356,11 @@ def test_generate_full_site_uploads_to_r2_when_configured(monkeypatch, tmp_path)
         shell_html, content_type = uploaded[key]
         shell_html = shell_html.decode("utf-8")
         assert content_type == "text/html; charset=utf-8"
-        assert 'src="site.html"' in shell_html
+        # The iframe's src is set dynamically (not a static src="site.html"
+        # attribute) so it can forward this page's own query string
+        # (utm_content etc) down to the tracking script inside site.html.
+        assert 'id="site-frame"' in shell_html
+        assert ".src = 'site.html' + window.location.search" in shell_html
         assert '>Desktop<' in shell_html and '>Tablet<' in shell_html and '>Phone<' in shell_html
         assert 'aria-pressed="true"' in shell_html  # Desktop selected by default
     for key in site_keys:
@@ -396,6 +400,15 @@ def test_generate_full_site_uses_short_links_when_configured(monkeypatch, tmp_pa
     assert len(created) == 4
     for item in rendered:
         assert item["short_url"].startswith("https://sites.example.com/p/")
+
+    # UTM params are baked into the URL stored behind the short link (not
+    # the short link itself) — that's what the tracking script embedded in
+    # every generated page reads to log a click.
+    subject_id = rendered[0]["subject_id"]
+    for long_url, _code in created:
+        assert f"utm_content={subject_id}" in long_url
+        assert "utm_source=sms" in long_url
+        assert "utm_medium=text" in long_url
         assert item["short_url"] != item["preview_url"]
 
 

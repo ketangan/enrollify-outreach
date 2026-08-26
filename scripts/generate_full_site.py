@@ -46,6 +46,7 @@ import re
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -131,13 +132,19 @@ def _preview_shell_html(site_name: str) -> str:
     <button type="button" data-w="820px" aria-pressed="false">Tablet</button>
     <button type="button" data-w="390px" aria-pressed="false">Phone</button>
   </div>
-  <div class="stage"><iframe src="site.html" title="{title}"></iframe></div>
+  <div class="stage"><iframe id="site-frame" title="{title}"></iframe></div>
   <script>
+    // Forward this page's own query string (utm_content etc, set on the
+    // short-link redirect target) into the iframe — the click-tracking
+    // script lives in site.html and reads its own window.location.search,
+    // which is otherwise empty since a plain src="site.html" attribute
+    // can't carry a query string that varies per visit.
+    document.getElementById('site-frame').src = 'site.html' + window.location.search;
     document.querySelectorAll('.toolbar button').forEach(function (btn) {{
       btn.addEventListener('click', function () {{
         document.querySelectorAll('.toolbar button').forEach(function (b) {{ b.setAttribute('aria-pressed', 'false'); }});
         btn.setAttribute('aria-pressed', 'true');
-        document.querySelector('iframe').style.width = btn.dataset.w;
+        document.getElementById('site-frame').style.width = btn.dataset.w;
       }});
     }});
   </script>
@@ -317,23 +324,36 @@ def generate_full_site(
     if not rendered:
         return []
     persisted = _persist_rendered(rendered, subject_id, output_dir, site_name=name)
-    persisted = _add_short_links(persisted)
+    persisted = _add_short_links(persisted, subject_id=subject_id)
     return [{**{k: v for k, v in item.items() if k != "html"}, "subject_id": subject_id} for item in persisted]
 
 
-def _add_short_links(persisted: list[dict]) -> list[dict]:
+def _add_short_links(persisted: list[dict], *, subject_id: str) -> list[dict]:
     """Best-effort: adds a short_url (sites.mypontora.com/p/<code>) per item
     for the text-message box. Falls back to the real preview_url when
     shortlinks isn't configured, or a single link's creation fails — a
     prospect getting the long URL is fine, a job failing outright over an
-    optional text-message convenience isn't."""
+    optional text-message convenience isn't.
+
+    The URL stored behind the short link (not the short link itself) has
+    utm_content=subject_id baked on — that's what the tracking script
+    already embedded in every generated page (generate_website_mocks.py's
+    _tracking_script) reads to log a click. Bake it into the redirect
+    target rather than the short link so the Worker's plain
+    Response.redirect doesn't need to know anything about UTM params."""
+    utm_query = f"utm_content={quote(subject_id)}&utm_source=sms&utm_medium=text"
+
+    def _with_utm(url: str) -> str:
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}{utm_query}"
+
     if not shortlinks.is_configured():
         return [{**item, "short_url": item["preview_url"]} for item in persisted]
 
     result = []
     for item in persisted:
         try:
-            short_url = shortlinks.create_short_link(item["preview_url"])
+            short_url = shortlinks.create_short_link(_with_utm(item["preview_url"]))
         except Exception as e:
             logger.warning("Short link creation failed for %s, using long URL: %s", item["preview_url"], e)
             short_url = item["preview_url"]
