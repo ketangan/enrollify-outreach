@@ -109,6 +109,40 @@ def test_list_page_filters_by_status_and_paginates(fake_sheets):
     assert len(page2) == 5
 
 
+def test_list_page_filters_by_name_case_insensitively(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="a", name="Soriel Music academy"))
+    no_website_rows.append(_row(row_id="b", name="Coast Music"))
+
+    rows, total = nws.list_page(q="soriel")
+
+    assert total == 1
+    assert rows[0]["name"] == "Soriel Music academy"
+
+
+def test_list_page_filters_by_city_or_address(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="a", name="A", city="Austin", address="123 Wilshire Blvd"))
+    no_website_rows.append(_row(row_id="b", name="B", city="Dallas", address="456 Main St"))
+
+    by_city, total_city = nws.list_page(q="austin")
+    assert total_city == 1
+    assert by_city[0]["id"] == "a"
+
+    by_address, total_address = nws.list_page(q="wilshire")
+    assert total_address == 1
+    assert by_address[0]["id"] == "a"
+
+
+def test_list_page_empty_query_returns_everything(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="a"))
+    no_website_rows.append(_row(row_id="b"))
+
+    rows, total = nws.list_page(q="")
+    assert total == 2
+
+
 def test_get_by_id_finds_matching_row(fake_sheets):
     no_website_rows, _ = fake_sheets
     no_website_rows.append(_row(row_id="target-id", name="Riverbend Music"))

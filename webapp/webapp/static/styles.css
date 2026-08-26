@@ -54,6 +54,22 @@ table.data-table tr:hover { background: #f8f4ec; }
   margin: 8px 0 28px;
 }
 
+.site-gen-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 16px;
+}
+.site-gen-picker-search input[type="search"] {
+  flex: 1;
+  max-width: 360px;
+  padding: 8px 10px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+}
+
 .progress-bar {
   position: relative;
   width: 100%;

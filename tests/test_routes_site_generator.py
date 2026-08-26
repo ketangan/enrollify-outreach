@@ -76,6 +76,30 @@ def test_site_generator_accepts_correct_key_and_sets_cookie(monkeypatch):
     client.cookies.clear()
 
 
+def test_site_generator_passes_search_query_to_list_page(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    captured = {}
+    monkeypatch.setattr(
+        no_website_schools, "list_page",
+        lambda page=1, page_size=10, **kw: (captured.update(kw) or [], 0),
+    )
+
+    resp = client.get("/site-generator", params={"key": "secret123", "q": "soriel"})
+
+    assert resp.status_code == 200
+    assert captured["q"] == "soriel"
+    assert 'value="soriel"' in resp.text
+
+
+def test_site_generator_shows_no_match_message_for_empty_search(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(no_website_schools, "list_page", lambda page=1, page_size=10, **kw: ([], 0))
+
+    resp = client.get("/site-generator", params={"key": "secret123", "q": "nonexistent-business"})
+
+    assert 'No matches for "nonexistent-business"' in resp.text
+
+
 def test_generate_submits_job_with_fresh_subject_id_and_redirects(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     captured = {}
@@ -266,6 +290,28 @@ def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):
     assert resp.status_code == 303
     assert resp.headers["location"] == "/site-generator"
     assert calls == [("90277-abc123", "existing_website_found", "https://www.real.example/")]
+
+
+def test_check_website_preserves_search_query_in_redirect(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        no_website_schools, "get_by_id",
+        lambda row_id: {"id": row_id, "name": "Test Studio", "category": "music", "city": "Austin", "state": "TX", "address": "", "phone": ""},
+    )
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(
+        routes_site_generator.website_existence_check, "check_website_exists",
+        lambda **kw: {"has_website": False, "website_url": "", "confidence": "low", "reasoning": ""},
+    )
+
+    resp = client.post(
+        "/site-generator/check-website",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "90277-abc123", "page": "1", "q": "soriel"},
+        follow_redirects=False,
+    )
+
+    assert "q=soriel" in resp.headers["location"]
 
 
 def test_check_website_redirects_with_found_result(monkeypatch):

@@ -51,14 +51,26 @@ def known_place_ids() -> set[str]:
 
 
 def list_page(
-    page: int = 1, page_size: int = 10, *, status: str = STATUS_COLLECTED,
+    page: int = 1, page_size: int = 10, *, status: str = STATUS_COLLECTED, q: str = "",
 ) -> tuple[list[dict], int]:
     """Returns (rows for this 1-indexed page, total matching row count).
     Filtered to `status` by default so businesses already used (site
     generated) or archived (turned out to have a site) drop out of the
-    picker automatically without deleting their discovery record."""
+    picker automatically without deleting their discovery record.
+
+    `q`, when given, filters to rows whose name/city/address contain it
+    (case-insensitive substring match) — lets a specific business be found
+    directly instead of paging through hundreds of rows to spot it."""
     rows = sheets.read_all_rows(config.TAB_NO_WEBSITE)
     matching = [r for r in rows if _clean(r.get("status")) == status] if status else rows
+    q = _clean(q).lower()
+    if q:
+        matching = [
+            r for r in matching
+            if q in _clean(r.get("name")).lower()
+            or q in _clean(r.get("city")).lower()
+            or q in _clean(r.get("address")).lower()
+        ]
     total = len(matching)
     start = max(page - 1, 0) * page_size
     return matching[start:start + page_size], total

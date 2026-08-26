@@ -256,3 +256,78 @@ def test_delete_org_continues_past_r2_and_shortlink_failures(fake_sheet, monkeyp
     # Sheet cleanup must still happen even though R2/shortlink calls blew up.
     assert state.delete_org("org-7") is True
     assert state.get_org("org-7") is None
+
+
+def test_no_website_schools_id_is_persisted_and_readable(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-8", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1", no_website_schools_id="90045-abc123",
+    )
+
+    org = state.get_org("org-8")
+    assert org["no_website_schools_id"] == "90045-abc123"
+
+
+def test_no_website_schools_id_defaults_to_empty_for_manual_generations(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-9", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+
+    org = state.get_org("org-9")
+    assert org["no_website_schools_id"] == ""
+
+
+def test_delete_org_resets_no_website_schools_row_to_collected(fake_sheet, monkeypatch):
+    state.record_initial_generation(
+        org_id="org-10", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1", no_website_schools_id="90045-abc123",
+    )
+    monkeypatch.setattr(state.r2_storage, "delete_prefix", lambda prefix: None)
+    monkeypatch.setattr(state.shortlinks, "delete_short_link", lambda code: None)
+    calls = []
+    monkeypatch.setattr(
+        state.no_website_schools, "mark_status",
+        lambda row_id, status: calls.append((row_id, status)) or True,
+    )
+
+    assert state.delete_org("org-10") is True
+
+    assert calls == [("90045-abc123", state.no_website_schools.STATUS_COLLECTED)]
+
+
+def test_delete_org_skips_no_website_schools_reset_when_not_from_picker(fake_sheet, monkeypatch):
+    state.record_initial_generation(
+        org_id="org-11", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",  # no no_website_schools_id — a manually-typed generation
+    )
+    monkeypatch.setattr(state.r2_storage, "delete_prefix", lambda prefix: None)
+    monkeypatch.setattr(state.shortlinks, "delete_short_link", lambda code: None)
+    calls = []
+    monkeypatch.setattr(state.no_website_schools, "mark_status", lambda row_id, status: calls.append(1))
+
+    assert state.delete_org("org-11") is True
+
+    assert calls == []
+
+
+def test_delete_org_continues_past_no_website_schools_reset_failure(fake_sheet, monkeypatch):
+    state.record_initial_generation(
+        org_id="org-12", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1", no_website_schools_id="90045-abc123",
+    )
+    monkeypatch.setattr(state.r2_storage, "delete_prefix", lambda prefix: None)
+    monkeypatch.setattr(state.shortlinks, "delete_short_link", lambda code: None)
+
+    def _boom(row_id, status):
+        raise RuntimeError("Sheets down")
+
+    monkeypatch.setattr(state.no_website_schools, "mark_status", _boom)
+
+    assert state.delete_org("org-12") is True
+    assert state.get_org("org-12") is None

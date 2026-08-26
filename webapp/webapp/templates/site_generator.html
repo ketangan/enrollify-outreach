@@ -16,8 +16,15 @@
   below — if generation finds they actually have a site after all, you'll
   get the option to archive it from here.
 </p>
+<form method="GET" action="/site-generator" class="site-gen-picker-search">
+  <input type="search" name="q" value="{{ picker_q }}" placeholder="Search by name, city, or address…">
+  <button type="submit" class="btn-secondary">Search</button>
+  {% if picker_q %}<a href="/site-generator" class="muted-link">Clear</a>{% endif %}
+</form>
 {% if not picker_rows %}
-  <p class="muted">{% if picker_page > 1 %}No more rows on this page.{% else %}Nothing in the queue right now.{% endif %}</p>
+  <p class="muted">
+    {% if picker_q %}No matches for "{{ picker_q }}".{% elif picker_page > 1 %}No more rows on this page.{% else %}Nothing in the queue right now.{% endif %}
+  </p>
 {% else %}
   <table class="data-table">
     <thead><tr><th>Business</th><th>Category</th><th>City</th><th>Google reviews</th><th>Yelp reviews</th><th colspan="2"></th></tr></thead>
@@ -33,6 +40,7 @@
             <form method="POST" action="/site-generator/check-website" class="site-gen-inline-form">
               <input type="hidden" name="no_website_schools_id" value="{{ row.id }}">
               <input type="hidden" name="page" value="{{ picker_page }}">
+              <input type="hidden" name="q" value="{{ picker_q }}">
               <button type="submit" class="btn-secondary">Check for website</button>
             </form>
           </td>
@@ -67,9 +75,9 @@
   </table>
 {% endif %}
 <p class="site-gen-picker-pager">
-  {% if picker_page > 1 %}<a href="/site-generator?page={{ picker_page - 1 }}">← Prev</a>{% endif %}
-  <span class="muted">Page {{ picker_page }} of {{ ((picker_total - 1) // picker_page_size) + 1 if picker_total else 1 }} ({{ picker_total }} total)</span>
-  {% if picker_page * picker_page_size < picker_total %}<a href="/site-generator?page={{ picker_page + 1 }}">Next →</a>{% endif %}
+  {% if picker_page > 1 %}<a href="/site-generator?page={{ picker_page - 1 }}{% if picker_q %}&q={{ picker_q | urlencode }}{% endif %}">← Prev</a>{% endif %}
+  <span class="muted">Page {{ picker_page }} of {{ ((picker_total - 1) // picker_page_size) + 1 if picker_total else 1 }} ({{ picker_total }} total{% if picker_q %} matching "{{ picker_q }}"{% endif %})</span>
+  {% if picker_page * picker_page_size < picker_total %}<a href="/site-generator?page={{ picker_page + 1 }}{% if picker_q %}&q={{ picker_q | urlencode }}{% endif %}">Next →</a>{% endif %}
 </p>
 
 <form method="POST" action="/site-generator/generate" class="add-lead-form" id="generate-form" enctype="multipart/form-data">

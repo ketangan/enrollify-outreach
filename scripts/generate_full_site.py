@@ -495,7 +495,7 @@ def main() -> None:
             site_generator_state.record_initial_generation(
                 org_id=subject_id, name=args.name, category=args.category,
                 city=args.city, state=args.state, address=args.address,
-                rendered=rendered,
+                rendered=rendered, no_website_schools_id=args.no_website_schools_id,
             )
 
     # Best-effort local handoff so the webapp can show "here's what was just

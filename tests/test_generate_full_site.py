@@ -577,6 +577,21 @@ def test_main_records_initial_generation_when_no_org_id_given(monkeypatch, tmp_p
     assert calls[0][1]["name"] == "Riverside Music Collective"
 
 
+def test_main_passes_no_website_schools_id_to_record_initial_generation(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    calls = []
+    monkeypatch.setattr(generate_full_site.site_generator_state, "record_initial_generation", lambda **kw: calls.append(kw))
+    monkeypatch.setattr(sys, "argv", [
+        "generate_full_site.py", "--name", "Test", "--category", "music", "--no-google-reviews",
+        "--record-to-sheet", "--no-website-schools-id", "90045-abc123",
+        "--output-dir", str(tmp_path), "--base-url", "https://example.com",
+    ])
+
+    generate_full_site.main()
+
+    assert calls[0]["no_website_schools_id"] == "90045-abc123"
+
+
 def test_main_records_regeneration_when_org_id_and_theme_given(monkeypatch, tmp_path):
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
     calls = []

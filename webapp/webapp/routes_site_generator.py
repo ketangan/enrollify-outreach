@@ -111,12 +111,12 @@ def _persist_uploaded_photos(files: list[UploadFile], subject_id: str) -> list[d
 
 @router.get("/site-generator", response_class=HTMLResponse, dependencies=[Depends(require_access)])
 def site_generator_home(
-    request: Request, page: int = 1, from_no_website_id: str = "",
+    request: Request, page: int = 1, from_no_website_id: str = "", q: str = "",
     checked_id: str = "", checked_found: str = "", checked_url: str = "",
     checked_confidence: str = "", checked_reasoning: str = "",
 ):
     page = max(page, 1)
-    picker_rows, picker_total = no_website_schools.list_page(page=page, page_size=10)
+    picker_rows, picker_total = no_website_schools.list_page(page=page, page_size=10, q=q)
 
     prefill = None
     if from_no_website_id:
@@ -142,6 +142,7 @@ def site_generator_home(
             "picker_page": page,
             "picker_total": picker_total,
             "picker_page_size": 10,
+            "picker_q": q,
             "prefill": prefill,
             "checked": checked,
         },
@@ -237,7 +238,7 @@ def site_generator_regenerate(
 
 @router.post("/site-generator/check-website", dependencies=[Depends(require_access)])
 def site_generator_check_website(
-    request: Request, no_website_schools_id: str = Form(...), page: int = Form(1),
+    request: Request, no_website_schools_id: str = Form(...), page: int = Form(1), q: str = Form(""),
 ):
     # Runs the same thorough check generation itself blocks on, but standalone
     # and synchronous (10-30s, not worth a background job for) — so a
@@ -256,6 +257,7 @@ def site_generator_check_website(
     found = bool(result["has_website"] and result["confidence"] in ("high", "medium"))
     query = urlencode({
         "page": page,
+        "q": q,
         "checked_id": no_website_schools_id,
         "checked_found": "true" if found else "false",
         "checked_url": result.get("website_url", ""),

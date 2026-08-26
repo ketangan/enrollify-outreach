@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from src import r2_storage, sheets, shortlinks
+from src import no_website_schools, r2_storage, sheets, shortlinks
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ HEADERS = [
     "org_id", "name", "category", "city", "state", "address",
     "theme", "version_n", "subject_id", "label", "url", "preview_url",
     "revision_notes", "job_id", "created_at", "short_url", "owner_name",
+    "no_website_schools_id",
 ]
 
 
@@ -48,6 +49,7 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
             "address": row.get("address", ""),
             "created_at": row.get("created_at", ""),
             "owner_name": "",
+            "no_website_schools_id": "",
             "themes": {},
         })
         # Earliest row's created_at represents when the org was first
@@ -59,6 +61,10 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
         # later regeneration that happened to re-fetch reviews containing it).
         if not org["owner_name"] and str(row.get("owner_name", "")).strip():
             org["owner_name"] = str(row["owner_name"]).strip()
+        # Only ever set on the initial-generation row (see record_initial_
+        # generation) — an org-level fact, so first non-empty wins here too.
+        if not org["no_website_schools_id"] and str(row.get("no_website_schools_id", "")).strip():
+            org["no_website_schools_id"] = str(row["no_website_schools_id"]).strip()
 
         try:
             version_n = int(row.get("version_n") or 1)
@@ -113,10 +119,16 @@ def record_initial_generation(
     address: str = "",
     rendered: list[dict],
     job_id: str = "",
+    no_website_schools_id: str = "",
 ) -> None:
     """Register a brand-new org and its first (version 1) render of every
     theme returned. rendered items are render_mock_concepts()-shaped dicts:
-    {type, version, label, url, preview_url}."""
+    {type, version, label, url, preview_url}.
+
+    `no_website_schools_id`, when this org was generated from the picker,
+    is recorded so a later delete_org() can put the row back in the queue
+    (see delete_org) — never re-passed on regeneration since it's an
+    org-level fact set once at creation."""
     if not rendered:
         return
     _ensure_tab()
@@ -132,6 +144,7 @@ def record_initial_generation(
             "", job_id, now,
             item.get("short_url", item.get("preview_url", item["url"])),
             item.get("owner_name", ""),
+            no_website_schools_id,
         ])
     ws.append_rows(rows, value_input_option="USER_ENTERED")
 
@@ -161,16 +174,20 @@ def record_regeneration(
         revision_notes, job_id, datetime.now().isoformat(),
         item.get("short_url", item.get("preview_url", item["url"])),
         item.get("owner_name", ""),
+        "",  # no_website_schools_id is an org-level fact set once at creation, not re-passed here
     ], value_input_option="USER_ENTERED")
 
 
 def delete_org(org_id: str) -> bool:
     """Fully unwinds a generation: deletes every R2 object under each
-    version's subject_id, deletes each version's short link from KV, then
-    removes every row for this org from the Sheet. Explicit-action-only —
-    called from a confirm-gated "Delete" button, never automatically.
-    Best-effort on R2/shortlinks (a stuck file isn't worth blocking the
-    Sheet cleanup over); returns False only if the org wasn't found at all."""
+    version's subject_id, deletes each version's short link from KV, resets
+    the source No_Website_Schools row back to the picker queue (if this org
+    came from one — see record_initial_generation), then removes every row
+    for this org from the Sheet. Explicit-action-only — called from a
+    confirm-gated "Delete" button, never automatically. Best-effort on
+    R2/shortlinks/No_Website_Schools (a stuck step isn't worth blocking the
+    rest of the cleanup over); returns False only if the org wasn't found
+    at all."""
     org = get_org(org_id)
     if not org:
         return False
@@ -196,6 +213,13 @@ def delete_org(org_id: str) -> bool:
             shortlinks.delete_short_link(code)
         except Exception as e:
             logger.warning("Could not delete short link %s: %s", code, e)
+
+    nws_id = org.get("no_website_schools_id", "")
+    if nws_id:
+        try:
+            no_website_schools.mark_status(nws_id, no_website_schools.STATUS_COLLECTED)
+        except Exception as e:
+            logger.warning("Could not reset No_Website_Schools row %s to collected: %s", nws_id, e)
 
     ws = sheets.get_tab(GENERATED_SITES_TAB)
     all_values = ws.get_all_values()
