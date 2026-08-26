@@ -23,11 +23,11 @@
     </ul>
     <div class="site-gen-text-box">
       <label for="sms-message">Text message to send</label>
-      <textarea id="sms-message" rows="8">Hi! I put together a few website concepts for {{ job.params.name }} — take a look:
+      <textarea id="sms-message" rows="12">Hi! This is Ketan — I put together a few different website design concepts for {{ job.params.name }}, just to show what a refreshed, modern site could look like. No cost, no obligation, just take a look:
 {% for item in result.rendered -%}
 {{ item.short_url }}
 {% endfor -%}
-Let me know what you think!</textarea>
+Take a look and let me know which direction feels right — happy to walk through any of them or make changes if none of them quite fit yet.</textarea>
       <button type="button" id="sms-copy-btn">Copy message</button>
     </div>
   </div>
@@ -71,8 +71,16 @@ Let me know what you think!</textarea>
     <input type="hidden" name="revision_notes" value="{{ job.params.revision_notes }}">
     {% if job.params.use_google %}<input type="hidden" name="use_google" value="true">{% endif %}
     <input type="hidden" name="skip_website_check" value="true">
+    <input type="hidden" name="no_website_schools_id" value="{{ job.params.no_website_schools_id }}">
     <button type="submit">I checked — generate anyway</button>
   </form>
+  {% if job.params.no_website_schools_id %}
+    <form method="POST" action="/site-generator/archive-no-website" class="add-lead-form" style="margin-top:8px;">
+      <input type="hidden" name="no_website_schools_id" value="{{ job.params.no_website_schools_id }}">
+      <input type="hidden" name="existing_website_url" value="{{ result.existing_website_url }}">
+      <button type="submit" class="btn-secondary">Archive — already has a website</button>
+    </form>
+  {% endif %}
 {% elif job.status == "failed" %}
   <div class="pipeline-alert pipeline-alert-warning">
     <strong>⚠</strong> Generation failed. See the log below.

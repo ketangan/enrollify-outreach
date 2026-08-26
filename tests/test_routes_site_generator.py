@@ -1,11 +1,21 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from src import config
+from src import no_website_schools
 from src import site_generator_state
 from webapp.webapp import jobs_runner
 from webapp.webapp.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _stub_no_website_picker(monkeypatch):
+    """GET /site-generator reads the No_Website_Schools picker on every
+    request — without this, every test hitting that route makes a real,
+    slow Google Sheets API call (~5s each, observed directly)."""
+    monkeypatch.setattr(no_website_schools, "list_page", lambda page=1, page_size=10, **kw: ([], 0))
 
 
 class _FakeWorksheet:
@@ -169,3 +179,38 @@ def test_regenerate_known_org_scopes_job_to_one_theme_and_versions_subject_id(mo
     assert captured["subject_id"] == "riverside-music-abc123-v2"
     assert captured["revision_notes"] == "Focus on trial lessons"
     assert captured["is_regeneration"] is True
+
+
+def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    calls = []
+    monkeypatch.setattr(
+        no_website_schools, "archive_row",
+        lambda row_id, *, reason, existing_website_url="": calls.append((row_id, reason, existing_website_url)) or True,
+    )
+
+    resp = client.post(
+        "/site-generator/archive-no-website",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "90277-abc123", "existing_website_url": "https://www.real.example/"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/site-generator"
+    assert calls == [("90277-abc123", "existing_website_found", "https://www.real.example/")]
+
+
+def test_generate_passes_no_website_schools_id_through(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music", "no_website_schools_id": "90277-abc123"},
+        follow_redirects=False,
+    )
+
+    assert captured["no_website_schools_id"] == "90277-abc123"

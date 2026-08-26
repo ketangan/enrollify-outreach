@@ -52,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from anthropic import Anthropic
 
 from scripts import generate_website_mocks as mocks
-from src import config, mock_content_llm, places, r2_storage, shortlinks, site_generator_state, website_existence_check, website_mocks
+from src import config, mock_content_llm, no_website_schools, places, r2_storage, shortlinks, site_generator_state, website_existence_check, website_mocks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -366,6 +366,8 @@ def main() -> None:
                          help="Write this generation into the Generated_Sites sheet tab (the webapp always passes this)")
     parser.add_argument("--org-id", default="", help="Stable org id to record a regeneration under (omit for a first-time generation)")
     parser.add_argument("--theme", default="", help="Theme id (e.g. 'preschool-warm') this run regenerates — required with --org-id")
+    parser.add_argument("--no-website-schools-id", default="",
+                         help="Row id in the No_Website_Schools sheet this business was picked from, if any")
     args = parser.parse_args()
 
     yelp_text = args.yelp_text
@@ -412,6 +414,7 @@ def main() -> None:
             "existing_website_url": e.website_url,
             "existing_website_confidence": e.confidence,
             "existing_website_reasoning": e.reasoning,
+            "no_website_schools_id": args.no_website_schools_id,
         }, indent=2), encoding="utf-8")
         sys.exit(1)
 
@@ -452,6 +455,16 @@ def main() -> None:
         "revision_notes": args.revision_notes,
         "rendered": rendered,
     }, indent=2), encoding="utf-8")
+
+    if args.no_website_schools_id:
+        # Best-effort: this business was picked from the No_Website_Schools
+        # picker and generation succeeded — drop it out of the picker's
+        # default view without losing its discovery record. Never blocks a
+        # successful generation on a Sheets hiccup.
+        try:
+            no_website_schools.mark_status(args.no_website_schools_id, no_website_schools.STATUS_SITE_GENERATED)
+        except Exception as e:
+            logger.warning("Could not mark No_Website_Schools row %s as used: %s", args.no_website_schools_id, e)
 
     logger.info("Generated %d concept(s):", len(rendered))
     for item in rendered:

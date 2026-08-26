@@ -10,44 +10,74 @@
   Places API and (sometimes) Claude API calls.
 </p>
 
-<form method="POST" action="/site-generator/generate" class="add-lead-form">
+<h3>Businesses without a known website</h3>
+<p class="muted" style="max-width: 720px;">
+  Picked up by discovery, no website on file. Pick one to fill in the form
+  below — if generation finds they actually have a site after all, you'll
+  get the option to archive it from here.
+</p>
+{% if not picker_rows %}
+  <p class="muted">{% if picker_page > 1 %}No more rows on this page.{% else %}Nothing in the queue right now.{% endif %}</p>
+{% else %}
+  <table class="data-table">
+    <thead><tr><th>Business</th><th>Category</th><th>City</th><th></th></tr></thead>
+    <tbody>
+      {% for row in picker_rows %}
+        <tr>
+          <td>{{ row.name }}</td>
+          <td>{{ row.category }}</td>
+          <td>{{ row.city }}{% if row.state %}, {{ row.state }}{% endif %}</td>
+          <td><a href="/site-generator?from_no_website_id={{ row.id }}#generate-form" class="btn-secondary">Use this</a></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+<p class="site-gen-picker-pager">
+  {% if picker_page > 1 %}<a href="/site-generator?page={{ picker_page - 1 }}">← Prev</a>{% endif %}
+  <span class="muted">Page {{ picker_page }} of {{ ((picker_total - 1) // picker_page_size) + 1 if picker_total else 1 }} ({{ picker_total }} total)</span>
+  {% if picker_page * picker_page_size < picker_total %}<a href="/site-generator?page={{ picker_page + 1 }}">Next →</a>{% endif %}
+</p>
+
+<form method="POST" action="/site-generator/generate" class="add-lead-form" id="generate-form">
+  <input type="hidden" name="no_website_schools_id" value="{{ prefill.id if prefill else '' }}">
   <fieldset>
     <legend>Business</legend>
 
     <label>
       Name <span class="required">*</span>
-      <input type="text" name="name" required>
+      <input type="text" name="name" required value="{{ prefill.name if prefill else '' }}">
     </label>
 
     <label>
       Category <span class="required">*</span>
       <select name="category" required>
         <option value="">— pick one —</option>
-        <option value="preschool">Preschool / daycare / Montessori</option>
-        <option value="music">Music / dance / art</option>
-        <option value="martial_arts">Martial arts</option>
-        <option value="sports">Sports / gymnastics / swim</option>
+        <option value="preschool" {{ "selected" if prefill and prefill.category == "preschool" }}>Preschool / daycare / Montessori</option>
+        <option value="music" {{ "selected" if prefill and prefill.category == "music" }}>Music / dance / art</option>
+        <option value="martial_arts" {{ "selected" if prefill and prefill.category == "martial_arts" }}>Martial arts</option>
+        <option value="sports" {{ "selected" if prefill and prefill.category == "sports" }}>Sports / gymnastics / swim</option>
       </select>
     </label>
 
     <div class="form-row">
       <label>
         City
-        <input type="text" name="city">
+        <input type="text" name="city" value="{{ prefill.city if prefill else '' }}">
       </label>
       <label>
         State
-        <input type="text" name="state" maxlength="2">
+        <input type="text" name="state" maxlength="2" value="{{ prefill.state if prefill else '' }}">
       </label>
       <label>
         Phone
-        <input type="tel" name="phone">
+        <input type="tel" name="phone" value="{{ prefill.phone if prefill else '' }}">
       </label>
     </div>
 
     <label>
       Address <span class="muted" style="font-weight:400;">(optional — helps Google Places match the right business, especially for common names)</span>
-      <input type="text" name="address" placeholder="123 Main St">
+      <input type="text" name="address" placeholder="123 Main St" value="{{ prefill.address if prefill else '' }}">
     </label>
   </fieldset>
 

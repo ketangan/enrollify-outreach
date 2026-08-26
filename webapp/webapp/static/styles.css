@@ -46,6 +46,14 @@ table.data-table th {
 }
 table.data-table tr:hover { background: #f8f4ec; }
 
+.site-gen-picker-pager {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  margin: 8px 0 28px;
+}
+
 .progress-bar {
   position: relative;
   width: 100%;

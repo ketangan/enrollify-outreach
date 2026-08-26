@@ -591,3 +591,59 @@ def test_main_does_not_record_without_the_flag(monkeypatch, tmp_path):
     generate_full_site.main()
 
     assert calls == []
+
+
+def test_main_marks_no_website_schools_row_used_on_success(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    calls = []
+    monkeypatch.setattr(
+        generate_full_site.no_website_schools, "mark_status",
+        lambda row_id, status: calls.append((row_id, status)),
+    )
+    monkeypatch.setattr(sys, "argv", [
+        "generate_full_site.py", "--name", "Test", "--category", "music", "--no-google-reviews",
+        "--no-website-schools-id", "90277-abc123",
+        "--output-dir", str(tmp_path), "--base-url", "https://example.com",
+    ])
+
+    generate_full_site.main()
+
+    assert calls == [("90277-abc123", generate_full_site.no_website_schools.STATUS_SITE_GENERATED)]
+
+
+def test_main_does_not_touch_no_website_schools_when_id_not_given(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    calls = []
+    monkeypatch.setattr(generate_full_site.no_website_schools, "mark_status", lambda row_id, status: calls.append(1))
+    monkeypatch.setattr(sys, "argv", [
+        "generate_full_site.py", "--name", "Test", "--category", "music", "--no-google-reviews",
+        "--output-dir", str(tmp_path), "--base-url", "https://example.com",
+    ])
+
+    generate_full_site.main()
+
+    assert calls == []
+
+
+def test_main_includes_no_website_schools_id_in_blocked_result_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    monkeypatch.setattr(
+        generate_full_site.website_existence_check, "check_website_exists",
+        lambda **kw: {
+            "has_website": True, "website_url": "https://www.realsite.example/",
+            "confidence": "high", "reasoning": "Found it.",
+        },
+    )
+    monkeypatch.setattr(sys, "argv", [
+        "generate_full_site.py", "--name", "Test", "--category", "music", "--no-google-reviews",
+        "--no-website-schools-id", "90277-abc123",
+        "--output-dir", str(tmp_path), "--base-url", "https://example.com",
+    ])
+
+    with pytest.raises(SystemExit):
+        generate_full_site.main()
+
+    import json
+    result_files = list((tmp_path / "mocks").glob("*/result.json"))
+    data = json.loads(result_files[0].read_text())
+    assert data["no_website_schools_id"] == "90277-abc123"

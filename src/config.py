@@ -138,6 +138,11 @@ TAB_COVERAGE = "Coverage"
 TAB_TEMPLATES = "Templates"
 TAB_NO_WEBSITE = "No_Website_Schools"
 TAB_ARCHIVE = "Archive"
+# Separate from TAB_ARCHIVE deliberately: No_Website_Schools has its own
+# schema (google_rating, yelp_url, etc.) that doesn't match Leads/Archive's
+# columns — mixing the two into one tab means mismatched blank columns
+# either way. This mirrors No_Website_Schools' own shape instead.
+TAB_NO_WEBSITE_ARCHIVE = "No_Website_Archive"
 
 
 def validate():
