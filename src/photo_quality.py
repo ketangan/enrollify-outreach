@@ -2,15 +2,19 @@
 Decides which real photos (uploaded by hand, or fetched from Google Places)
 get used, and in what order, for the full-site generator.
 
-Two separate decisions, deliberately kept independent:
-  - SELECTION (which photos make the cut): uploaded photos always win a
-    slot over Google's, since a human chose them on purpose. Google photos
-    only fill slots the upload doesn't cover.
-  - PLACEMENT (which slot a selected photo lands in — the large hero image
-    vs. a small thumbnail): decided purely by image quality, regardless of
-    source. A blurry/small upload still gets used (selection honored it),
-    but it won't be blown up as the hero background just because you
-    uploaded it (placement is quality-driven, not source-driven).
+Three decisions, in priority order:
+  - EXPLICIT CHOICE (forced_hero): if you tell us which photo is the hero,
+    that's what goes at index 0, full stop — no heuristic overrides a human
+    decision. This exists because quality_rank is only a proxy (pixel
+    dimensions) and has no idea whether a photo actually *looks* good as a
+    hero — two same-sized photos can look wildly different in practice.
+  - SELECTION (which photos make the cut, absent an explicit choice):
+    uploaded photos always win a slot over Google's, since a human chose
+    them on purpose. Google photos only fill slots the upload doesn't cover.
+  - PLACEMENT (which slot a selected photo lands in, absent an explicit
+    choice): decided by image quality. A blurry/small upload still gets
+    used (selection honored it), but it won't be blown up as the hero
+    background just because you uploaded it.
 """
 
 from __future__ import annotations
@@ -53,7 +57,9 @@ def quality_rank(photo: dict) -> tuple:
     return (0 if hero_worthy else 1, -(width * height))
 
 
-def select_and_rank_photos(uploaded: list[dict], fallback: list[dict], *, max_count: int = 3) -> list[dict]:
+def select_and_rank_photos(
+    uploaded: list[dict], fallback: list[dict], *, max_count: int = 3, forced_hero: dict | None = None,
+) -> list[dict]:
     """Builds the final ordered photo list for a generation. Always returns
     exactly `max_count` photos, or none at all — the renderer indexes up to
     photos[max_count - 1] without a bounds check, so a partial list isn't
@@ -62,10 +68,17 @@ def select_and_rank_photos(uploaded: list[dict], fallback: list[dict], *, max_co
     Each photo dict needs at least {"url": str}; "width"/"height" are
     optional (missing = treated as low quality, see quality_rank).
 
-    Selection: uploaded photos fill slots first (up to max_count); fallback
-    (e.g. Google Places) photos fill whatever's left. Placement: the
-    selected pool is then re-sorted by quality_rank, so the single most
-    hero-worthy photo lands at index 0 no matter which source it came from.
+    `forced_hero`, when given, always lands at index 0 — a human's explicit
+    "this one's the hero" beats the quality heuristic entirely. The
+    remaining slots are filled/ranked from uploaded + fallback exactly as
+    without a forced hero (uploaded still wins a slot over fallback, then
+    quality_rank decides order among whatever's left).
+
+    Without forced_hero — selection: uploaded photos fill slots first (up to
+    max_count); fallback (e.g. Google Places) photos fill whatever's left.
+    Placement: the selected pool is then re-sorted by quality_rank, so the
+    single most hero-worthy photo lands at index 0 no matter which source it
+    came from.
 
     If there aren't enough real photos to fill every slot even combining
     both sources (e.g. one upload and zero Google photos), the best ones
@@ -73,6 +86,19 @@ def select_and_rank_photos(uploaded: list[dict], fallback: list[dict], *, max_co
     a real photo you deliberately uploaded shouldn't get thrown out purely
     because there wasn't a second one to pad it out to three.
     """
+    if forced_hero is not None:
+        # Defensive: if the hero happens to also be in the general uploads
+        # pool (same url), don't let it get picked a second time for a
+        # secondary slot.
+        other_uploaded = [p for p in uploaded if p.get("url") != forced_hero.get("url")]
+        remaining = select_and_rank_photos(other_uploaded, fallback, max_count=max(max_count - 1, 0))
+        combined = [forced_hero] + remaining
+        # Nothing else exists at all (no other uploads, no fallback) — repeat
+        # the hero itself to fill the rest, same padding logic as below.
+        while len(combined) < max_count:
+            combined.append(combined[len(combined) % len(combined)])
+        return combined
+
     pool = list(uploaded[:max_count])
     if len(pool) < max_count:
         pool = pool + list(fallback[: max_count - len(pool)])

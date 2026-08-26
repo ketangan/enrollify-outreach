@@ -153,6 +153,50 @@ def test_generate_persists_uploaded_photos_and_passes_dimensions_as_json(monkeyp
     assert uploaded[0]["url"]
 
 
+def test_generate_persists_hero_photo_separately_from_other_uploads(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(routes_site_generator.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(routes_site_generator, "OUTPUT_DIR", tmp_path)
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music"},
+        files=[
+            ("hero_photo", ("hero.jpg", _real_jpeg_bytes(2000, 1500), "image/jpeg")),
+            ("uploaded_photos", ("photo1.jpg", _real_jpeg_bytes(1500, 1000), "image/jpeg")),
+        ],
+        follow_redirects=False,
+    )
+
+    hero = json.loads(captured["hero_photo_json"])
+    assert hero["width"] == 2000
+    assert hero["height"] == 1500
+    uploaded = json.loads(captured["uploaded_photos_json"])
+    assert len(uploaded) == 1
+    assert uploaded[0]["width"] == 1500
+    # Different filenames on disk/R2 — no collision between the two fields.
+    assert hero["url"] != uploaded[0]["url"]
+
+
+def test_generate_without_hero_photo_sends_empty_string(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music"},
+        follow_redirects=False,
+    )
+
+    assert captured["hero_photo_json"] == ""
+
+
 def test_generate_without_uploaded_photos_sends_empty_string(monkeypatch):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     captured = {}
@@ -300,6 +344,33 @@ def test_regenerate_persists_uploaded_photos_and_passes_dimensions_as_json(monke
     assert uploaded[0]["height"] == 1000
 
 
+def test_regenerate_persists_hero_photo_separately(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    _fake_sheet(monkeypatch)
+    site_generator_state.record_initial_generation(
+        org_id="riverside-music-abc123", name="Riverside Music Collective", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio concept", "url": "u1", "preview_url": "p1"}],
+        job_id="job-0",
+    )
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(routes_site_generator.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(routes_site_generator, "OUTPUT_DIR", tmp_path)
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/regenerate",
+        params={"key": "secret123"},
+        data={"org_id": "riverside-music-abc123", "theme": "music-studio"},
+        files=[("hero_photo", ("hero.jpg", _real_jpeg_bytes(2000, 1500), "image/jpeg"))],
+        follow_redirects=False,
+    )
+
+    hero = json.loads(captured["hero_photo_json"])
+    assert hero["width"] == 2000
+    assert hero["height"] == 1500
+
+
 def test_regenerate_without_uploaded_photos_sends_empty_string(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     _fake_sheet(monkeypatch)
@@ -319,6 +390,7 @@ def test_regenerate_without_uploaded_photos_sends_empty_string(monkeypatch, tmp_
     )
 
     assert captured["uploaded_photos_json"] == ""
+    assert captured["hero_photo_json"] == ""
 
 
 def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):

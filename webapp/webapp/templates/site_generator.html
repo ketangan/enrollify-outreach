@@ -146,13 +146,23 @@
     </label>
 
     <label>
-      Upload photos <span class="muted" style="font-weight:400;">(up to 6 — these are used first; Google photos only fill any remaining gaps)</span>
+      Top/hero photo <span class="muted" style="font-weight:400;">(optional — pick exactly which photo is the main image)</span>
+      <input type="file" name="hero_photo" accept="image/*">
+    </label>
+    <p class="muted" style="font-size:12px; margin-top:-8px;">
+      Leave blank and the best-quality photo (from the uploads below or
+      Google) gets picked automatically. Set this if that automatic choice
+      is wrong for a specific photo — it always wins, no matter its quality.
+    </p>
+
+    <label>
+      Other photos <span class="muted" style="font-weight:400;">(up to 6 — used for the remaining sections; Google photos only fill any gaps)</span>
       <input type="file" name="uploaded_photos" accept="image/*" multiple>
     </label>
     <p class="muted" style="font-size:12px; margin-top:-8px;">
-      Placement (hero vs. a smaller spot) is decided automatically by image
-      quality, not upload order — a low-res photo still gets used, just not
-      blown up as the main image.
+      Placement among these is decided automatically by image quality, not
+      upload order — a low-res photo still gets used, just not blown up as
+      the main image.
     </p>
   </fieldset>
 
@@ -203,11 +213,18 @@
               <input type="hidden" name="org_id" value="{{ org.org_id }}">
               <input type="hidden" name="theme" value="{{ theme }}">
               <input type="text" name="revision_notes" placeholder="Optional: change wording/color emphasis (leave blank to just regenerate)">
-              <input type="file" name="uploaded_photos" accept="image/*" multiple title="Upload photos to control exactly which ones are used on this regeneration">
+              <label class="site-gen-regen-photo-label" title="This exact photo always becomes the top/hero image, no matter its quality">
+                Top photo
+                <input type="file" name="hero_photo" accept="image/*">
+              </label>
+              <label class="site-gen-regen-photo-label" title="Fill the remaining sections — auto-placed by quality">
+                Other photos
+                <input type="file" name="uploaded_photos" accept="image/*" multiple>
+              </label>
               <button type="submit" class="btn-secondary">Regenerate</button>
             </form>
             <p class="muted" style="font-size:11px; margin:2px 0 8px;">
-              Regenerating always re-fetches Google's photos fresh, so they can change even with no notes above — upload photos to choose exactly which ones are used instead. The text box only steers wording/color, never photos.
+              Regenerating always re-fetches Google's photos fresh, so they can change even with no notes above. "Top photo" always becomes the hero image, no matter its quality — use it when the automatic pick is wrong. The text box only steers wording/color, never photos.
             </p>
           </div>
         {% endfor %}

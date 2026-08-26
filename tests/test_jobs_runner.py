@@ -49,6 +49,30 @@ def test_build_generate_full_site_cmd_scopes_regeneration_to_one_theme():
     assert "--no-google-reviews" in cmd
 
 
+def test_build_generate_full_site_cmd_includes_hero_photo_when_given():
+    cmd = jobs_runner._build_generate_full_site_cmd(
+        name="Riverside Music Collective",
+        category="music",
+        hero_photo_json='{"url": "hero-0", "width": 2000, "height": 2000}',
+        base_url="https://example.com",
+        output_dir="generated/full-sites",
+    )
+
+    assert "--hero-photo" in cmd
+    assert '{"url": "hero-0", "width": 2000, "height": 2000}' in cmd
+
+
+def test_build_generate_full_site_cmd_omits_hero_photo_when_not_given():
+    cmd = jobs_runner._build_generate_full_site_cmd(
+        name="Riverside Music Collective",
+        category="music",
+        base_url="https://example.com",
+        output_dir="generated/full-sites",
+    )
+
+    assert "--hero-photo" not in cmd
+
+
 def test_get_job_retries_transient_partial_json(monkeypatch):
     reads = iter(["{", '{"id": "job-1", "status": "running"}'])
 

@@ -109,3 +109,38 @@ def test_select_and_rank_pads_by_cycling_through_multiple_real_photos():
 
 def test_select_and_rank_returns_empty_when_no_real_photos_at_all():
     assert photo_quality.select_and_rank_photos([], [], max_count=3) == []
+
+
+def test_forced_hero_wins_index_0_even_when_lower_quality_than_alternatives():
+    forced = {"url": "chosen", "width": 400, "height": 400}  # small, would lose quality_rank
+    uploaded = [{"url": "big1", "width": 4000, "height": 4000}]
+    fallback = [{"url": "google1", "width": 4000, "height": 4000}]
+
+    selected = photo_quality.select_and_rank_photos(uploaded, fallback, max_count=3, forced_hero=forced)
+
+    assert selected[0]["url"] == "chosen"
+    assert len(selected) == 3
+    assert {p["url"] for p in selected[1:]} == {"big1", "google1"}
+
+
+def test_forced_hero_alone_still_pads_remaining_slots():
+    forced = {"url": "chosen", "width": 800, "height": 800}
+    selected = photo_quality.select_and_rank_photos([], [], max_count=3, forced_hero=forced)
+
+    assert len(selected) == 3
+    assert selected[0]["url"] == "chosen"
+    # No other real photos exist at all — the hero repeats to fill the rest,
+    # same padding behavior as the no-forced-hero case.
+    assert all(p["url"] == "chosen" for p in selected[1:])
+
+
+def test_forced_hero_not_duplicated_if_also_present_in_uploaded_pool():
+    forced = {"url": "chosen", "width": 800, "height": 800}
+    uploaded = [forced, {"url": "other", "width": 900, "height": 900}]
+
+    selected = photo_quality.select_and_rank_photos(uploaded, [], max_count=3, forced_hero=forced)
+
+    urls = [p["url"] for p in selected]
+    assert urls[0] == "chosen"
+    assert urls.count("chosen") == 1
+    assert "other" in urls

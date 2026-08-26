@@ -206,6 +206,7 @@ def generate_full_site(
     subject_id: str = "",
     skip_existing_website_check: bool = False,
     uploaded_photos: list[dict] | None = None,
+    hero_photo: dict | None = None,
     base_url: str,
     output_dir: Path,
     anthropic_client: Anthropic | None = None,
@@ -220,6 +221,10 @@ def generate_full_site(
 
     `info_page_urls` accepts one or more URLs, comma or pipe separated —
     each is fetched independently and its signal merged in.
+
+    `hero_photo` (a single {"url", "width", "height"} dict), when given,
+    always becomes photos[0] — an explicit human choice, not a guess. Use
+    this when the automatic quality-based placement picked the wrong one.
 
     `uploaded_photos` (each a {"url", "width", "height"} dict, already
     persisted by the caller — see webapp/webapp/routes_site_generator.py)
@@ -338,7 +343,9 @@ def generate_full_site(
         )
 
     google_photos = _persist_photos(place, subject_id, output_dir)
-    selected_photos = photo_quality.select_and_rank_photos(uploaded_photos or [], google_photos, max_count=3)
+    selected_photos = photo_quality.select_and_rank_photos(
+        uploaded_photos or [], google_photos, max_count=3, forced_hero=hero_photo,
+    )
     if selected_photos:
         subject["_website_mock_photos"] = [p["url"] for p in selected_photos]
 
@@ -418,6 +425,9 @@ def main() -> None:
     parser.add_argument("--uploaded-photos", default="",
                          help='JSON list of {"url","width","height"} dicts for already-persisted uploaded photos '
                               "(the webapp uploads bytes to R2/disk and reads dimensions before spawning this job)")
+    parser.add_argument("--hero-photo", default="",
+                         help='JSON {"url","width","height"} dict for a single explicitly-chosen hero photo — '
+                              "always becomes photos[0], overriding the automatic quality-based placement")
     args = parser.parse_args()
 
     yelp_text = args.yelp_text
@@ -430,6 +440,13 @@ def main() -> None:
             uploaded_photos = json.loads(args.uploaded_photos)
         except json.JSONDecodeError:
             logger.warning("Could not parse --uploaded-photos JSON, ignoring uploaded photos")
+
+    hero_photo = None
+    if args.hero_photo:
+        try:
+            hero_photo = json.loads(args.hero_photo)
+        except json.JSONDecodeError:
+            logger.warning("Could not parse --hero-photo JSON, ignoring forced hero photo")
 
     try:
         rendered = generate_full_site(
@@ -448,6 +465,7 @@ def main() -> None:
             subject_id=args.subject_id,
             skip_existing_website_check=args.skip_website_check,
             uploaded_photos=uploaded_photos,
+            hero_photo=hero_photo,
             base_url=args.base_url,
             output_dir=Path(args.output_dir),
         )

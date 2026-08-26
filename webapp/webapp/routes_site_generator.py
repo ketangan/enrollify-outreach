@@ -72,13 +72,17 @@ MAX_UPLOADED_PHOTOS = 6
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB — a boundary guard against an accidental huge attachment
 
 
-def _persist_uploaded_photos(files: list[UploadFile], subject_id: str) -> list[dict]:
+def _persist_uploaded_photos(files: list[UploadFile], subject_id: str, *, prefix: str = "upload") -> list[dict]:
     """Reads each uploaded file's bytes, records its real dimensions (so
     photo_quality can rank it against Google's photos later), and persists
     it the same way _persist_photos does in generate_full_site.py — R2 when
     configured, else local disk next to where the generated pages land.
     Skips anything unreadable as an image or over the size cap rather than
-    failing the whole submission over one bad file."""
+    failing the whole submission over one bad file.
+
+    `prefix` distinguishes the filename (e.g. "hero" vs "upload") so a
+    separately-persisted hero photo never collides with the general uploads
+    batch's own upload-0/upload-1/... keys."""
     use_r2 = r2_storage.is_configured()
     photos_dir = OUTPUT_DIR / "mocks" / subject_id / "photos"
     if not use_r2:
@@ -98,13 +102,14 @@ def _persist_uploaded_photos(files: list[UploadFile], subject_id: str) -> list[d
             continue
         content_type = upload.content_type or "image/jpeg"
         ext = "png" if "png" in content_type else "jpg"
+        filename = f"{prefix}-{idx}.{ext}"
         if use_r2:
-            key = f"sites/{subject_id}/photos/upload-{idx}.{ext}"
+            key = f"sites/{subject_id}/photos/{filename}"
             r2_storage.upload_bytes(key, photo_bytes, content_type)
             url = r2_storage.public_url(key)
         else:
-            (photos_dir / f"upload-{idx}.{ext}").write_bytes(photo_bytes)
-            url = f"../photos/upload-{idx}.{ext}"
+            (photos_dir / filename).write_bytes(photo_bytes)
+            url = f"../photos/{filename}"
         persisted.append({"url": url, "width": dimensions[0], "height": dimensions[1]})
     return persisted
 
@@ -175,9 +180,13 @@ def site_generator_generate(
     # and a blocked one can offer the "archive — has a website" action.
     no_website_schools_id: str = Form(""),
     uploaded_photos: list[UploadFile] = File(default=[]),
+    hero_photo: UploadFile | None = File(default=None),
 ):
     subject_id = new_subject_id(name)
     persisted_uploads = _persist_uploaded_photos(uploaded_photos, subject_id)
+    persisted_hero = _persist_uploaded_photos(
+        [hero_photo] if hero_photo and hero_photo.filename else [], subject_id, prefix="hero",
+    )
     params = {
         "name": name.strip(),
         "category": category.strip(),
@@ -193,6 +202,7 @@ def site_generator_generate(
         "skip_website_check": bool(skip_website_check),
         "no_website_schools_id": no_website_schools_id.strip(),
         "uploaded_photos_json": json.dumps(persisted_uploads) if persisted_uploads else "",
+        "hero_photo_json": json.dumps(persisted_hero[0]) if persisted_hero else "",
         "subject_id": subject_id,
         "base_url": "/generated-sites",
         "output_dir": str(OUTPUT_DIR),
@@ -209,6 +219,7 @@ def site_generator_regenerate(
     theme: str = Form(...),  # e.g. "preschool-warm"
     revision_notes: str = Form(""),
     uploaded_photos: list[UploadFile] = File(default=[]),
+    hero_photo: UploadFile | None = File(default=None),
 ):
     org = site_generator_state.get_org(org_id)
     if not org:
@@ -219,6 +230,9 @@ def site_generator_regenerate(
     theme_version_id = theme.split("-", 1)[1] if "-" in theme else theme
     subject_id = f"{org_id}-v{next_version_n}"
     persisted_uploads = _persist_uploaded_photos(uploaded_photos, subject_id)
+    persisted_hero = _persist_uploaded_photos(
+        [hero_photo] if hero_photo and hero_photo.filename else [], subject_id, prefix="hero",
+    )
 
     params = {
         "name": org["name"],
@@ -229,6 +243,7 @@ def site_generator_regenerate(
         "versions": theme_version_id,
         "revision_notes": revision_notes.strip(),
         "uploaded_photos_json": json.dumps(persisted_uploads) if persisted_uploads else "",
+        "hero_photo_json": json.dumps(persisted_hero[0]) if persisted_hero else "",
         "subject_id": subject_id,
         "base_url": "/generated-sites",
         "output_dir": str(OUTPUT_DIR),

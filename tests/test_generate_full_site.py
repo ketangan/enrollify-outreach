@@ -177,6 +177,37 @@ def test_generate_full_site_low_quality_upload_is_used_but_not_placed_first(monk
     assert photos[0] != "small-upload"
 
 
+def test_generate_full_site_forced_hero_photo_wins_index_0(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(
+        generate_full_site.places, "fetch_photo_bytes",
+        lambda photo_name, max_width_px=1200: (_real_jpeg_bytes(3000, 3000), "image/jpeg"),
+    )
+
+    captured = {}
+    original_render = generate_full_site.mocks.render_mock_concepts
+
+    def _capture_render(subject, **kwargs):
+        captured["subject"] = dict(subject)
+        return original_render(subject, **kwargs)
+
+    monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _capture_render)
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        # Deliberately low quality — automatic ranking would never pick this
+        # for the hero slot, but an explicit choice must win anyway.
+        hero_photo={"url": "explicit-hero-choice", "width": 300, "height": 300},
+        uploaded_photos=[{"url": "big-upload", "width": 3000, "height": 3000}],
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    photos = captured["subject"]["_website_mock_photos"]
+    assert photos[0] == "explicit-hero-choice"
+    assert "big-upload" in photos[1:]
+
+
 def test_generate_full_site_never_overwrites_caller_supplied_phone(monkeypatch, tmp_path):
     monkeypatch.setattr(
         generate_full_site.places, "find_business",
@@ -652,6 +683,48 @@ def test_main_ignores_malformed_uploaded_photos_json(monkeypatch, tmp_path):
     generate_full_site.main()  # must not raise
 
     assert captured["uploaded_photos"] == []
+
+
+def test_main_parses_hero_photo_json_and_passes_it_through(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    captured = {}
+    original = generate_full_site.generate_full_site
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(generate_full_site, "generate_full_site", _capture)
+    monkeypatch.setattr(sys, "argv", [
+        "generate_full_site.py", "--name", "Test", "--category", "music", "--no-google-reviews",
+        "--hero-photo", '{"url": "hero-0", "width": 2000, "height": 2000}',
+        "--output-dir", str(tmp_path), "--base-url", "https://example.com",
+    ])
+
+    generate_full_site.main()
+
+    assert captured["hero_photo"] == {"url": "hero-0", "width": 2000, "height": 2000}
+
+
+def test_main_ignores_malformed_hero_photo_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    captured = {}
+    original = generate_full_site.generate_full_site
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(generate_full_site, "generate_full_site", _capture)
+    monkeypatch.setattr(sys, "argv", [
+        "generate_full_site.py", "--name", "Test", "--category", "music", "--no-google-reviews",
+        "--hero-photo", "not valid json",
+        "--output-dir", str(tmp_path), "--base-url", "https://example.com",
+    ])
+
+    generate_full_site.main()  # must not raise
+
+    assert captured["hero_photo"] is None
 
 
 def test_generate_full_site_raises_when_existing_website_found(monkeypatch, tmp_path):
