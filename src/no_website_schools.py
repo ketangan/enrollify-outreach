@@ -34,6 +34,22 @@ def _clean(value) -> str:
     return str(value or "").strip()
 
 
+def known_place_ids() -> set[str]:
+    """place_ids already recorded in No_Website_Schools or No_Website_Archive
+    (any status) — checked by Phase 1 discovery before appending a new row,
+    so the same business found again via an overlapping zip search doesn't
+    create a fresh duplicate. Rows written before place_id was tracked have
+    none (filtered out here, not an error) — see scripts/dedupe_no_website_schools.py
+    for the one-time cleanup of those pre-existing duplicates."""
+    ids: set[str] = set()
+    for tab in (config.TAB_NO_WEBSITE, config.TAB_NO_WEBSITE_ARCHIVE):
+        for row in sheets.read_all_rows(tab):
+            place_id = _clean(row.get("place_id"))
+            if place_id:
+                ids.add(place_id)
+    return ids
+
+
 def list_page(
     page: int = 1, page_size: int = 10, *, status: str = STATUS_COLLECTED,
 ) -> tuple[list[dict], int]:

@@ -51,7 +51,7 @@ from pathlib import Path
 # Allow running as a script from project root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import config, regions, sheets, places, coverage, dedupe_within_leads
+from src import config, regions, sheets, places, coverage, dedupe_within_leads, no_website_schools
 
 logging.basicConfig(
     level=logging.INFO,
@@ -104,6 +104,7 @@ def _place_to_no_website_row(place: places.DiscoveredPlace) -> dict:
     import json as _json
     return {
         "id": _new_lead_id(place.zip),
+        "place_id": place.place_id,
         "name": place.name,
         "category": place.category,
         "city": place.city,
@@ -147,9 +148,21 @@ def process_zip(zip_code: str, admin: str = "") -> dict:
         sheets.append_rows(config.TAB_LEADS, lead_rows, lead_headers)
 
     if result["places_without_website"]:
-        no_web_rows = [_place_to_no_website_row(p) for p in result["places_without_website"]]
-        no_web_headers = sheets.get_headers(config.TAB_NO_WEBSITE)
-        sheets.append_rows(config.TAB_NO_WEBSITE, no_web_rows, no_web_headers)
+        # Zip radius searches overlap heavily in dense areas — the same
+        # business turns up under many neighboring zips' scans. Without this
+        # check every re-scan re-appends it as a fresh row (confirmed live:
+        # one business had 35 duplicate rows across overlapping zips before
+        # this check existed). place_id is Google's own stable per-business
+        # ID, so it's a much stronger key than name/address string matching.
+        known_ids = no_website_schools.known_place_ids()
+        new_places = [p for p in result["places_without_website"] if p.place_id not in known_ids]
+        skipped = len(result["places_without_website"]) - len(new_places)
+        if skipped:
+            logger.info("Skipped %d business(es) already in %s/%s", skipped, config.TAB_NO_WEBSITE, config.TAB_NO_WEBSITE_ARCHIVE)
+        if new_places:
+            no_web_rows = [_place_to_no_website_row(p) for p in new_places]
+            no_web_headers = sheets.ensure_headers(config.TAB_NO_WEBSITE, sheets.get_headers(config.TAB_NO_WEBSITE) + ["place_id"])
+            sheets.append_rows(config.TAB_NO_WEBSITE, no_web_rows, no_web_headers)
 
     total = (
         len(result["places_with_website"])

@@ -160,3 +160,12 @@ def test_archive_row_moves_row_and_records_reason(fake_sheets):
 
 def test_archive_row_returns_false_when_row_missing(fake_sheets):
     assert nws.archive_row("nonexistent", reason="x") is False
+
+
+def test_known_place_ids_combines_both_tabs_and_skips_blanks(fake_sheets):
+    no_website_rows, archive_rows = fake_sheets
+    no_website_rows.append(_row(row_id="a", place_id="place-1"))
+    no_website_rows.append(_row(row_id="b", place_id=""))  # pre-place_id-era row
+    archive_rows.append(_row(row_id="c", place_id="place-2"))
+
+    assert nws.known_place_ids() == {"place-1", "place-2"}

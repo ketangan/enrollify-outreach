@@ -46,6 +46,67 @@ def test_process_zip_marks_failed_when_discovery_crashes(monkeypatch):
     ]
 
 
+def _stub_place(place_id, name="Test Studio", **overrides):
+    defaults = dict(
+        place_id=place_id, name=name, website="", phone="(512) 555-0100", address="123 Main St",
+        city="Austin", state="TX", zip="78701", latitude=None, longitude=None, category="music",
+    )
+    defaults.update(overrides)
+    return phase1.places.DiscoveredPlace(**defaults)
+
+
+def test_process_zip_skips_places_already_known_to_no_website_schools(monkeypatch):
+    monkeypatch.setattr(phase1.regions, "zip_city_state", lambda zip_code: ("Austin", "TX"))
+    monkeypatch.setattr(phase1.coverage, "mark_in_progress", lambda zip_code, **kw: None)
+    monkeypatch.setattr(phase1.coverage, "mark_complete", lambda **kw: None)
+
+    already_known = _stub_place("place-known", name="Already Known Studio")
+    brand_new = _stub_place("place-new", name="Brand New Studio")
+    monkeypatch.setattr(
+        phase1.places, "discover_zip",
+        lambda zip_code: {
+            "places_with_website": [], "places_without_website": [already_known, brand_new],
+            "places_skipped": [], "capped_categories": [],
+        },
+    )
+    monkeypatch.setattr(phase1.no_website_schools, "known_place_ids", lambda: {"place-known"})
+    monkeypatch.setattr(phase1.sheets, "get_headers", lambda tab: ["id", "name"])
+    monkeypatch.setattr(phase1.sheets, "ensure_headers", lambda tab, required: required)
+
+    appended = []
+    monkeypatch.setattr(phase1.sheets, "append_rows", lambda tab, rows, headers: appended.append((tab, rows)))
+
+    phase1.process_zip("78701")
+
+    assert len(appended) == 1
+    tab, rows = appended[0]
+    assert tab == phase1.config.TAB_NO_WEBSITE
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Brand New Studio"
+
+
+def test_process_zip_appends_nothing_when_all_places_already_known(monkeypatch):
+    monkeypatch.setattr(phase1.regions, "zip_city_state", lambda zip_code: ("Austin", "TX"))
+    monkeypatch.setattr(phase1.coverage, "mark_in_progress", lambda zip_code, **kw: None)
+    monkeypatch.setattr(phase1.coverage, "mark_complete", lambda **kw: None)
+
+    monkeypatch.setattr(
+        phase1.places, "discover_zip",
+        lambda zip_code: {
+            "places_with_website": [], "places_without_website": [_stub_place("place-known")],
+            "places_skipped": [], "capped_categories": [],
+        },
+    )
+    monkeypatch.setattr(phase1.no_website_schools, "known_place_ids", lambda: {"place-known"})
+
+    appended = []
+    monkeypatch.setattr(phase1.sheets, "append_rows", lambda tab, rows, headers: appended.append((tab, rows)))
+
+    phase1.process_zip("78701")
+
+    assert appended == []
+
+
 def test_run_auto_bubbles_places_auth_errors(monkeypatch):
     monkeypatch.setattr(phase1.places, "get_api_call_count", lambda: 0)
     monkeypatch.setattr(phase1.coverage, "pick_next_zip", lambda region_name: ("90221", "ok"))
