@@ -123,3 +123,67 @@ def test_infer_theme_colors_rejects_malformed_hex_values():
     colors = mock_content_llm.infer_theme_colors(revision_notes="make it red", category="music", client=client)
 
     assert colors is None
+
+
+def test_infer_owner_name_parses_json_response():
+    client = _FakeClient(json.dumps({"owner_name": "Maria Gomez"}))
+
+    owner_name = mock_content_llm.infer_owner_name(
+        name="Riverside Music Collective",
+        raw_review_text="The owner Maria Gomez was so welcoming and patient with my daughter.",
+        client=client,
+    )
+
+    assert owner_name == "Maria Gomez"
+
+
+def test_infer_owner_name_returns_empty_without_review_text():
+    client = _FakeClient(json.dumps({"owner_name": "Should not be reached"}))
+
+    owner_name = mock_content_llm.infer_owner_name(name="Test", raw_review_text="   ", client=client)
+
+    assert owner_name == ""
+    assert client.messages.last_call_kwargs is None  # never called — nothing to work with
+
+
+def test_infer_owner_name_returns_empty_on_unparseable_response():
+    client = _FakeClient("not valid json at all")
+
+    owner_name = mock_content_llm.infer_owner_name(
+        name="Test", raw_review_text="Great place, my kids loved it.", client=client,
+    )
+
+    assert owner_name == ""
+
+
+def test_infer_owner_name_returns_empty_when_model_finds_no_owner():
+    client = _FakeClient(json.dumps({"owner_name": ""}))
+
+    owner_name = mock_content_llm.infer_owner_name(
+        name="Test", raw_review_text="- Sarah M. Loved the trial class!", client=client,
+    )
+
+    assert owner_name == ""
+
+
+def test_infer_owner_name_tolerates_trailing_prose_after_json():
+    # Haiku sometimes appends an explanation after the JSON object despite
+    # being told not to — this must still parse out the object correctly,
+    # not silently fall back to "" and drop a real find.
+    client = _FakeClient('{"owner_name": "John Lee"}\n\nThe review explicitly names John Lee as the founder.')
+
+    owner_name = mock_content_llm.infer_owner_name(
+        name="Test", raw_review_text="Founder John Lee runs a tight ship.", client=client,
+    )
+
+    assert owner_name == "John Lee"
+
+
+def test_infer_owner_name_strips_markdown_fences():
+    client = _FakeClient('```json\n{"owner_name": "John Lee"}\n```')
+
+    owner_name = mock_content_llm.infer_owner_name(
+        name="Test", raw_review_text="Founder John Lee runs a tight ship.", client=client,
+    )
+
+    assert owner_name == "John Lee"

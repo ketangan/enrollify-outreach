@@ -14,6 +14,16 @@ class _FakeWorksheet:
     def append_row(self, row, value_input_option=None):
         self._rows_store.append(dict(zip(state.HEADERS, row)))
 
+    def get_all_values(self):
+        rows = [state.HEADERS]
+        for row in self._rows_store:
+            rows.append([str(row.get(h, "")) for h in state.HEADERS])
+        return rows
+
+    def delete_rows(self, row_idx):
+        # row_idx is 1-indexed with row 1 being the header.
+        del self._rows_store[row_idx - 2]
+
 
 @pytest.fixture
 def fake_sheet(monkeypatch):
@@ -146,3 +156,103 @@ def test_record_regeneration_persists_short_url(fake_sheet):
 
     history = state.get_org("org-4")["themes"]["preschool-warm"]
     assert history[1]["short_url"] == "s2"
+
+
+def test_owner_name_is_persisted_at_org_level(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-owner-1", name="Test School", category="music",
+        rendered=[{
+            "type": "music", "version": "studio", "label": "Studio",
+            "url": "u1", "preview_url": "p1", "owner_name": "Maria Gomez",
+        }],
+        job_id="job-1",
+    )
+
+    org = state.get_org("org-owner-1")
+    assert org["owner_name"] == "Maria Gomez"
+
+
+def test_owner_name_defaults_to_empty_when_never_found(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-owner-2", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+
+    org = state.get_org("org-owner-2")
+    assert org["owner_name"] == ""
+
+
+def test_owner_name_found_on_regeneration_backfills_org(fake_sheet):
+    # Initial generation had no review text to find an owner in; a later
+    # regeneration re-fetched reviews and found one — the org should pick
+    # it up even though it wasn't there from the start.
+    state.record_initial_generation(
+        org_id="org-owner-3", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+    state.record_regeneration(
+        org_id="org-owner-3", theme="music-studio",
+        item={"subject_id": "org-owner-3-v2", "label": "Studio", "url": "u2", "preview_url": "p2", "owner_name": "John Lee"},
+        job_id="job-2",
+    )
+
+    org = state.get_org("org-owner-3")
+    assert org["owner_name"] == "John Lee"
+
+
+def test_delete_org_returns_false_for_unknown_org(fake_sheet):
+    assert state.delete_org("does-not-exist") is False
+
+
+def test_delete_org_removes_all_rows_and_unwinds_r2_and_shortlinks(fake_sheet, monkeypatch):
+    state.record_initial_generation(
+        org_id="org-5", name="Test School", category="music",
+        rendered=[
+            {"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1", "short_url": "https://sites.mypontora.com/p/aaa111"},
+            {"type": "music", "version": "warm", "label": "Warm", "url": "u2", "preview_url": "p2", "short_url": "https://sites.mypontora.com/p/bbb222"},
+        ],
+        job_id="job-1",
+    )
+    state.record_regeneration(
+        org_id="org-5", theme="music-studio",
+        item={"subject_id": "org-5-v2", "label": "Studio", "url": "u3", "preview_url": "p3", "short_url": "https://sites.mypontora.com/p/ccc333"},
+        job_id="job-2",
+    )
+    # An unrelated org's row must survive the delete.
+    state.record_initial_generation(
+        org_id="org-6", name="Other School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "ux", "preview_url": "px"}],
+        job_id="job-3",
+    )
+
+    deleted_prefixes = []
+    deleted_codes = []
+    monkeypatch.setattr(state.r2_storage, "delete_prefix", lambda prefix: deleted_prefixes.append(prefix))
+    monkeypatch.setattr(state.shortlinks, "delete_short_link", lambda code: deleted_codes.append(code))
+
+    assert state.delete_org("org-5") is True
+
+    assert sorted(deleted_prefixes) == ["sites/org-5-v2/", "sites/org-5/"]
+    assert sorted(deleted_codes) == ["aaa111", "bbb222", "ccc333"]
+    assert state.get_org("org-5") is None
+    assert state.get_org("org-6") is not None  # untouched
+
+
+def test_delete_org_continues_past_r2_and_shortlink_failures(fake_sheet, monkeypatch):
+    state.record_initial_generation(
+        org_id="org-7", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1", "short_url": "https://sites.mypontora.com/p/aaa111"}],
+        job_id="job-1",
+    )
+
+    def _boom(*a, **kw):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(state.r2_storage, "delete_prefix", _boom)
+    monkeypatch.setattr(state.shortlinks, "delete_short_link", _boom)
+
+    # Sheet cleanup must still happen even though R2/shortlink calls blew up.
+    assert state.delete_org("org-7") is True
+    assert state.get_org("org-7") is None

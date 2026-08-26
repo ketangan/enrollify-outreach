@@ -201,6 +201,23 @@ def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):
     assert calls == [("90277-abc123", "existing_website_found", "https://www.real.example/")]
 
 
+def test_delete_calls_delete_org_and_redirects(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    calls = []
+    monkeypatch.setattr(site_generator_state, "delete_org", lambda org_id: calls.append(org_id) or True)
+
+    resp = client.post(
+        "/site-generator/delete",
+        params={"key": "secret123"},
+        data={"org_id": "riverside-music-abc123"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/site-generator"
+    assert calls == ["riverside-music-abc123"]
+
+
 def test_generate_passes_no_website_schools_id_through(monkeypatch):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     captured = {}

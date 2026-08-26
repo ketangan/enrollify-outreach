@@ -191,6 +191,15 @@ def site_generator_archive_no_website(
     return _remember_key_cookie(request, RedirectResponse("/site-generator", status_code=303))
 
 
+@router.post("/site-generator/delete", dependencies=[Depends(require_access)])
+def site_generator_delete(request: Request, org_id: str = Form(...)):
+    # Explicit action only, gated by a JS confirm() on the button itself —
+    # this is irreversible (R2 files, the short links, and the Sheet
+    # history all go away, not just the listing).
+    site_generator_state.delete_org(org_id)
+    return _remember_key_cookie(request, RedirectResponse("/site-generator", status_code=303))
+
+
 @router.get("/site-generator/jobs/{job_id}", response_class=HTMLResponse, dependencies=[Depends(require_access)])
 def site_generator_job_detail(request: Request, job_id: str):
     job = jobs_runner.get_job(job_id)

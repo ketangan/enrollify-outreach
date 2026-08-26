@@ -13,15 +13,18 @@ templates expect, so callers don't need to know rows are the storage format.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
-from src import sheets
+from src import r2_storage, sheets, shortlinks
+
+logger = logging.getLogger(__name__)
 
 GENERATED_SITES_TAB = "Generated_Sites"
 HEADERS = [
     "org_id", "name", "category", "city", "state", "address",
     "theme", "version_n", "subject_id", "label", "url", "preview_url",
-    "revision_notes", "job_id", "created_at", "short_url",
+    "revision_notes", "job_id", "created_at", "short_url", "owner_name",
 ]
 
 
@@ -44,12 +47,18 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
             "state": row.get("state", ""),
             "address": row.get("address", ""),
             "created_at": row.get("created_at", ""),
+            "owner_name": "",
             "themes": {},
         })
         # Earliest row's created_at represents when the org was first
         # generated — later (regeneration) rows shouldn't push this later.
         if row.get("created_at", "") and (not org["created_at"] or row["created_at"] < org["created_at"]):
             org["created_at"] = row["created_at"]
+        # Owner name is an org-level fact, not per-row — take the first
+        # non-empty one found (could come from the initial generation or a
+        # later regeneration that happened to re-fetch reviews containing it).
+        if not org["owner_name"] and str(row.get("owner_name", "")).strip():
+            org["owner_name"] = str(row["owner_name"]).strip()
 
         try:
             version_n = int(row.get("version_n") or 1)
@@ -122,6 +131,7 @@ def record_initial_generation(
             item["url"], item.get("preview_url", item["url"]),
             "", job_id, now,
             item.get("short_url", item.get("preview_url", item["url"])),
+            item.get("owner_name", ""),
         ])
     ws.append_rows(rows, value_input_option="USER_ENTERED")
 
@@ -150,4 +160,52 @@ def record_regeneration(
         item["url"], item.get("preview_url", item["url"]),
         revision_notes, job_id, datetime.now().isoformat(),
         item.get("short_url", item.get("preview_url", item["url"])),
+        item.get("owner_name", ""),
     ], value_input_option="USER_ENTERED")
+
+
+def delete_org(org_id: str) -> bool:
+    """Fully unwinds a generation: deletes every R2 object under each
+    version's subject_id, deletes each version's short link from KV, then
+    removes every row for this org from the Sheet. Explicit-action-only —
+    called from a confirm-gated "Delete" button, never automatically.
+    Best-effort on R2/shortlinks (a stuck file isn't worth blocking the
+    Sheet cleanup over); returns False only if the org wasn't found at all."""
+    org = get_org(org_id)
+    if not org:
+        return False
+
+    subject_ids = set()
+    short_codes = set()
+    for versions in org["themes"].values():
+        for v in versions:
+            if v.get("subject_id"):
+                subject_ids.add(v["subject_id"])
+            code = shortlinks.code_from_short_url(v.get("short_url", ""))
+            if code:
+                short_codes.add(code)
+
+    for subject_id in subject_ids:
+        try:
+            r2_storage.delete_prefix(f"sites/{subject_id}/")
+        except Exception as e:
+            logger.warning("Could not delete R2 objects for subject %s: %s", subject_id, e)
+
+    for code in short_codes:
+        try:
+            shortlinks.delete_short_link(code)
+        except Exception as e:
+            logger.warning("Could not delete short link %s: %s", code, e)
+
+    ws = sheets.get_tab(GENERATED_SITES_TAB)
+    all_values = ws.get_all_values()
+    header = all_values[0]
+    org_col = header.index("org_id")
+    rows_to_delete = [
+        idx + 1 for idx in range(1, len(all_values))
+        if all_values[idx][org_col].strip() == org_id
+    ]
+    for row_idx in sorted(rows_to_delete, reverse=True):
+        ws.delete_rows(row_idx)
+
+    return True

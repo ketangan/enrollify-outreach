@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 import string
 
 import requests
@@ -104,3 +105,26 @@ def _kv_get(key: str) -> str:
         return ""
     resp.raise_for_status()
     return resp.text
+
+
+def code_from_short_url(short_url: str) -> str:
+    """Extracts "ab12cd" from ".../p/ab12cd", or "" if this isn't actually
+    one of our short links (e.g. it's already a plain long URL, which
+    happens whenever shortlinks was unconfigured at generation time)."""
+    match = re.search(r"/p/([a-z0-9]+)/?$", short_url or "")
+    return match.group(1) if match else ""
+
+
+def delete_short_link(code: str) -> None:
+    """No-op if the code doesn't exist or shortlinks isn't configured —
+    deleting a link that was never created (or already gone) isn't an
+    error, it's the state we wanted anyway."""
+    if not code or not is_configured():
+        return
+    url = (
+        f"https://api.cloudflare.com/client/v4/accounts/{config.CLOUDFLARE_ACCOUNT_ID}"
+        f"/storage/kv/namespaces/{config.CLOUDFLARE_KV_NAMESPACE_ID}/values/{code}"
+    )
+    resp = requests.delete(url, headers={"Authorization": f"Bearer {config.CLOUDFLARE_API_TOKEN}"}, timeout=15)
+    if resp.status_code not in (200, 404):
+        resp.raise_for_status()

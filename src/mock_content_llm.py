@@ -204,3 +204,60 @@ def infer_theme_colors(
         return None
 
     return {"accent": accent, "secondary": secondary}
+
+
+OWNER_NAME_SYSTEM_PROMPT = """You look at real review text about a small local business and decide whether it explicitly names the business's owner, founder, director, or head instructor.
+
+Rules:
+- Only return a name if the text clearly attributes it to the person who OWNS/RUNS/FOUNDED/DIRECTS the business — not a reviewer, a staff member/teacher mentioned only as helpful/friendly, or a customer's child.
+- A reviewer's own byline name (e.g. "- Sarah M.") is NOT the owner. Never return it.
+- A name only counts if the review text itself uses explicit ownership/leadership language connecting the name to running the business — e.g. "the owner Maria...", "founder John...", "director...", "run by...", "Ms. Smith, the owner, ...".
+- If you're not confident, return empty — being wrong (texting a stranger's name to the actual owner) is worse than saying nothing.
+- Output ONLY JSON, no prose before or after it: {"owner_name": "First Last"} or {"owner_name": ""}
+"""
+
+
+def infer_owner_name(
+    *,
+    name: str,
+    raw_review_text: str,
+    client: Anthropic | None = None,
+) -> str:
+    """Looks for an explicit owner/founder/director name mentioned inside
+    real review text (Google/Yelp) — never guesses from a reviewer's own
+    name, never invents one. Returns "" on no confident match or any
+    failure; callers should already have a name-less SMS greeting as the
+    fallback for that case."""
+    review_text = (raw_review_text or "").strip()[:MAX_SIGNAL_TEXT_CHARS]
+    if not review_text:
+        return ""
+
+    user_content = f"Business name: {name}\n\nReal review text:\n{review_text}"
+
+    try:
+        client = client or Anthropic()
+        resp = _call_with_retry(client, user_content, system_prompt=OWNER_NAME_SYSTEM_PROMPT)
+    except Exception as e:
+        logger.warning("infer_owner_name call failed, falling back: %s", e)
+        return ""
+
+    raw = resp.content[0].text.strip()
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        # Haiku sometimes appends an explanation after the JSON despite the
+        # "no prose" instruction — fall back to pulling out just the object
+        # rather than treating the whole response as unparseable.
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if not match:
+            logger.warning("infer_owner_name: failed to parse response: %s", raw[:200])
+            return ""
+        try:
+            parsed = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            logger.warning("infer_owner_name: failed to parse response: %s", raw[:200])
+            return ""
+
+    return str(parsed.get("owner_name", "")).strip()

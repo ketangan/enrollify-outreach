@@ -89,3 +89,57 @@ def test_kv_get_returns_value_on_200(monkeypatch):
     monkeypatch.setattr(shortlinks.requests, "get", lambda *a, **kw: _FakeResponse(status_code=200, text="https://real.example"))
 
     assert shortlinks._kv_get("abc123") == "https://real.example"
+
+
+def test_code_from_short_url_extracts_code():
+    assert shortlinks.code_from_short_url("https://sites.mypontora.com/p/ab12cd") == "ab12cd"
+    assert shortlinks.code_from_short_url("https://sites.mypontora.com/p/ab12cd/") == "ab12cd"
+
+
+def test_code_from_short_url_returns_empty_for_non_short_link():
+    # e.g. a row written before shortlinks existed, or created while it was
+    # unconfigured — falls back to a plain long URL, not one of our short links.
+    assert shortlinks.code_from_short_url("https://sites.mypontora.com/sites/abc/index.html") == ""
+    assert shortlinks.code_from_short_url("") == ""
+
+
+def test_delete_short_link_is_a_no_op_when_code_empty_or_unconfigured(monkeypatch):
+    _configure(monkeypatch)
+    calls = []
+    monkeypatch.setattr(shortlinks.requests, "delete", lambda *a, **kw: calls.append(1))
+
+    shortlinks.delete_short_link("")
+    assert calls == []
+
+    monkeypatch.setattr(config, "CLOUDFLARE_API_TOKEN", "")
+    shortlinks.delete_short_link("ab12cd")
+    assert calls == []
+
+
+def test_delete_short_link_calls_kv_delete_with_code(monkeypatch):
+    _configure(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        shortlinks.requests, "delete",
+        lambda url, **kw: calls.append(url) or _FakeResponse(status_code=200),
+    )
+
+    shortlinks.delete_short_link("ab12cd")
+
+    assert len(calls) == 1
+    assert calls[0].endswith("/values/ab12cd")
+
+
+def test_delete_short_link_treats_404_as_success(monkeypatch):
+    _configure(monkeypatch)
+    monkeypatch.setattr(shortlinks.requests, "delete", lambda *a, **kw: _FakeResponse(status_code=404))
+
+    shortlinks.delete_short_link("ab12cd")  # should not raise
+
+
+def test_delete_short_link_raises_on_genuine_error(monkeypatch):
+    _configure(monkeypatch)
+    monkeypatch.setattr(shortlinks.requests, "delete", lambda *a, **kw: _FakeResponse(status_code=500))
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        shortlinks.delete_short_link("ab12cd")

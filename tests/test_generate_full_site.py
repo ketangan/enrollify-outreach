@@ -29,6 +29,14 @@ def _stub_shortlinks_unconfigured(monkeypatch):
     monkeypatch.setattr(generate_full_site.shortlinks, "is_configured", lambda: False)
 
 
+@pytest.fixture(autouse=True)
+def _stub_infer_owner_name(monkeypatch):
+    """Most tests here use _stub_place()'s real-looking review text, which
+    would otherwise trigger a real Anthropic call on every test run. Tests
+    that specifically exercise owner-name inference override this."""
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "")
+
+
 def _stub_place(**overrides) -> places.DiscoveredPlace:
     # website defaults non-empty: a real Google Place usually has one on
     # file, and (more importantly for tests) a known website skips the new
@@ -636,6 +644,43 @@ def test_main_does_not_touch_no_website_schools_when_id_not_given(monkeypatch, t
     generate_full_site.main()
 
     assert calls == []
+
+
+def test_generate_full_site_attaches_owner_name_when_reviews_have_one(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    captured = {}
+
+    def _fake_infer_owner(**kwargs):
+        captured.update(kwargs)
+        return "Maria Gomez"
+
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", _fake_infer_owner)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert captured["name"] == "Riverside Music Collective"
+    assert "Group lessons" in captured["raw_review_text"]
+    assert all(item["owner_name"] == "Maria Gomez" for item in rendered)
+
+
+def test_generate_full_site_owner_name_empty_when_no_review_text(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+
+    def _should_not_be_called(**kwargs):
+        raise AssertionError("infer_owner_name should not be called with no review text at all")
+
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", _should_not_be_called)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music", use_google_places=False,
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert all(item["owner_name"] == "" for item in rendered)
 
 
 def test_main_includes_no_website_schools_id_in_blocked_result_json(monkeypatch, tmp_path):

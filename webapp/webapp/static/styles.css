@@ -351,6 +351,18 @@ form.filters button:hover { background: #2d4229; }
   cursor: pointer;
 }
 .btn-secondary-action:hover { background: #f3ede1; }
+.btn-danger {
+  background: #fff5f4;
+  color: #a13a2f;
+  border: 1px solid #e3b8b2;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-danger:hover { background: #a13a2f; color: #fff5f4; }
+.site-gen-delete-form { margin-top: 16px; }
 
 .mock-controls {
   margin-top: 16px;

@@ -73,3 +73,27 @@ def upload_bytes(key: str, data: bytes, content_type: str) -> None:
 def public_url(key: str) -> str:
     base = config.GENERATED_SITES_BASE_URL.rstrip("/")
     return f"{base}/{key.lstrip('/')}"
+
+
+def delete_prefix(prefix: str) -> int:
+    """Deletes every object under `prefix` (e.g. "sites/<subject_id>/").
+    Returns the count deleted. Used to unwind a full-site generation —
+    the mirror image of upload_bytes writing files there in the first
+    place. No-op (returns 0) if nothing matches, not an error."""
+    prefix = prefix.lstrip("/")
+    client = _get_client()
+    deleted = 0
+    continuation_token = None
+    while True:
+        kwargs = {"Bucket": config.R2_BUCKET_NAME, "Prefix": prefix}
+        if continuation_token:
+            kwargs["ContinuationToken"] = continuation_token
+        resp = client.list_objects_v2(**kwargs)
+        keys = [{"Key": obj["Key"]} for obj in resp.get("Contents", [])]
+        if keys:
+            client.delete_objects(Bucket=config.R2_BUCKET_NAME, Delete={"Objects": keys})
+            deleted += len(keys)
+        if not resp.get("IsTruncated"):
+            break
+        continuation_token = resp.get("NextContinuationToken")
+    return deleted

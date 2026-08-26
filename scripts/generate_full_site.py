@@ -314,6 +314,15 @@ def generate_full_site(
         if color_override:
             subject["_website_mock_color_override"] = color_override
 
+    # Best-effort: only found when a review explicitly names the owner/
+    # founder/director (see mock_content_llm.infer_owner_name) — stays ""
+    # otherwise, which callers treat as "no name for the SMS greeting."
+    owner_name = ""
+    if review_raw_texts:
+        owner_name = mock_content_llm.infer_owner_name(
+            name=name, raw_review_text=" ".join(review_raw_texts), client=anthropic_client,
+        )
+
     photo_urls = _persist_photos(place, subject_id, output_dir)
     if photo_urls:
         subject["_website_mock_photos"] = photo_urls
@@ -325,7 +334,10 @@ def generate_full_site(
         return []
     persisted = _persist_rendered(rendered, subject_id, output_dir, site_name=name)
     persisted = _add_short_links(persisted, subject_id=subject_id)
-    return [{**{k: v for k, v in item.items() if k != "html"}, "subject_id": subject_id} for item in persisted]
+    return [
+        {**{k: v for k, v in item.items() if k != "html"}, "subject_id": subject_id, "owner_name": owner_name}
+        for item in persisted
+    ]
 
 
 def _add_short_links(persisted: list[dict], *, subject_id: str) -> list[dict]:
@@ -473,6 +485,7 @@ def main() -> None:
         "city": args.city,
         "state": args.state,
         "revision_notes": args.revision_notes,
+        "owner_name": rendered[0].get("owner_name", ""),
         "rendered": rendered,
     }, indent=2), encoding="utf-8")
 

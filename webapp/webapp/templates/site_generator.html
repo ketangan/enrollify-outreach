@@ -20,13 +20,15 @@
   <p class="muted">{% if picker_page > 1 %}No more rows on this page.{% else %}Nothing in the queue right now.{% endif %}</p>
 {% else %}
   <table class="data-table">
-    <thead><tr><th>Business</th><th>Category</th><th>City</th><th></th></tr></thead>
+    <thead><tr><th>Business</th><th>Category</th><th>City</th><th>Google reviews</th><th>Yelp reviews</th><th></th></tr></thead>
     <tbody>
       {% for row in picker_rows %}
         <tr>
           <td>{{ row.name }}</td>
           <td>{{ row.category }}</td>
           <td>{{ row.city }}{% if row.state %}, {{ row.state }}{% endif %}</td>
+          <td>{{ row.google_review_count if row.google_review_count else "—" }}{% if row.google_rating %} ({{ row.google_rating }}★){% endif %}</td>
+          <td>{{ row.yelp_review_count if row.yelp_review_count else "—" }}{% if row.yelp_rating %} ({{ row.yelp_rating }}★){% endif %}</td>
           <td><a href="/site-generator?from_no_website_id={{ row.id }}#generate-form" class="btn-secondary">Use this</a></td>
         </tr>
       {% endfor %}
@@ -157,13 +159,18 @@
         {% endfor %}
         <div class="site-gen-text-box">
           <label for="sms-message-{{ org.org_id }}">Text message to send</label>
-          <textarea id="sms-message-{{ org.org_id }}" rows="12">Hi! This is Ketan — I put together a few different website design concepts for {{ org.name }}, just to show what a refreshed, modern site could look like. No cost, no obligation, just take a look:
+          <textarea id="sms-message-{{ org.org_id }}" rows="12">Hi{% if org.owner_name %} {{ org.owner_name }}{% endif %}! This is Ketan — I put together a few different website design concepts for {{ org.name }}, just to show what a refreshed, modern site could look like. No cost, no obligation, just take a look:
 {% for theme, versions in org.themes.items() -%}
 {{ versions[-1].label }}: {{ versions[-1].short_url }}
 {% endfor -%}
 Take a look and let me know which direction feels right — happy to walk through any of them or make changes if none of them quite fit yet.</textarea>
           <button type="button" class="sms-copy-btn" data-target="sms-message-{{ org.org_id }}">Copy message</button>
         </div>
+        <form method="POST" action="/site-generator/delete" class="site-gen-delete-form"
+              onsubmit="return confirm('Delete {{ org.name }} — all {{ org.themes|length }} concept(s), files, and short links? This cannot be undone.');">
+          <input type="hidden" name="org_id" value="{{ org.org_id }}">
+          <button type="submit" class="btn-danger">Delete this business</button>
+        </form>
       </div>
     </details>
   {% endfor %}
