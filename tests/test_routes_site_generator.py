@@ -101,6 +101,38 @@ def test_generate_use_google_false_when_checkbox_unchecked(monkeypatch):
     assert captured["use_google"] is False
 
 
+def test_generate_skip_website_check_defaults_false(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music"},  # no skip_website_check field — normal first submission
+        follow_redirects=False,
+    )
+
+    assert captured["skip_website_check"] is False
+
+
+def test_generate_skip_website_check_true_on_override_resubmit(monkeypatch):
+    # This is what the "I checked — generate anyway" button on a blocked
+    # job's page submits: the same field, set truthy.
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music", "skip_website_check": "true"},
+        follow_redirects=False,
+    )
+
+    assert captured["skip_website_check"] is True
+
+
 def test_regenerate_unknown_org_returns_404(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     _fake_sheet(monkeypatch)

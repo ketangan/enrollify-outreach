@@ -52,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from anthropic import Anthropic
 
 from scripts import generate_website_mocks as mocks
-from src import config, mock_content_llm, places, r2_storage, site_generator_state, website_mocks
+from src import config, mock_content_llm, places, r2_storage, site_generator_state, website_existence_check, website_mocks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -189,6 +189,7 @@ def generate_full_site(
     versions: str = "auto",
     revision_notes: str = "",
     subject_id: str = "",
+    skip_existing_website_check: bool = False,
     base_url: str,
     output_dir: Path,
     anthropic_client: Anthropic | None = None,
@@ -240,6 +241,20 @@ def generate_full_site(
                     place.google_reviews, mock_type=mock_type, category=category, school_name=name,
                 ))
                 review_raw_texts.append(review_text)
+
+    # Only worth checking when we still believe there's no website — if the
+    # caller or Places already gave us one, there's nothing to verify.
+    if not subject["website"].strip() and not skip_existing_website_check:
+        existence = website_existence_check.check_website_exists(
+            name=name, category=category, city=city, state=state,
+            address=address, phone=subject["phone"],
+            client=anthropic_client or Anthropic(),
+        )
+        if existence["has_website"] and existence["confidence"] in ("high", "medium"):
+            raise website_existence_check.ExistingWebsiteFoundError(
+                existence["website_url"], existence["confidence"], existence["reasoning"],
+                subject_id=subject_id,
+            )
 
     if yelp_review_text.strip():
         signals.append(mocks.content_signal_from_reviews(
@@ -322,6 +337,8 @@ def main() -> None:
     parser.add_argument("--versions", default="auto", help="'auto' for all 4, or a single theme id (e.g. 'warm') to regenerate just one")
     parser.add_argument("--revision-notes", default="", help="Optional freeform request for what should change on a regeneration")
     parser.add_argument("--subject-id", default="", help="Reuse an existing subject id to regenerate that same business")
+    parser.add_argument("--skip-website-check", action="store_true",
+                         help="Skip the thorough existing-website search (e.g. re-running after confirming there's none)")
     parser.add_argument("--base-url", default=config.WEBSITE_MOCK_BASE_URL)
     parser.add_argument("--output-dir", default="generated/full-sites")
     parser.add_argument("--record-to-sheet", action="store_true",
@@ -334,23 +351,49 @@ def main() -> None:
     if not yelp_text and args.yelp_text_file:
         yelp_text = Path(args.yelp_text_file).read_text(encoding="utf-8")
 
-    rendered = generate_full_site(
-        name=args.name,
-        category=args.category,
-        city=args.city,
-        state=args.state,
-        address=args.address,
-        phone=args.phone,
-        website=args.website,
-        info_page_urls=args.info_pages,
-        yelp_review_text=yelp_text,
-        use_google_places=args.use_google,
-        versions=args.versions,
-        revision_notes=args.revision_notes,
-        subject_id=args.subject_id,
-        base_url=args.base_url,
-        output_dir=Path(args.output_dir),
-    )
+    try:
+        rendered = generate_full_site(
+            name=args.name,
+            category=args.category,
+            city=args.city,
+            state=args.state,
+            address=args.address,
+            phone=args.phone,
+            website=args.website,
+            info_page_urls=args.info_pages,
+            yelp_review_text=yelp_text,
+            use_google_places=args.use_google,
+            versions=args.versions,
+            revision_notes=args.revision_notes,
+            subject_id=args.subject_id,
+            skip_existing_website_check=args.skip_website_check,
+            base_url=args.base_url,
+            output_dir=Path(args.output_dir),
+        )
+    except website_existence_check.ExistingWebsiteFoundError as e:
+        logger.error(
+            "Existing website found (%s confidence), not generating: %s — %s",
+            e.confidence, e.website_url, e.reasoning,
+        )
+        # Same result.json handoff mechanism as a normal run, marked
+        # blocked=True — the webapp reads this to show the found URL and an
+        # "generate anyway" override instead of a bare error message.
+        result_path = Path(args.output_dir) / "mocks" / e.subject_id / "result.json"
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text(json.dumps({
+            "subject_id": e.subject_id,
+            "name": args.name,
+            "category": args.category,
+            "city": args.city,
+            "state": args.state,
+            "blocked": True,
+            "blocked_reason": "existing_website_found",
+            "existing_website_url": e.website_url,
+            "existing_website_confidence": e.confidence,
+            "existing_website_reasoning": e.reasoning,
+        }, indent=2), encoding="utf-8")
+        sys.exit(1)
+
     if not rendered:
         logger.error("No site generated — check --category is a recognized value.")
         return

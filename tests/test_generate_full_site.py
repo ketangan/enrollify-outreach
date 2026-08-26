@@ -1,12 +1,33 @@
 import sys
 
+import pytest
+
 from scripts import generate_full_site
 from src import places
 
 
+@pytest.fixture(autouse=True)
+def _stub_website_existence_check(monkeypatch):
+    """Every test in this file gets a fast, free "no website found" stub by
+    default — without this, any test whose business has no known website
+    (find_business returning None/erroring, or use_google_places=False)
+    would trigger a real Anthropic web_search call. The dedicated tests for
+    the actual blocking behavior override this within the test itself."""
+    monkeypatch.setattr(
+        generate_full_site.website_existence_check, "check_website_exists",
+        lambda **kw: {"has_website": False, "website_url": "", "confidence": "low", "reasoning": "stubbed in tests"},
+    )
+
+
 def _stub_place(**overrides) -> places.DiscoveredPlace:
+    # website defaults non-empty: a real Google Place usually has one on
+    # file, and (more importantly for tests) a known website skips the new
+    # existing-website web-search check entirely — tests that want to
+    # exercise that check override website="" explicitly and mock
+    # check_website_exists themselves, rather than every other test in this
+    # file incidentally triggering a real Anthropic API call.
     defaults = dict(
-        place_id="p1", name="Riverside Music Collective", website="",
+        place_id="p1", name="Riverside Music Collective", website="https://www.riversidemusiccollective.com/",
         phone="(512) 555-0100", address="", city="Austin", state="TX", zip="",
         latitude=None, longitude=None, category="",
         google_reviews=[
@@ -386,6 +407,107 @@ def test_main_records_regeneration_when_org_id_and_theme_given(monkeypatch, tmp_
     assert calls[0][0] == "regen"
     assert calls[0][1]["org_id"] == "riverside-music-abc123"
     assert calls[0][1]["theme"] == "music-studio"
+
+
+def test_generate_full_site_raises_when_existing_website_found(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    monkeypatch.setattr(
+        generate_full_site.website_existence_check, "check_website_exists",
+        lambda **kw: {
+            "has_website": True, "website_url": "https://www.realsite.example/",
+            "confidence": "high", "reasoning": "Found via Google Business Profile.",
+        },
+    )
+
+    with pytest.raises(generate_full_site.website_existence_check.ExistingWebsiteFoundError) as exc_info:
+        generate_full_site.generate_full_site(
+            name="Riverside Music Collective", category="music", use_google_places=False,
+            base_url="https://example.com", output_dir=tmp_path,
+        )
+
+    assert exc_info.value.website_url == "https://www.realsite.example/"
+    assert exc_info.value.confidence == "high"
+    assert exc_info.value.subject_id  # generated before the check ran
+
+
+def test_generate_full_site_does_not_raise_on_low_confidence_find(monkeypatch, tmp_path):
+    # A low-confidence guess isn't worth blocking a real generation over.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    monkeypatch.setattr(
+        generate_full_site.website_existence_check, "check_website_exists",
+        lambda **kw: {
+            "has_website": True, "website_url": "https://www.maybe.example/",
+            "confidence": "low", "reasoning": "Weak match, not confident.",
+        },
+    )
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music", use_google_places=False,
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert len(rendered) == 4
+
+
+def test_generate_full_site_skips_check_when_website_already_known(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    monkeypatch.setattr(
+        generate_full_site.website_existence_check, "check_website_exists",
+        lambda **kw: calls.append(kw) or {"has_website": False, "website_url": "", "confidence": "low", "reasoning": ""},
+    )
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music", use_google_places=False,
+        website="https://www.knownsite.example/",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert calls == []
+
+
+def test_generate_full_site_skips_check_when_flag_set(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    monkeypatch.setattr(
+        generate_full_site.website_existence_check, "check_website_exists",
+        lambda **kw: calls.append(kw) or {"has_website": False, "website_url": "", "confidence": "low", "reasoning": ""},
+    )
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music", use_google_places=False,
+        skip_existing_website_check=True,
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert calls == []
+
+
+def test_main_exits_nonzero_and_writes_blocked_result_json(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    monkeypatch.setattr(
+        generate_full_site.website_existence_check, "check_website_exists",
+        lambda **kw: {
+            "has_website": True, "website_url": "https://www.realsite.example/",
+            "confidence": "high", "reasoning": "Found via Google Business Profile.",
+        },
+    )
+    monkeypatch.setattr(sys, "argv", [
+        "generate_full_site.py", "--name", "Riverside Music Collective", "--category", "music",
+        "--no-google-reviews", "--output-dir", str(tmp_path), "--base-url", "https://example.com",
+    ])
+
+    with pytest.raises(SystemExit) as exc_info:
+        generate_full_site.main()
+    assert exc_info.value.code == 1
+
+    result_files = list((tmp_path / "mocks").glob("*/result.json"))
+    assert len(result_files) == 1
+    import json
+    data = json.loads(result_files[0].read_text())
+    assert data["blocked"] is True
+    assert data["existing_website_url"] == "https://www.realsite.example/"
+    assert data["existing_website_confidence"] == "high"
 
 
 def test_main_does_not_record_without_the_flag(monkeypatch, tmp_path):

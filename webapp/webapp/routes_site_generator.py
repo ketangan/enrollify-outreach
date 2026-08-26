@@ -96,6 +96,9 @@ def site_generator_generate(
     # bool Form(True) default can't distinguish "unchecked" from "absent",
     # so this takes the checkbox's raw value and treats anything present as on.
     use_google: str = Form(""),
+    # Set by the "generate anyway" override on the blocked-job page — same
+    # truthy-string pattern as use_google, not a real user-facing checkbox.
+    skip_website_check: str = Form(""),
 ):
     subject_id = new_subject_id(name)
     params = {
@@ -110,6 +113,7 @@ def site_generator_generate(
         "yelp_text": yelp_text.strip(),
         "revision_notes": revision_notes.strip(),
         "use_google": bool(use_google),
+        "skip_website_check": bool(skip_website_check),
         "subject_id": subject_id,
         "base_url": "/generated-sites",
         "output_dir": str(OUTPUT_DIR),
@@ -160,7 +164,11 @@ def site_generator_job_detail(request: Request, job_id: str):
         raise HTTPException(404, "Job not found")
 
     result = None
-    if job.get("status") == "done":
+    if job.get("status") in ("done", "failed"):
+        # "failed" is also checked because a blocked job (existing website
+        # found) exits non-zero but still writes a result.json — this is
+        # the only way the job-detail page can tell "blocked, needs your
+        # decision" apart from a genuine crash, which has no result.json.
         result = _finalize_job(job)
 
     response = templates.TemplateResponse(

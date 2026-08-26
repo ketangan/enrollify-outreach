@@ -52,6 +52,7 @@ def _build_generate_full_site_cmd(**kw) -> list[str]:
         "--versions", kw.get("versions") or "auto",
         *_opt("--revision-notes", kw.get("revision_notes")),
         *_opt("--subject-id", kw.get("subject_id")),
+        *(["--skip-website-check"] if kw.get("skip_website_check") else []),
         # The webapp always wants this generation recorded durably (Sheet),
         # unlike ad-hoc CLI testing which defaults to not writing there.
         "--record-to-sheet",

@@ -26,6 +26,30 @@
     likely restarted since the job ran) — they're saved either way.
     <a href="/site-generator">Find them on the site list →</a>
   </div>
+{% elif job.status == "failed" and result and result.blocked %}
+  <div class="pipeline-alert pipeline-alert-warning">
+    <strong>Found an existing website</strong> for {{ job.params.name }} — stopped before generating a new one.
+    <p>
+      <a href="{{ result.existing_website_url }}" target="_blank" rel="noopener">{{ result.existing_website_url }}</a>
+      ({{ result.existing_website_confidence }} confidence)
+    </p>
+    <p class="muted">{{ result.existing_website_reasoning }}</p>
+  </div>
+  <form method="POST" action="/site-generator/generate" class="add-lead-form">
+    <input type="hidden" name="name" value="{{ job.params.name }}">
+    <input type="hidden" name="category" value="{{ job.params.category }}">
+    <input type="hidden" name="city" value="{{ job.params.city }}">
+    <input type="hidden" name="state" value="{{ job.params.state }}">
+    <input type="hidden" name="address" value="{{ job.params.address }}">
+    <input type="hidden" name="phone" value="{{ job.params.phone }}">
+    <input type="hidden" name="website" value="{{ job.params.website }}">
+    <input type="hidden" name="info_pages" value="{{ job.params.info_pages }}">
+    <input type="hidden" name="yelp_text" value="{{ job.params.yelp_text }}">
+    <input type="hidden" name="revision_notes" value="{{ job.params.revision_notes }}">
+    {% if job.params.use_google %}<input type="hidden" name="use_google" value="true">{% endif %}
+    <input type="hidden" name="skip_website_check" value="true">
+    <button type="submit">I checked — generate anyway</button>
+  </form>
 {% elif job.status == "failed" %}
   <div class="pipeline-alert pipeline-alert-warning">
     <strong>⚠</strong> Generation failed. See the log below.
