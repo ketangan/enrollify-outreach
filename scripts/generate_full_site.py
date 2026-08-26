@@ -344,7 +344,7 @@ def generate_full_site(
 
     google_photos = _persist_photos(place, subject_id, output_dir)
     selected_photos = photo_quality.select_and_rank_photos(
-        uploaded_photos or [], google_photos, max_count=3, forced_hero=hero_photo,
+        uploaded_photos or [], google_photos, forced_hero=hero_photo,
     )
     if selected_photos:
         subject["_website_mock_photos"] = [p["url"] for p in selected_photos]

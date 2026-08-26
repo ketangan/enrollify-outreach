@@ -33,6 +33,13 @@ logger = logging.getLogger(__name__)
 # images like an old logo scan or a cropped screenshot).
 MIN_HERO_DIMENSION_PX = 800
 
+# The renderer treats fewer than 3 real photos as "not enough to bother
+# with" and falls back to full stock (see generate_website_mocks._resolve_
+# photos) — so 3 is the minimum worth padding up to by repeating. There's
+# no matching upper bound: more distinct real photos means more variety
+# across the page's several photo-grid sections, never a downside.
+MIN_REAL_PHOTOS = 3
+
 
 def read_dimensions(image_bytes: bytes) -> tuple[int, int] | None:
     """(width, height) in pixels, or None if the bytes aren't a readable
@@ -57,13 +64,35 @@ def quality_rank(photo: dict) -> tuple:
     return (0 if hero_worthy else 1, -(width * height))
 
 
+def _pad_to_floor(photos: list[dict], floor: int = MIN_REAL_PHOTOS) -> list[dict]:
+    """Repeats what's there up to `floor` if there's at least one real photo
+    but fewer than that — never truncates, and never pads past the floor
+    just to hit some larger target (padding past 3 would just show
+    duplicates where a 4th/5th distinct real photo could have gone
+    instead)."""
+    if not photos:
+        return []
+    photos = list(photos)
+    while len(photos) < floor:
+        photos.append(photos[len(photos) % len(photos)])
+    return photos
+
+
+def _select_pool(uploaded: list[dict], fallback: list[dict], max_count: int) -> list[dict]:
+    """Selection + quality ranking, no padding — the raw ordered pool
+    before any "not enough real photos" backfill is applied."""
+    pool = list(uploaded[:max_count])
+    if len(pool) < max_count:
+        pool = pool + list(fallback[: max_count - len(pool)])
+    return sorted(pool, key=quality_rank)
+
+
 def select_and_rank_photos(
-    uploaded: list[dict], fallback: list[dict], *, max_count: int = 3, forced_hero: dict | None = None,
+    uploaded: list[dict], fallback: list[dict], *, max_count: int = 7, forced_hero: dict | None = None,
 ) -> list[dict]:
-    """Builds the final ordered photo list for a generation. Always returns
-    exactly `max_count` photos, or none at all — the renderer indexes up to
-    photos[max_count - 1] without a bounds check, so a partial list isn't
-    safe to hand it.
+    """Builds the final ordered photo list for a generation. Returns at
+    least MIN_REAL_PHOTOS (repeating what's available if there's fewer,
+    real photos) up to max_count, or [] if there's nothing real at all.
 
     Each photo dict needs at least {"url": str}; "width"/"height" are
     optional (missing = treated as low quality, see quality_rank).
@@ -72,7 +101,11 @@ def select_and_rank_photos(
     "this one's the hero" beats the quality heuristic entirely. The
     remaining slots are filled/ranked from uploaded + fallback exactly as
     without a forced hero (uploaded still wins a slot over fallback, then
-    quality_rank decides order among whatever's left).
+    quality_rank decides order among whatever's left). If there are other
+    real photos but not enough of them, THEY get repeated to reach the
+    floor — the hero never gets pulled back in as a stand-in "other" photo,
+    since that would show it twice for a reason that has nothing to do with
+    it being the hero.
 
     Without forced_hero — selection: uploaded photos fill slots first (up to
     max_count); fallback (e.g. Google Places) photos fill whatever's left.
@@ -80,31 +113,19 @@ def select_and_rank_photos(
     single most hero-worthy photo lands at index 0 no matter which source it
     came from.
 
-    If there aren't enough real photos to fill every slot even combining
-    both sources (e.g. one upload and zero Google photos), the best ones
-    are repeated rather than the whole real-photo set being discarded —
-    a real photo you deliberately uploaded shouldn't get thrown out purely
-    because there wasn't a second one to pad it out to three.
+    `max_count` defaults to 7 — 1 forced hero + up to 6 other uploads (the
+    webapp's own per-request upload cap), so a full batch of uploads is
+    never silently dropped just because the pool used to be capped at 3.
     """
     if forced_hero is not None:
         # Defensive: if the hero happens to also be in the general uploads
         # pool (same url), don't let it get picked a second time for a
         # secondary slot.
         other_uploaded = [p for p in uploaded if p.get("url") != forced_hero.get("url")]
-        remaining = select_and_rank_photos(other_uploaded, fallback, max_count=max(max_count - 1, 0))
-        combined = [forced_hero] + remaining
-        # Nothing else exists at all (no other uploads, no fallback) — repeat
-        # the hero itself to fill the rest, same padding logic as below.
-        while len(combined) < max_count:
-            combined.append(combined[len(combined) % len(combined)])
-        return combined
+        remaining = _select_pool(other_uploaded, fallback, max(max_count - 1, 0))
+        if remaining:
+            remaining = _pad_to_floor(remaining, floor=min(MIN_REAL_PHOTOS - 1, max_count - 1))
+        return _pad_to_floor([forced_hero] + remaining)
 
-    pool = list(uploaded[:max_count])
-    if len(pool) < max_count:
-        pool = pool + list(fallback[: max_count - len(pool)])
-    ranked = sorted(pool, key=quality_rank)
-    if not ranked:
-        return []
-    while len(ranked) < max_count:
-        ranked.append(ranked[len(ranked) % len(pool)])
-    return ranked
+    ranked = _select_pool(uploaded, fallback, max_count)
+    return _pad_to_floor(ranked)

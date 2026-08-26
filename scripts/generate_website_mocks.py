@@ -747,11 +747,15 @@ def _resolve_photos(lead: dict, mock_type: str, version_id: str, category: str) 
     """Real business photos (a `_website_mock_photos` override — 3+ URLs or
     local paths) take priority; falls back to the variant's themed stock
     photo set when there aren't enough real ones. Every signature section
-    indexes up to photos[2], so fewer than 3 real photos isn't usable — fall
-    back entirely rather than mixing a partial real set with stock filler."""
+    indexes up to photos[2] at minimum, so fewer than 3 real photos isn't
+    usable — fall back entirely rather than mixing a partial real set with
+    stock filler. Callers may pass more than 3 (up to however many were
+    actually uploaded) — modular-indexed sections (lesson-scroll,
+    band-strip, etc.) use however many are given for real variety instead
+    of only ever cycling through the same 3."""
     override = lead.get("_website_mock_photos")
     if isinstance(override, list) and len(override) >= 3:
-        return override[:3]
+        return override
     return _photo_urls(mock_type, version_id, category)
 
 
@@ -2867,14 +2871,16 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-image:
         linear-gradient(180deg, var(--hero-overlay-a) 0%, transparent 30%, var(--hero-overlay-b) 100%),
         var(--hero-photo);
-      background-size: cover;
-      /* "center top" (not "center center") on every photo background in
-         this file: these are almost always photos of people (students,
-         teachers, performers), and the subject — faces — sits in the top
-         portion of the frame far more often than dead-center. Cropping
-         from the top down means faces survive; a bottom crop is a much
-         safer loss than a top crop. */
-      background-position: center top;
+      background-repeat: no-repeat, no-repeat;
+      /* The gradient overlay still covers the full box (it has no
+         intrinsic aspect ratio to clash with); the photo itself uses
+         "contain" so the whole photo is always visible — no cropping,
+         ever, at the cost of the secondary-color background showing
+         through on the sides when the photo's aspect ratio doesn't match
+         the hero's. A crop that cuts off faces is a worse failure mode
+         than a visible background color bar. */
+      background-size: cover, contain;
+      background-position: center, center top;
       color: white;
     }}
     .hero-bleed__content {{ max-width: 760px; }}
@@ -2914,7 +2920,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-split__photo {{
       background-color: var(--soft);
       background-image: var(--hero-photo);
-      background-size: cover;
+      background-repeat: no-repeat;
+      background-size: contain;
       background-position: center top;
       min-height: 260px;
     }}
@@ -2972,7 +2979,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     }}
     .hero-collage__photo {{
       background-color: var(--soft);
-      background-size: cover;
+      background-repeat: no-repeat;
+      background-size: contain;
       background-position: center top;
       border-radius: var(--radius);
       box-shadow: 0 24px 60px rgba(0,0,0,.18);

@@ -87,7 +87,7 @@ def test_generate_full_site_uses_google_reviews_and_photos(monkeypatch, tmp_path
     assert len(saved_photos) == 3  # one write per stubbed photo name
 
 
-def test_generate_full_site_uploaded_photos_take_priority_over_google(monkeypatch, tmp_path):
+def test_generate_full_site_uploaded_photos_come_before_google_and_google_still_adds_variety(monkeypatch, tmp_path):
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
     monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
     monkeypatch.setattr(
@@ -114,9 +114,12 @@ def test_generate_full_site_uploaded_photos_take_priority_over_google(monkeypatc
         base_url="https://example.com", output_dir=tmp_path,
     )
 
-    # 3 uploads is enough on its own — Google's photos (fetch_photo_bytes
-    # was stubbed above) shouldn't appear in the final selection at all.
-    assert captured["subject"]["_website_mock_photos"] == ["upload-0", "upload-1", "upload-2"]
+    # All 3 uploads make it in, and — since the pool isn't capped at 3
+    # anymore — _stub_place()'s 3 Google photos fill in as extra variety
+    # for the page's other photo-grid sections rather than being dropped.
+    photos = captured["subject"]["_website_mock_photos"]
+    assert photos[:3] == ["upload-0", "upload-1", "upload-2"]
+    assert len(photos) == 6
 
 
 def test_generate_full_site_fills_gaps_from_google_when_uploads_are_short(monkeypatch, tmp_path):
@@ -144,7 +147,7 @@ def test_generate_full_site_fills_gaps_from_google_when_uploads_are_short(monkey
 
     photos = captured["subject"]["_website_mock_photos"]
     assert "upload-0" in photos
-    assert len(photos) == 3  # 1 upload + 2 Google photos fill the rest
+    assert len(photos) == 4  # 1 upload + all 3 of _stub_place()'s Google photos fill the rest
 
 
 def test_generate_full_site_low_quality_upload_is_used_but_not_placed_first(monkeypatch, tmp_path):
