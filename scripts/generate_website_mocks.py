@@ -2854,7 +2854,11 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
 
     /* Hero: full-bleed photography carries the thesis, not a boxed collage */
     .hero-bleed {{
-      min-height: 84vh;
+      /* Was 84vh — background-size:cover on a container this tall crops a
+         typical landscape photo hard top and bottom, dead-center, with no
+         way to adjust it per-photo. Shorter height means less gets cropped
+         off any given photo, real or uploaded. */
+      min-height: 60vh;
       display: flex;
       align-items: flex-end;
       padding: var(--gutter);
@@ -2864,7 +2868,13 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
         linear-gradient(180deg, var(--hero-overlay-a) 0%, transparent 30%, var(--hero-overlay-b) 100%),
         var(--hero-photo);
       background-size: cover;
-      background-position: center;
+      /* "center top" (not "center center") on every photo background in
+         this file: these are almost always photos of people (students,
+         teachers, performers), and the subject — faces — sits in the top
+         portion of the frame far more often than dead-center. Cropping
+         from the top down means faces survive; a bottom crop is a much
+         safer loss than a top crop. */
+      background-position: center top;
       color: white;
     }}
     .hero-bleed__content {{ max-width: 760px; }}
@@ -2889,7 +2899,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-split {{
       display: grid;
       grid-template-columns: 1fr 1fr;
-      min-height: 78vh;
+      min-height: 60vh;  /* was 78vh — see .hero-bleed comment on cropping */
     }}
     .hero-split__panel {{
       display: flex;
@@ -2905,7 +2915,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: var(--soft);
       background-image: var(--hero-photo);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
       min-height: 260px;
     }}
 
@@ -2941,7 +2951,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-collage {{
       display: grid;
       grid-template-columns: 1fr 1fr;
-      min-height: 78vh;
+      min-height: 60vh;  /* was 78vh — see .hero-bleed comment on cropping */
     }}
     .hero-collage__panel {{
       display: flex;
@@ -2963,7 +2973,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-collage__photo {{
       background-color: var(--soft);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
       border-radius: var(--radius);
       box-shadow: 0 24px 60px rgba(0,0,0,.18);
     }}
@@ -3021,7 +3031,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.74)), var(--photo);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
       box-shadow: 0 18px 44px rgba(0,0,0,.14);
     }}
     .day-timeline__strip:hover article {{ opacity: .82; }}
@@ -3069,12 +3079,16 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .admissions-path__steps p {{ font-size: 15px; }}
     .admissions-path__steps figure {{
       margin-top: 14px;
-      min-height: 120px;
+      /* Same fix as .collective-lineup__row article::before — a fixed
+         min-height with nothing else to stretch it acts as a fixed height,
+         and in a 4-column grid that's an even more extreme crop window. */
+      aspect-ratio: 4 / 3;
+      min-height: 140px;
       border-radius: var(--radius);
       background-color: var(--soft);
       background-image: var(--photo);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
     }}
 
     /* Signature: music-studio — an overlapping, hand-arranged lesson scroll */
@@ -3100,7 +3114,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.76)), var(--photo);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
       box-shadow: 0 20px 46px rgba(43,33,64,.22);
     }}
     .lesson-scroll__track article:nth-child(even) {{ transform: translateY(20px); }}
@@ -3192,7 +3206,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.72)), var(--photo);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
     }}
     .explorer-spotlight__featured span {{ color: var(--accent); font-weight: 900; font-size: 13px; text-transform: uppercase; }}
     .explorer-spotlight__featured h3 {{ color: white; font-size: 26px; margin: 8px 0 6px; }}
@@ -3224,11 +3238,19 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .collective-lineup__row article::before {{
       content: "";
       display: block;
-      height: 150px;
+      /* Was a fixed height: 150px — against a card that's ~1/3 of the page
+         width, that's an extremely wide, short crop window, so cover+center
+         nearly always lands on a random unflattering slice of whatever
+         photo is behind it, not just the specific ones in a test render.
+         aspect-ratio scales with the card instead of staying a fixed pixel
+         value, so the crop window's *shape* stays reasonable (close to the
+         photo's own proportions) at any card width, on any photo. */
+      aspect-ratio: 4 / 3;
+      min-height: 180px;
       background-color: var(--soft);
       background-image: var(--photo);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
     }}
     .collective-lineup__row h3 {{ font-size: 18px; margin: 16px 18px 6px; }}
     .collective-lineup__row p {{ font-size: 14px; margin: 0 18px 18px; }}
@@ -3277,7 +3299,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.72)), var(--photo);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
       box-shadow: 0 18px 44px rgba(0,0,0,.16);
     }}
     .camp-calendar__row span {{ font-weight: 900; font-size: 13px; color: var(--accent); text-transform: uppercase; }}
@@ -3431,7 +3453,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: var(--soft);
       background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.62)), var(--photo);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
       display: flex;
       align-items: flex-end;
       padding: 18px;
@@ -3630,7 +3652,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: rgba(255,255,255,.09);
       background-image: var(--photo);
       background-size: cover;
-      background-position: center;
+      background-position: center top;
     }}
 
     /* Enrollment: CTA banner — one headline, one button, no visible form */
@@ -3861,7 +3883,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       .topbar-rail {{ grid-template-columns: 1fr; }}
     }}
     @media (max-width: 580px) {{
-      .hero-bleed {{ min-height: 72vh; }}
+      .hero-bleed {{ min-height: 50vh; /* was 72vh, scaled down to match the 60vh desktop base */ }}
       .primary {{ width: 100%; }}
       .enrollment-cta__actions button, .enrollment-steps__cta button {{ width: 100%; }}
       h1 {{ font-size: 40px; }}

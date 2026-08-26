@@ -509,6 +509,40 @@ def test_rendered_mock_cites_google_review_not_current_site():
     assert "their current site" not in rendered
 
 
+def test_all_photo_backgrounds_crop_from_the_top_not_center():
+    # Every photo on these pages is almost always a person (student, teacher,
+    # performer) — the subject sits in the top portion of the frame far more
+    # often than dead-center, so "center center" cropping systematically cuts
+    # off faces. Locks in "center top" everywhere a --photo/--hero-photo
+    # background is used, across every rendered variant.
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        for variant in variants:
+            rendered = generate_website_mocks._render_mock_html(_lead(category=mock_type), variant)
+            photo_style_count = rendered.count("var(--photo)") + rendered.count("var(--hero-photo)")
+            if photo_style_count == 0:
+                continue
+            assert "background-position: center;" not in rendered, (
+                f"{mock_type}/{variant.version_id} has a dead-center photo crop"
+            )
+
+
+def test_collective_lineup_cards_use_aspect_ratio_not_fixed_height():
+    # A fixed small pixel height (was 150px) against a card that's ~1/3 of
+    # the page width produces an extremely wide, short crop window — nearly
+    # guaranteed to cut off whatever the photo's subject is. aspect-ratio
+    # scales with the card instead.
+    rendered = generate_website_mocks._render_mock_html(_lead(category="music"), _variant("music", "collective"))
+    assert "aspect-ratio: 4 / 3" in rendered
+    assert "height: 150px;" not in rendered  # the real declaration, not explanatory comment prose
+
+
+def test_admissions_path_figure_uses_aspect_ratio_not_fixed_height():
+    rendered = generate_website_mocks._render_mock_html(_lead(category="preschool"), _variant("preschool", "structured"))
+    assert "admissions-path__steps figure" in rendered
+    assert "aspect-ratio: 4 / 3" in rendered
+    assert "min-height: 120px" not in rendered
+
+
 def test_rendered_mock_cites_yelp_review():
     lead = _lead()
     lead["_website_mock_site_quote"] = "Great studio, my kids loved it here."
