@@ -79,6 +79,66 @@ def test_merge_content_signals_falls_through_to_next_source_when_first_has_no_qu
     assert merged["quote"] == "Second source's quote."
 
 
+def test_merge_content_signals_carries_quote_source_and_author_with_the_winning_quote():
+    merged = generate_website_mocks.merge_content_signals([
+        {"labels": [], "quote": "A Google review quote.", "quote_source": "google_review", "quote_author": "Ben Kim"},
+        {"labels": [], "quote": "A site-copy quote that should be ignored.", "quote_source": "website"},
+    ])
+
+    assert merged["quote"] == "A Google review quote."
+    assert merged["quote_source"] == "google_review"
+    assert merged["quote_author"] == "Ben Kim"
+
+
+def test_content_signal_from_website_tags_quote_source_as_website():
+    from src import fetcher as fetcher_module
+
+    class _FakePage:
+        error = None
+        text = "Every student gets private lessons and joins a spring recital each year."
+        outbound_links = []
+
+    original_fetch = fetcher_module.fetch
+    fetcher_module.fetch = lambda url: _FakePage()
+    try:
+        signal = generate_website_mocks.content_signal_from_website(
+            "http://www.example.com", mock_type="music", category="music", school_name="Test School",
+        )
+    finally:
+        fetcher_module.fetch = original_fetch
+
+    assert signal["quote"]
+    assert signal["quote_source"] == "website"
+
+
+def test_content_signal_from_reviews_tags_quote_source_and_matches_author():
+    review_dicts = [
+        {
+            "author": "Ben Kim",
+            "rating": 5,
+            "text": "My daughter loves her private lessons here and the recitals are wonderful events.",
+        },
+    ]
+    signal = generate_website_mocks.content_signal_from_reviews(
+        review_dicts, mock_type="music", category="music", school_name="Test School",
+    )
+
+    assert signal["quote"]
+    assert signal["quote_source"] == "google_review"
+    assert signal["quote_author"] == "Ben Kim"
+
+
+def test_content_signal_from_reviews_tags_pasted_yelp_text_without_an_author():
+    signal = generate_website_mocks.content_signal_from_reviews(
+        "My daughter loves her private lessons here and the recitals are wonderful events.",
+        mock_type="music", category="music", school_name="Test School",
+    )
+
+    assert signal["quote"]
+    assert signal["quote_source"] == "yelp_review"
+    assert signal.get("quote_author", "") == ""
+
+
 def test_derive_palette_from_colors_uses_given_accent_and_secondary():
     palette = generate_website_mocks._derive_palette_from_colors("#ff3b30", "#101010", radius="10px")
 
@@ -427,11 +487,48 @@ def test_rendered_mock_quotes_real_site_copy_in_hero():
     lead["_website_mock_site_quote"] = (
         "Every student gets a custom practice plan built around their own goals."
     )
+    lead["_website_mock_site_quote_source"] = "website"
     rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
 
     assert '<blockquote class="site-quote">' in rendered
     assert "Every student gets a custom practice plan built around their own goals." in rendered
     assert "From theguitarschool.com, their current site" in rendered
+
+
+def test_rendered_mock_cites_google_review_not_current_site():
+    # A business with no website of its own must never be told the quote
+    # came from "their current site" — this was a real bug: content_signal_
+    # from_reviews' quotes always got that caption regardless of source.
+    lead = _lead()
+    lead["_website_mock_site_quote"] = "The owner Maria was so welcoming and patient with my daughter."
+    lead["_website_mock_site_quote_source"] = "google_review"
+    lead["_website_mock_site_quote_author"] = "Ben Kim"
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
+
+    assert "Ben Kim, Google review" in rendered
+    assert "their current site" not in rendered
+
+
+def test_rendered_mock_cites_yelp_review():
+    lead = _lead()
+    lead["_website_mock_site_quote"] = "Great studio, my kids loved it here."
+    lead["_website_mock_site_quote_source"] = "yelp_review"
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
+
+    assert "From a Yelp review" in rendered
+    assert "their current site" not in rendered
+
+
+def test_rendered_mock_falls_back_to_generic_citation_without_a_source():
+    # Direct callers that set a quote without tagging where it came from
+    # (e.g. a stale test or script) must not silently mislabel it as
+    # "their current site" — that's the exact bug this whole thing fixes.
+    lead = _lead()
+    lead["_website_mock_site_quote"] = "Loved the trial class."
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
+
+    assert "From a real customer review" in rendered
+    assert "their current site" not in rendered
 
 
 def test_personalize_items_uses_real_labels_but_keeps_generic_body():

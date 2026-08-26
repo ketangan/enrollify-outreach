@@ -1001,13 +1001,16 @@ def content_signal_from_website(
         return {"labels": [], "quote": ""}
 
     link_text = " ".join(_clean(link.get("text")) for link in page.outbound_links)
-    return content_signal_from_text(
+    signal = content_signal_from_text(
         page.text,
         mock_type=mock_type,
         category=category,
         school_name=school_name,
         link_text=link_text,
     )
+    if signal.get("quote"):
+        signal["quote_source"] = "website"
+    return signal
 
 
 def content_signal_from_reviews(
@@ -1023,17 +1026,35 @@ def content_signal_from_reviews(
     Reviews are a *better* source for the quote than a business's own site
     copy — it's a real customer's words, not marketing copy — so callers
     combining this with a website signal should prefer this quote first
-    (see merge_content_signals)."""
+    (see merge_content_signals).
+
+    Tags the quote with where it actually came from (quote_source, and
+    quote_author when a Google review dict can be matched) — the business
+    has no site of its own here, so a quote pulled from a review must never
+    be captioned "their current site" (see _hero_quote_or_anchors)."""
     if isinstance(reviews, str):
         combined_text = reviews
+        quote_source = "yelp_review"
+        review_dicts = []
     else:
         combined_text = " ".join(_clean(r.get("text")) for r in reviews if isinstance(r, dict))
-    return content_signal_from_text(
+        quote_source = "google_review"
+        review_dicts = [r for r in reviews if isinstance(r, dict)]
+
+    signal = content_signal_from_text(
         combined_text,
         mock_type=mock_type,
         category=category,
         school_name=school_name,
     )
+    quote = signal.get("quote", "")
+    if quote:
+        signal["quote_source"] = quote_source
+        for review in review_dicts:
+            if quote in _clean(review.get("text")):
+                signal["quote_author"] = _clean(review.get("author"))
+                break
+    return signal
 
 
 def merge_content_signals(signals: list[dict]) -> dict:
@@ -1046,6 +1067,8 @@ def merge_content_signals(signals: list[dict]) -> dict:
     labels: list[str] = []
     seen_label_keys: set[str] = set()
     quote = ""
+    quote_source = ""
+    quote_author = ""
     for signal in signals:
         if not signal:
             continue
@@ -1057,7 +1080,9 @@ def merge_content_signals(signals: list[dict]) -> dict:
             labels.append(label)
         if not quote and signal.get("quote"):
             quote = signal["quote"]
-    return {"labels": labels, "quote": quote}
+            quote_source = signal.get("quote_source", "")
+            quote_author = signal.get("quote_author", "")
+    return {"labels": labels, "quote": quote, "quote_source": quote_source, "quote_author": quote_author}
 
 
 def _site_signal_for_lead(lead: dict, variant: website_mocks.MockVariant) -> dict:
@@ -1944,6 +1969,23 @@ def _render_enrollment_steps(ctx: dict, items: list[tuple[str, str]]) -> str:
 """
 
 
+def _quote_citation(ctx: dict) -> str:
+    # The quote can come from three different places (the business's own
+    # site, a Google review, a pasted Yelp review) — each needs its own
+    # honest caption. Getting this wrong is worse than showing no citation:
+    # a business with no website of its own must never see "their current
+    # site" on the page we're pitching them, since they don't have one.
+    source = ctx.get("site_quote_source", "")
+    if source == "google_review":
+        author = ctx.get("site_quote_author", "")
+        return f"— {html.escape(author)}, Google review" if author else "— From a Google review"
+    if source == "yelp_review":
+        return "— From a Yelp review"
+    if source == "website" and ctx.get("site_domain"):
+        return f"From {html.escape(ctx['site_domain'])}, their current site"
+    return "— From a real customer review"
+
+
 def _hero_quote_or_anchors(ctx: dict) -> tuple[str, str]:
     # Quote and anchor chips both signal "I actually read your site" — showing
     # both stacks two devices doing the same job. Prefer the quote (more
@@ -1951,7 +1993,7 @@ def _hero_quote_or_anchors(ctx: dict) -> tuple[str, str]:
     if ctx.get("site_quote"):
         quote_html = (
             f'<blockquote class="site-quote">“{html.escape(ctx["site_quote"])}”'
-            f'<cite>From {html.escape(ctx["site_domain"])}, their current site</cite></blockquote>'
+            f'<cite>{_quote_citation(ctx)}</cite></blockquote>'
         )
         return quote_html, ""
     return "", ctx["site_anchors_html"]
@@ -2522,6 +2564,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     contact = _render_contact_link(phone, website)
     site_anchor_labels = _precomputed_site_anchors(lead)
     site_quote = _clean(lead.get("_website_mock_site_quote"))
+    site_quote_source = _clean(lead.get("_website_mock_site_quote_source"))
+    site_quote_author = _clean(lead.get("_website_mock_site_quote_author"))
     site_anchors_html = _render_site_anchors(site_anchor_labels)
     items = _program_blurbs(
         variant.type_id,
@@ -2541,6 +2585,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
         "site_anchors_html": site_anchors_html,
         "site_anchor_labels": site_anchor_labels,
         "site_quote": site_quote,
+        "site_quote_source": site_quote_source,
+        "site_quote_author": site_quote_author,
         "site_domain": _site_domain(website),
         "photos": photos,
         "type_id": variant.type_id,
@@ -3906,6 +3952,8 @@ def render_mock_concepts(
     render_subject = dict(subject)
     render_subject["_website_mock_site_anchors"] = content_signal.get("labels", [])
     render_subject["_website_mock_site_quote"] = content_signal.get("quote", "")
+    render_subject["_website_mock_site_quote_source"] = content_signal.get("quote_source", "")
+    render_subject["_website_mock_site_quote_author"] = content_signal.get("quote_author", "")
 
     rendered = []
     for item in payload:
@@ -3932,7 +3980,13 @@ def _render_candidate(lead: dict, output_dir: Path, base_url: str) -> list[dict]
     override_quote = lead.get("_website_mock_site_quote")
     content_signal = None
     if override_labels is not None or override_quote is not None:
-        content_signal = {"labels": _precomputed_site_anchors(lead), "quote": _clean(override_quote)}
+        # This adapter is only used by the daily-outreach pipeline, which
+        # only ever runs against leads that DO have a known website — so a
+        # quote here always really is "from their current site."
+        content_signal = {
+            "labels": _precomputed_site_anchors(lead), "quote": _clean(override_quote),
+            "quote_source": "website" if _clean(override_quote) else "",
+        }
 
     rendered = render_mock_concepts(
         lead,
