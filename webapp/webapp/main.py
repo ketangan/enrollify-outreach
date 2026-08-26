@@ -30,6 +30,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from webapp.webapp import (
     routes_actions,
+    routes_click_log,
     routes_coverage,
     routes_in_progress,
     routes_leads,
@@ -71,6 +72,7 @@ app.include_router(routes_coverage.router)
 app.include_router(routes_leads.router)
 app.include_router(routes_review.router)
 app.include_router(routes_in_progress.router)
+app.include_router(routes_click_log.router)
 app.include_router(routes_site_generator.router)
 app.include_router(routes_actions.router)
 

@@ -194,6 +194,8 @@ NON_PERSON_NAME_WORDS = {
     "academy",
     "apply",
     "assistant",
+    "camp",
+    "care",
     "child",
     "children",
     "class",
@@ -201,8 +203,12 @@ NON_PERSON_NAME_WORDS = {
     "contact",
     "call",
     "center",
+    "centre",
     "childcare",
+    "club",
+    "corner",
     "director",
+    "day",
     "daycare",
     "early",
     "education",
@@ -210,9 +216,14 @@ NON_PERSON_NAME_WORDS = {
     "enroll",
     "family",
     "finishing",
+    "fight",
     "head",
     "just",
+    "kids",
     "learn",
+    "learning",
+    "little",
+    "minds",
     "my",
     "our",
     "preschool",
@@ -284,6 +295,8 @@ def _clean_owner_name(raw_name: str, *, allow_single: bool = False) -> str:
     name = re.sub(r"\s+", " ", (raw_name or "").strip(" ,.;:!?\n\t"))
     if not name:
         return ""
+    if re.search(r"\b(?:day\s+care|child\s+care)\b", name, re.IGNORECASE):
+        return ""
     words = name.split()
     min_words = 1 if allow_single else 2
     if len(words) < min_words or len(words) > 4:
@@ -297,6 +310,9 @@ def _clean_owner_name(raw_name: str, *, allow_single: bool = False) -> str:
             return ""
     lowered = {re.sub(r"[^a-z]", "", w.lower()) for w in words}
     if lowered & NON_PERSON_NAME_WORDS:
+        return ""
+    letters = re.sub(r"[^A-Za-z]", "", name)
+    if letters.isupper() and len(letters) <= 5:
         return ""
     return name
 
@@ -1044,7 +1060,7 @@ def find_owner(website: str, client: Anthropic, *, name: str = "", category: str
 
     owner_candidate = _extract_owner_candidate(pages)
     raw_owner_name = (parsed.get("owner_name") or "").strip()
-    owner_name = _clean_owner_name(raw_owner_name)
+    owner_name = _clean_owner_name(raw_owner_name, allow_single=True)
     owner_title = (parsed.get("owner_title") or "").strip()
     reason = (parsed.get("reason") or "").strip()
     if raw_owner_name and not owner_name:

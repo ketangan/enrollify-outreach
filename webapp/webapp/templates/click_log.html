@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Click Log</h2>
+<p class="muted">
+  Latest tracked link and mock-page activity from {{ source_tab }}.
+  Refreshed {{ loaded_at_pacific }}.
+</p>
+
+{% if source_note %}
+  <p class="click-log-warning">{{ source_note }}</p>
+{% endif %}
+
+<form method="GET" action="/click-log" class="filters click-log-filters">
+  <label>
+    Search:
+    <input type="search" name="q" value="{{ q }}" placeholder="School, website, path, campaign..." style="width: 280px;">
+  </label>
+  <label>
+    Rows:
+    <select name="limit">
+      {% for opt in limit_options %}
+        <option value="{{ opt }}" {% if opt == limit %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Apply</button>
+  <a href="{{ refresh_url }}" class="button-link">Refresh</a>
+  <a href="/click-log" class="muted-link">Clear</a>
+</form>
+
+<p class="muted">
+  Showing {{ rows|length }} of {{ total }} matching row{% if total != 1 %}s{% endif %}
+  {% if raw_total != total %}({{ raw_total }} total in {{ source_tab }}){% endif %}.
+</p>
+
+<table class="data-table click-log-table">
+  <thead>
+    <tr>
+      <th>Pacific Timestamp</th>
+      <th>School</th>
+      <th>Website</th>
+      <th>Path</th>
+      <th>Gesture</th>
+      <th>Campaign</th>
+      <th>Kind</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td title="{{ r.get('_timestamp_raw', '') }}">{{ r.get("_timestamp_pacific", "") }}</td>
+      <td>
+        <div class="school-name">{{ r.get("school_name", "") or "(unknown)" }}</div>
+        {% if r.get("lead_id") %}
+          <div class="school-meta">{{ r.get("lead_id", "") }}</div>
+        {% endif %}
+      </td>
+      <td>
+        {% if r.get("website") %}
+          <a href="{{ r.get('website') }}" target="_blank" rel="noopener">{{ r.get("website") }}</a>
+        {% endif %}
+      </td>
+      <td><code>{{ r.get("path", "") }}</code></td>
+      <td><span class="click-gesture">{{ r.get("gesture_type", "") }}</span></td>
+      <td>
+        <div>{{ r.get("utm_campaign", "") }}</div>
+        <div class="school-meta">
+          {{ r.get("utm_source", "") }}{% if r.get("utm_source") and r.get("utm_medium") %} / {% endif %}{{ r.get("utm_medium", "") }}
+        </div>
+      </td>
+      <td>{{ r.get("tracking_kind", "") }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No click-log rows found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

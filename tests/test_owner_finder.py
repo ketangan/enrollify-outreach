@@ -706,6 +706,20 @@ def test_clean_owner_name_rejects_sentence_fragments():
     assert owner_finder._clean_owner_name("Jung K.") == "Jung K"
 
 
+def test_clean_owner_name_rejects_org_names_but_allows_single_first_name():
+    assert owner_finder._clean_owner_name("SUNSHINE DAY CARE", allow_single=True) == ""
+    assert owner_finder._clean_owner_name("Lakewood Little Minds", allow_single=True) == ""
+    assert owner_finder._clean_owner_name("BDT", allow_single=True) == ""
+    assert owner_finder._clean_owner_name("Shohreh", allow_single=True) == "Shohreh"
+
+
+def test_stage2_owner_name_cleaner_rejects_org_names():
+    clean = owner_finder.owner_web_search._clean_stage2_owner_name
+    assert clean("SUNSHINE DAY CARE") == ""
+    assert clean("BDT") == ""
+    assert clean("Shohreh") == "Shohreh"
+
+
 def test_stage2_owner_keeps_stage1_email_and_receives_profile_links(monkeypatch):
     contact_text = (
         "Olive Tree Learning Academy Contact Visit Us "

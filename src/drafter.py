@@ -103,10 +103,30 @@ NAME_SUFFIXES = {
     "jr", "sr", "ii", "iii", "iv", "v", "phd", "esq", "md", "dds",
 }
 
+ORG_GREETING_WORDS = {
+    "academy", "camp", "care", "center", "centre", "child", "children",
+    "childcare", "club", "corner", "day", "daycare", "early", "education",
+    "fight", "kids", "learning", "little", "minds", "preschool", "school",
+    "studio", "team",
+}
+
 
 def _normalize_token(tok: str) -> str:
     """Lowercase, strip punctuation, for matching honorific/suffix sets."""
     return tok.lower().rstrip(".,;:")
+
+
+def _name_tokens(text: str) -> list[str]:
+    return [
+        token
+        for token in re.findall(r"[A-Za-z]+", str(text or "").lower())
+        if token
+    ]
+
+
+def _is_short_acronym_name(name: str) -> bool:
+    compact = re.sub(r"[^A-Za-z]", "", name or "")
+    return bool(compact) and compact.isupper() and len(compact) <= 5
 
 
 def has_non_latin_letters(text: str) -> bool:
@@ -145,6 +165,16 @@ def is_junk_owner_name(owner_name: str) -> bool:
     if re.match(r"^(unnamed|anonymous|unknown|n/?a|no\s+name|not\s+available)\b", low):
         return True
 
+    if _is_short_acronym_name(name):
+        return True
+
+    tokens = set(_name_tokens(name))
+    if len(tokens) >= 2 and tokens & ORG_GREETING_WORDS:
+        return True
+
+    if re.search(r"\b(?:day\s+care|child\s+care)\b", low):
+        return True
+
     # Pure role title with no proper noun: "the owner", "the director", "owner",
     # "founder", "director", "principal", "head of school"
     role_only_patterns = [
@@ -167,6 +197,40 @@ def is_junk_owner_name(owner_name: str) -> bool:
         return True
 
     return False
+
+
+def greeting_quality_problem(owner_name: str, school_name: str = "") -> str:
+    """
+    Final pre-draft safety check for the value that would appear after "Hi".
+
+    Empty owner_name is allowed because the template falls back to "Hi there".
+    Non-empty junk should be routed back to owner review instead of becoming an
+    embarrassing Gmail draft.
+    """
+    owner_name = str(owner_name or "").strip()
+    if not owner_name:
+        return ""
+    if has_non_latin_letters(owner_name):
+        return f"non_latin_owner_name:{owner_name}"
+    if is_junk_owner_name(owner_name):
+        return f"junk_owner_name:{owner_name}"
+
+    greeting = _greeting_name(owner_name)
+    if not greeting:
+        return f"unusable_greeting:{owner_name}"
+
+    owner_tokens = set(_name_tokens(owner_name))
+    school_tokens = set(_name_tokens(school_name)) - ORG_GREETING_WORDS
+    if owner_tokens and school_tokens:
+        overlap = owner_tokens & school_tokens
+        if len(overlap) >= 2 and len(overlap) / len(owner_tokens) >= 0.6:
+            return f"owner_name_matches_school_name:{owner_name}"
+
+    greeting_token = _name_tokens(greeting)
+    if greeting_token and greeting_token[0] in ORG_GREETING_WORDS:
+        return f"generic_greeting:{greeting}"
+
+    return ""
 
 
 def _greeting_name(full_name: str) -> str:

@@ -165,6 +165,23 @@ def _duplicate_reroute_for_lead(
     }
 
 
+def _owner_greeting_reroute_for_lead(lead: dict) -> dict | None:
+    owner_name = str(lead.get("owner_name", "") or "").strip()
+    greeting_problem = drafter.greeting_quality_problem(
+        owner_name,
+        lead.get("name", ""),
+    )
+    if not greeting_problem:
+        return None
+    return {
+        "school": _display_school_name(lead),
+        "enrollment_method": greeting_problem,
+        "_row_idx": lead["_row_idx"],
+        "reroute_status": "needs_owner_review",
+        "wipe_owner": True,
+    }
+
+
 def _compute_pipeline_status(all_rows: list[list[str]], col: dict) -> dict:
     """Count leads by status. Used for the pipeline-health section of the summary email."""
     counts: dict[str, int] = {}
@@ -380,28 +397,10 @@ def main():
             continue
 
         em = (lead.get("enrollment_method") or "").strip()
-        owner_name = (lead.get("owner_name") or "").strip()
 
-        # Non-Latin owner names need manual Romanization before English outreach.
-        if drafter.has_non_latin_letters(owner_name):
-            rerouted.append({
-                "school": _display_school_name(lead),
-                "enrollment_method": f"non_latin_owner_name:{owner_name}",
-                "_row_idx": lead["_row_idx"],
-                "reroute_status": "needs_owner_review",
-                "wipe_owner": True,
-            })
-            continue
-
-        # Junk owner name check (LLM hallucinations like "Unnamed female founder")
-        if drafter.is_junk_owner_name(owner_name):
-            rerouted.append({
-                "school": _display_school_name(lead),
-                "enrollment_method": f"junk_owner_name:{owner_name}",
-                "_row_idx": lead["_row_idx"],
-                "reroute_status": "needs_owner_review",
-                "wipe_owner": True,
-            })
+        owner_reroute = _owner_greeting_reroute_for_lead(lead)
+        if owner_reroute:
+            rerouted.append(owner_reroute)
             continue
 
         # Invalid enrollment_method check

@@ -58,6 +58,13 @@ OWNER_WEB_SEARCH_TOOL = {
     "max_uses": 2,
 }
 
+ORG_NAME_WORDS = {
+    "academy", "camp", "care", "center", "centre", "child", "children",
+    "childcare", "club", "corner", "day", "daycare", "early", "education",
+    "fight", "kids", "learning", "little", "minds", "preschool", "school",
+    "studio", "team",
+}
+
 
 @dataclass
 class Stage2Result:
@@ -185,6 +192,32 @@ def _extract_json(text: str) -> dict | None:
         return json.loads(match.group(0))
     except json.JSONDecodeError:
         return None
+
+
+def _clean_stage2_owner_name(raw_name: str) -> str:
+    name = re.sub(r"\s+", " ", (raw_name or "").strip(" ,.;:!?\n\t"))
+    if not name:
+        return ""
+    if re.search(r"\b(?:day\s+care|child\s+care)\b", name, re.IGNORECASE):
+        return ""
+    words = name.split()
+    if len(words) > 4:
+        return ""
+
+    letters = re.sub(r"[^A-Za-z]", "", name)
+    if letters.isupper() and len(letters) <= 5:
+        return ""
+
+    lowered = {re.sub(r"[^a-z]", "", word.lower()) for word in words}
+    if len(lowered) >= 2 and lowered & ORG_NAME_WORDS:
+        return ""
+
+    for word in words:
+        cleaned = word.strip(".,'’")
+        if not cleaned or not cleaned[0].isupper():
+            return ""
+
+    return name
 
 
 def _domain_from_url(url: str) -> str:
@@ -397,11 +430,16 @@ def find_owner_via_web(
         result.stage = "2A_not_found"
         return result
 
-    owner_name = (parsed.get("owner_name") or "").strip()
+    raw_owner_name = (parsed.get("owner_name") or "").strip()
+    owner_name = _clean_stage2_owner_name(raw_owner_name)
     if not owner_name:
-        result.reason = "web_search:found_flag_but_empty_name"
+        if raw_owner_name:
+            result.reason = f"web_search:rejected_owner_name:{raw_owner_name[:80]}"
+            result.stage = "2A_rejected_name"
+        else:
+            result.reason = "web_search:found_flag_but_empty_name"
+            result.stage = "2A_empty_name"
         result.email_confidence = "low"
-        result.stage = "2A_empty_name"
         return result
 
     result.owner_name = owner_name

@@ -147,6 +147,37 @@ def test_phase5_internal_summary_display_name_strips_descriptor():
     assert run_phase_5._display_school_name(lead) == "Living Tango"
 
 
+def test_phase5_reroutes_bad_owner_greetings_before_drafting():
+    bad_rows = [
+        {
+            "_row_idx": 11,
+            "name": "Beehive Fight Club",
+            "owner_name": "BDT",
+        },
+        {
+            "_row_idx": 12,
+            "name": "Sunshine Day Care",
+            "owner_name": "SUNSHINE DAY CARE",
+        },
+        {
+            "_row_idx": 13,
+            "name": "Lakewood Little Minds Preschool",
+            "owner_name": "Lakewood Little Minds",
+        },
+    ]
+
+    for lead in bad_rows:
+        reroute = run_phase_5._owner_greeting_reroute_for_lead(lead)
+        assert reroute["reroute_status"] == "needs_owner_review"
+        assert reroute["wipe_owner"] is True
+
+    assert run_phase_5._owner_greeting_reroute_for_lead({
+        "_row_idx": 14,
+        "name": "Lakewood Child Development Center",
+        "owner_name": "",
+    }) is None
+
+
 def test_phase6_internal_summary_display_name_strips_descriptor():
     lead = {
         "name": "Living Tango - Argentine Tango lessons, Coaching & Wedding Dance prep",

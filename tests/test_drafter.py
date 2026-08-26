@@ -16,6 +16,25 @@ def test_greeting_name_does_not_use_non_latin_owner_name():
     assert drafter._greeting_name("Kanae Sahara") == "Kanae"
 
 
+def test_greeting_name_rejects_acronyms_and_school_names():
+    assert drafter.is_junk_owner_name("BDT")
+    assert drafter.is_junk_owner_name("SUNSHINE DAY CARE")
+    assert drafter._greeting_name("BDT") == ""
+    assert drafter._greeting_name("SUNSHINE DAY CARE") == ""
+
+
+def test_greeting_quality_blocks_school_name_fragments():
+    assert (
+        drafter.greeting_quality_problem(
+            "Lakewood Little Minds",
+            "Lakewood Little Minds Preschool",
+        )
+        == "junk_owner_name:Lakewood Little Minds"
+    )
+    assert drafter.greeting_quality_problem("", "Lakewood Child Development Center") == ""
+    assert drafter.greeting_quality_problem("Dinesha Jeewanthi", "Dinesha's Kids Corner Daycare") == ""
+
+
 def test_render_email_supports_brand_placeholders(monkeypatch):
     monkeypatch.setattr(
         drafter,
