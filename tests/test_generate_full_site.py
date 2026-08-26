@@ -1,9 +1,17 @@
+import io
 import sys
 
 import pytest
+from PIL import Image
 
 from scripts import generate_full_site
 from src import places
+
+
+def _real_jpeg_bytes(width: int, height: int) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), color="blue").save(buf, format="JPEG")
+    return buf.getvalue()
 
 
 @pytest.fixture(autouse=True)
@@ -77,6 +85,96 @@ def test_generate_full_site_uses_google_reviews_and_photos(monkeypatch, tmp_path
     photos_dir = tmp_path / "mocks"
     saved_photos = list(photos_dir.glob("*/photos/*.jpg"))
     assert len(saved_photos) == 3  # one write per stubbed photo name
+
+
+def test_generate_full_site_uploaded_photos_take_priority_over_google(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(
+        generate_full_site.places, "fetch_photo_bytes",
+        lambda photo_name, max_width_px=1200: (_real_jpeg_bytes(3000, 3000), "image/jpeg"),
+    )
+
+    captured = {}
+    original_render = generate_full_site.mocks.render_mock_concepts
+
+    def _capture_render(subject, **kwargs):
+        captured["subject"] = dict(subject)
+        return original_render(subject, **kwargs)
+
+    monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _capture_render)
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        uploaded_photos=[
+            {"url": "upload-0", "width": 3000, "height": 3000},
+            {"url": "upload-1", "width": 3000, "height": 3000},
+            {"url": "upload-2", "width": 3000, "height": 3000},
+        ],
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    # 3 uploads is enough on its own — Google's photos (fetch_photo_bytes
+    # was stubbed above) shouldn't appear in the final selection at all.
+    assert captured["subject"]["_website_mock_photos"] == ["upload-0", "upload-1", "upload-2"]
+
+
+def test_generate_full_site_fills_gaps_from_google_when_uploads_are_short(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(
+        generate_full_site.places, "fetch_photo_bytes",
+        lambda photo_name, max_width_px=1200: (_real_jpeg_bytes(3000, 3000), "image/jpeg"),
+    )
+
+    captured = {}
+    original_render = generate_full_site.mocks.render_mock_concepts
+
+    def _capture_render(subject, **kwargs):
+        captured["subject"] = dict(subject)
+        return original_render(subject, **kwargs)
+
+    monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _capture_render)
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        uploaded_photos=[{"url": "upload-0", "width": 3000, "height": 3000}],
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    photos = captured["subject"]["_website_mock_photos"]
+    assert "upload-0" in photos
+    assert len(photos) == 3  # 1 upload + 2 Google photos fill the rest
+
+
+def test_generate_full_site_low_quality_upload_is_used_but_not_placed_first(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(
+        generate_full_site.places, "fetch_photo_bytes",
+        lambda photo_name, max_width_px=1200: (_real_jpeg_bytes(3000, 3000), "image/jpeg"),
+    )
+
+    captured = {}
+    original_render = generate_full_site.mocks.render_mock_concepts
+
+    def _capture_render(subject, **kwargs):
+        captured["subject"] = dict(subject)
+        return original_render(subject, **kwargs)
+
+    monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _capture_render)
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        # A small, low-res upload — should still make it in (priority), but
+        # not land in the first (hero) slot ahead of the sharp Google photos.
+        uploaded_photos=[{"url": "small-upload", "width": 200, "height": 200}],
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    photos = captured["subject"]["_website_mock_photos"]
+    assert "small-upload" in photos
+    assert photos[0] != "small-upload"
 
 
 def test_generate_full_site_never_overwrites_caller_supplied_phone(monkeypatch, tmp_path):
@@ -497,6 +595,48 @@ def test_main_records_regeneration_when_org_id_and_theme_given(monkeypatch, tmp_
     assert calls[0][0] == "regen"
     assert calls[0][1]["org_id"] == "riverside-music-abc123"
     assert calls[0][1]["theme"] == "music-studio"
+
+
+def test_main_parses_uploaded_photos_json_and_passes_it_through(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    captured = {}
+    original = generate_full_site.generate_full_site
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(generate_full_site, "generate_full_site", _capture)
+    monkeypatch.setattr(sys, "argv", [
+        "generate_full_site.py", "--name", "Test", "--category", "music", "--no-google-reviews",
+        "--uploaded-photos", '[{"url": "upload-0", "width": 2000, "height": 2000}]',
+        "--output-dir", str(tmp_path), "--base-url", "https://example.com",
+    ])
+
+    generate_full_site.main()
+
+    assert captured["uploaded_photos"] == [{"url": "upload-0", "width": 2000, "height": 2000}]
+
+
+def test_main_ignores_malformed_uploaded_photos_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    captured = {}
+    original = generate_full_site.generate_full_site
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(generate_full_site, "generate_full_site", _capture)
+    monkeypatch.setattr(sys, "argv", [
+        "generate_full_site.py", "--name", "Test", "--category", "music", "--no-google-reviews",
+        "--uploaded-photos", "not valid json",
+        "--output-dir", str(tmp_path), "--base-url", "https://example.com",
+    ])
+
+    generate_full_site.main()  # must not raise
+
+    assert captured["uploaded_photos"] == []
 
 
 def test_generate_full_site_raises_when_existing_website_found(monkeypatch, tmp_path):

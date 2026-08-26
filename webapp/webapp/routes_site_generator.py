@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from anthropic import Anthropic
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -29,7 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts import generate_website_mocks as mocks
-from src import config, no_website_schools, site_generator_state, website_existence_check
+from src import config, no_website_schools, photo_quality, r2_storage, site_generator_state, website_existence_check
 from webapp.webapp import jobs_runner
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,47 @@ def _remember_key_cookie(request: Request, response: Response) -> Response:
 
 def new_subject_id(name: str) -> str:
     return f"{mocks._slug(name)}-{uuid.uuid4().hex[:6]}"
+
+
+MAX_UPLOADED_PHOTOS = 6
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB — a boundary guard against an accidental huge attachment
+
+
+def _persist_uploaded_photos(files: list[UploadFile], subject_id: str) -> list[dict]:
+    """Reads each uploaded file's bytes, records its real dimensions (so
+    photo_quality can rank it against Google's photos later), and persists
+    it the same way _persist_photos does in generate_full_site.py — R2 when
+    configured, else local disk next to where the generated pages land.
+    Skips anything unreadable as an image or over the size cap rather than
+    failing the whole submission over one bad file."""
+    use_r2 = r2_storage.is_configured()
+    photos_dir = OUTPUT_DIR / "mocks" / subject_id / "photos"
+    if not use_r2:
+        photos_dir.mkdir(parents=True, exist_ok=True)
+
+    persisted = []
+    for idx, upload in enumerate(files[:MAX_UPLOADED_PHOTOS]):
+        if not upload.filename:
+            continue
+        photo_bytes = upload.file.read()
+        if not photo_bytes or len(photo_bytes) > MAX_UPLOAD_BYTES:
+            logger.warning("Skipping uploaded photo %r: empty or over %d bytes", upload.filename, MAX_UPLOAD_BYTES)
+            continue
+        dimensions = photo_quality.read_dimensions(photo_bytes)
+        if not dimensions:
+            logger.warning("Skipping uploaded photo %r: not a readable image", upload.filename)
+            continue
+        content_type = upload.content_type or "image/jpeg"
+        ext = "png" if "png" in content_type else "jpg"
+        if use_r2:
+            key = f"sites/{subject_id}/photos/upload-{idx}.{ext}"
+            r2_storage.upload_bytes(key, photo_bytes, content_type)
+            url = r2_storage.public_url(key)
+        else:
+            (photos_dir / f"upload-{idx}.{ext}").write_bytes(photo_bytes)
+            url = f"../photos/upload-{idx}.{ext}"
+        persisted.append({"url": url, "width": dimensions[0], "height": dimensions[1]})
+    return persisted
 
 
 @router.get("/site-generator", response_class=HTMLResponse, dependencies=[Depends(require_access)])
@@ -132,8 +173,10 @@ def site_generator_generate(
     # threaded through so a successful generation can mark that row used,
     # and a blocked one can offer the "archive — has a website" action.
     no_website_schools_id: str = Form(""),
+    uploaded_photos: list[UploadFile] = File(default=[]),
 ):
     subject_id = new_subject_id(name)
+    persisted_uploads = _persist_uploaded_photos(uploaded_photos, subject_id)
     params = {
         "name": name.strip(),
         "category": category.strip(),
@@ -148,6 +191,7 @@ def site_generator_generate(
         "use_google": bool(use_google),
         "skip_website_check": bool(skip_website_check),
         "no_website_schools_id": no_website_schools_id.strip(),
+        "uploaded_photos_json": json.dumps(persisted_uploads) if persisted_uploads else "",
         "subject_id": subject_id,
         "base_url": "/generated-sites",
         "output_dir": str(OUTPUT_DIR),

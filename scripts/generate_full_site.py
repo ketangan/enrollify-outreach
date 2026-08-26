@@ -53,7 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from anthropic import Anthropic
 
 from scripts import generate_website_mocks as mocks
-from src import config, mock_content_llm, no_website_schools, places, r2_storage, shortlinks, site_generator_state, website_existence_check, website_mocks
+from src import config, mock_content_llm, no_website_schools, photo_quality, places, r2_storage, shortlinks, site_generator_state, website_existence_check, website_mocks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,12 +63,14 @@ logging.basicConfig(
 logger = logging.getLogger("generate_full_site")
 
 
-def _persist_photos(place: places.DiscoveredPlace | None, subject_id: str, output_dir: Path) -> list[str]:
+def _persist_photos(place: places.DiscoveredPlace | None, subject_id: str, output_dir: Path) -> list[dict]:
     """Fetch real business photos server-side and persist them — to R2 when
     configured (durable), else local disk next to the generated pages
     (fine locally, not durable on Render — see module docstring). Returns
-    URLs for use as a _website_mock_photos override, or [] on any failure —
-    the renderer falls back to stock photos automatically when this is empty."""
+    {"url", "width", "height"} dicts (width/height feed photo_quality's
+    placement decision alongside any uploaded photos), or [] on any
+    failure — the renderer falls back to stock photos automatically when
+    the combined real-photo pool ends up empty."""
     if not place or not place.google_photo_names:
         return []
 
@@ -77,21 +79,27 @@ def _persist_photos(place: places.DiscoveredPlace | None, subject_id: str, outpu
     if not use_r2:
         photos_dir.mkdir(parents=True, exist_ok=True)
 
-    urls = []
+    photos = []
     for idx, photo_name in enumerate(place.google_photo_names):
         result = places.fetch_photo_bytes(photo_name)
         if not result:
             continue
         photo_bytes, content_type = result
         ext = "png" if "png" in content_type else "jpg"
+        dimensions = photo_quality.read_dimensions(photo_bytes)
         if use_r2:
             key = f"sites/{subject_id}/photos/{idx}.{ext}"
             r2_storage.upload_bytes(key, photo_bytes, content_type)
-            urls.append(r2_storage.public_url(key))
+            url = r2_storage.public_url(key)
         else:
             (photos_dir / f"{idx}.{ext}").write_bytes(photo_bytes)
-            urls.append(f"../photos/{idx}.{ext}")
-    return urls
+            url = f"../photos/{idx}.{ext}"
+        photos.append({
+            "url": url,
+            "width": dimensions[0] if dimensions else None,
+            "height": dimensions[1] if dimensions else None,
+        })
+    return photos
 
 
 def _preview_shell_html(site_name: str) -> str:
@@ -197,6 +205,7 @@ def generate_full_site(
     revision_notes: str = "",
     subject_id: str = "",
     skip_existing_website_check: bool = False,
+    uploaded_photos: list[dict] | None = None,
     base_url: str,
     output_dir: Path,
     anthropic_client: Anthropic | None = None,
@@ -211,6 +220,11 @@ def generate_full_site(
 
     `info_page_urls` accepts one or more URLs, comma or pipe separated —
     each is fetched independently and its signal merged in.
+
+    `uploaded_photos` (each a {"url", "width", "height"} dict, already
+    persisted by the caller — see webapp/webapp/routes_site_generator.py)
+    always get first claim on a photo slot over Google's; see
+    src/photo_quality.py for the selection-vs-placement split.
 
     Pass `versions` scoped to one theme (e.g. "warm") and reuse the same
     `subject_id` from a prior call to regenerate a single existing concept
@@ -323,9 +337,10 @@ def generate_full_site(
             name=name, raw_review_text=" ".join(review_raw_texts), client=anthropic_client,
         )
 
-    photo_urls = _persist_photos(place, subject_id, output_dir)
-    if photo_urls:
-        subject["_website_mock_photos"] = photo_urls
+    google_photos = _persist_photos(place, subject_id, output_dir)
+    selected_photos = photo_quality.select_and_rank_photos(uploaded_photos or [], google_photos, max_count=3)
+    if selected_photos:
+        subject["_website_mock_photos"] = [p["url"] for p in selected_photos]
 
     rendered = mocks.render_mock_concepts(
         subject, base_url=base_url, mock_type=mock_type, versions=versions, content_signal=merged,
@@ -400,11 +415,21 @@ def main() -> None:
     parser.add_argument("--theme", default="", help="Theme id (e.g. 'preschool-warm') this run regenerates — required with --org-id")
     parser.add_argument("--no-website-schools-id", default="",
                          help="Row id in the No_Website_Schools sheet this business was picked from, if any")
+    parser.add_argument("--uploaded-photos", default="",
+                         help='JSON list of {"url","width","height"} dicts for already-persisted uploaded photos '
+                              "(the webapp uploads bytes to R2/disk and reads dimensions before spawning this job)")
     args = parser.parse_args()
 
     yelp_text = args.yelp_text
     if not yelp_text and args.yelp_text_file:
         yelp_text = Path(args.yelp_text_file).read_text(encoding="utf-8")
+
+    uploaded_photos = []
+    if args.uploaded_photos:
+        try:
+            uploaded_photos = json.loads(args.uploaded_photos)
+        except json.JSONDecodeError:
+            logger.warning("Could not parse --uploaded-photos JSON, ignoring uploaded photos")
 
     try:
         rendered = generate_full_site(
@@ -422,6 +447,7 @@ def main() -> None:
             revision_notes=args.revision_notes,
             subject_id=args.subject_id,
             skip_existing_website_check=args.skip_website_check,
+            uploaded_photos=uploaded_photos,
             base_url=args.base_url,
             output_dir=Path(args.output_dir),
         )

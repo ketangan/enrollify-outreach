@@ -72,7 +72,7 @@
   {% if picker_page * picker_page_size < picker_total %}<a href="/site-generator?page={{ picker_page + 1 }}">Next →</a>{% endif %}
 </p>
 
-<form method="POST" action="/site-generator/generate" class="add-lead-form" id="generate-form">
+<form method="POST" action="/site-generator/generate" class="add-lead-form" id="generate-form" enctype="multipart/form-data">
   <input type="hidden" name="no_website_schools_id" value="{{ prefill.id if prefill else '' }}">
   <fieldset>
     <legend>Business</legend>
@@ -136,6 +136,16 @@
       Pasted Yelp review text (copy/paste from their Yelp page — Yelp blocks automated fetching)
       <textarea name="yelp_text" rows="4" placeholder="Paste review text here…"></textarea>
     </label>
+
+    <label>
+      Upload photos <span class="muted" style="font-weight:400;">(up to 6 — these are used first; Google photos only fill any remaining gaps)</span>
+      <input type="file" name="uploaded_photos" accept="image/*" multiple>
+    </label>
+    <p class="muted" style="font-size:12px; margin-top:-8px;">
+      Placement (hero vs. a smaller spot) is decided automatically by image
+      quality, not upload order — a low-res photo still gets used, just not
+      blown up as the main image.
+    </p>
   </fieldset>
 
   <fieldset>

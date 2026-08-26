@@ -1,5 +1,9 @@
+import io
+import json
+
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from src import config
 from src import no_website_schools
@@ -8,6 +12,12 @@ from webapp.webapp import jobs_runner
 from webapp.webapp.main import app
 
 client = TestClient(app)
+
+
+def _real_jpeg_bytes(width: int, height: int) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), color="green").save(buf, format="JPEG")
+    return buf.getvalue()
 
 
 @pytest.fixture(autouse=True)
@@ -94,6 +104,63 @@ def test_generate_submits_job_with_fresh_subject_id_and_redirects(monkeypatch, t
     assert captured["params"]["subject_id"].startswith("riverside-music-collective-")
     assert captured["params"]["is_regeneration"] is False
     assert captured["params"]["use_google"] is True
+
+
+def test_generate_persists_uploaded_photos_and_passes_dimensions_as_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(routes_site_generator.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(routes_site_generator, "OUTPUT_DIR", tmp_path)
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music"},
+        files=[("uploaded_photos", ("photo1.jpg", _real_jpeg_bytes(1500, 1000), "image/jpeg"))],
+        follow_redirects=False,
+    )
+
+    uploaded = json.loads(captured["uploaded_photos_json"])
+    assert len(uploaded) == 1
+    assert uploaded[0]["width"] == 1500
+    assert uploaded[0]["height"] == 1000
+    assert uploaded[0]["url"]
+
+
+def test_generate_without_uploaded_photos_sends_empty_string(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music"},
+        follow_redirects=False,
+    )
+
+    assert captured["uploaded_photos_json"] == ""
+
+
+def test_generate_skips_unreadable_uploaded_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(routes_site_generator.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(routes_site_generator, "OUTPUT_DIR", tmp_path)
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music"},
+        files=[("uploaded_photos", ("not-a-photo.txt", b"just some text", "text/plain"))],
+        follow_redirects=False,
+    )
+
+    assert captured["uploaded_photos_json"] == ""
 
 
 def test_generate_use_google_false_when_checkbox_unchecked(monkeypatch):
