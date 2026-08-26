@@ -1206,3 +1206,52 @@ form.filters button:hover { background: #2d4229; }
   border-radius: 4px;
   font-size: 13px;
 }
+
+.site-gen-results {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.site-gen-results ul {
+  flex: 1;
+  min-width: 220px;
+}
+
+.site-gen-text-box {
+  flex: 1;
+  min-width: 280px;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.site-gen-text-box label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #55524a;
+}
+
+.site-gen-text-box textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #d8d0bd;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.site-gen-text-box button {
+  align-self: flex-start;
+  padding: 7px 16px;
+  border: 1px solid #1c1a16;
+  border-radius: 999px;
+  background: #1c1a16;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}

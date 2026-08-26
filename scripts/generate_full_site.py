@@ -52,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from anthropic import Anthropic
 
 from scripts import generate_website_mocks as mocks
-from src import config, mock_content_llm, places, r2_storage, site_generator_state, website_existence_check, website_mocks
+from src import config, mock_content_llm, places, r2_storage, shortlinks, site_generator_state, website_existence_check, website_mocks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -317,7 +317,28 @@ def generate_full_site(
     if not rendered:
         return []
     persisted = _persist_rendered(rendered, subject_id, output_dir, site_name=name)
+    persisted = _add_short_links(persisted)
     return [{**{k: v for k, v in item.items() if k != "html"}, "subject_id": subject_id} for item in persisted]
+
+
+def _add_short_links(persisted: list[dict]) -> list[dict]:
+    """Best-effort: adds a short_url (sites.mypontora.com/p/<code>) per item
+    for the text-message box. Falls back to the real preview_url when
+    shortlinks isn't configured, or a single link's creation fails — a
+    prospect getting the long URL is fine, a job failing outright over an
+    optional text-message convenience isn't."""
+    if not shortlinks.is_configured():
+        return [{**item, "short_url": item["preview_url"]} for item in persisted]
+
+    result = []
+    for item in persisted:
+        try:
+            short_url = shortlinks.create_short_link(item["preview_url"])
+        except Exception as e:
+            logger.warning("Short link creation failed for %s, using long URL: %s", item["preview_url"], e)
+            short_url = item["preview_url"]
+        result.append({**item, "short_url": short_url})
+    return result
 
 
 def main() -> None:

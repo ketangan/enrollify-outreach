@@ -15,11 +15,34 @@
   <div class="pipeline-alert" style="background:#e8f5e9;border-color:#a5d6a7;">
     <strong>Done.</strong> {{ result.rendered|length }} page(s) generated.
   </div>
-  <ul>
-    {% for item in result.rendered %}
-      <li><a href="{{ item.preview_url }}" target="_blank" rel="noopener">{{ item.label }}</a></li>
-    {% endfor %}
-  </ul>
+  <div class="site-gen-results">
+    <ul>
+      {% for item in result.rendered %}
+        <li><a href="{{ item.preview_url }}" target="_blank" rel="noopener">{{ item.label }}</a></li>
+      {% endfor %}
+    </ul>
+    <div class="site-gen-text-box">
+      <label for="sms-message">Text message to send</label>
+      <textarea id="sms-message" rows="8">Hi! I put together a few website concepts for {{ job.params.name }} — take a look:
+{% for item in result.rendered %}
+{{ item.short_url }}
+{% endfor %}
+Let me know what you think!</textarea>
+      <button type="button" id="sms-copy-btn">Copy message</button>
+    </div>
+  </div>
+  <script>
+    document.getElementById('sms-copy-btn').addEventListener('click', function () {
+      var box = document.getElementById('sms-message');
+      box.select();
+      navigator.clipboard.writeText(box.value).then(function () {
+        var btn = document.getElementById('sms-copy-btn');
+        var original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(function () { btn.textContent = original; }, 1500);
+      });
+    });
+  </script>
 {% elif job.status == "done" %}
   <div class="pipeline-alert" style="background:#e8f5e9;border-color:#a5d6a7;">
     <strong>Done.</strong> The generated links aren't cached on this page anymore (the webapp

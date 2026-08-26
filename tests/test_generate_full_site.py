@@ -354,6 +354,65 @@ def test_generate_full_site_uploads_to_r2_when_configured(monkeypatch, tmp_path)
         # The real rendered page content, not the shell.
         assert b"<h1" in site_html
 
+    # shortlinks isn't configured in this test — every item falls back to
+    # using its real preview_url as short_url rather than failing outright.
+    for item in rendered:
+        assert item["short_url"] == item["preview_url"]
+
+
+def test_generate_full_site_uses_short_links_when_configured(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: True)
+    monkeypatch.setattr(generate_full_site.r2_storage, "upload_bytes", lambda key, data, content_type: None)
+    monkeypatch.setattr(generate_full_site.r2_storage, "public_url", lambda key: f"https://sites.example.com/{key}")
+
+    monkeypatch.setattr(generate_full_site.shortlinks, "is_configured", lambda: True)
+    created = []
+
+    def _fake_create(long_url):
+        code = f"code{len(created)}"
+        created.append((long_url, code))
+        return f"https://sites.example.com/p/{code}"
+
+    monkeypatch.setattr(generate_full_site.shortlinks, "create_short_link", _fake_create)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://mocks.example.com", output_dir=tmp_path,
+    )
+
+    assert len(rendered) == 4
+    assert len(created) == 4
+    for item in rendered:
+        assert item["short_url"].startswith("https://sites.example.com/p/")
+        assert item["short_url"] != item["preview_url"]
+
+
+def test_generate_full_site_falls_back_to_long_url_when_short_link_creation_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: True)
+    monkeypatch.setattr(generate_full_site.r2_storage, "upload_bytes", lambda key, data, content_type: None)
+    monkeypatch.setattr(generate_full_site.r2_storage, "public_url", lambda key: f"https://sites.example.com/{key}")
+
+    monkeypatch.setattr(generate_full_site.shortlinks, "is_configured", lambda: True)
+
+    def _raise(long_url):
+        raise RuntimeError("Cloudflare API down")
+
+    monkeypatch.setattr(generate_full_site.shortlinks, "create_short_link", _raise)
+
+    # A short-link outage must not take down the whole generation.
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://mocks.example.com", output_dir=tmp_path,
+    )
+
+    assert len(rendered) == 4
+    for item in rendered:
+        assert item["short_url"] == item["preview_url"]
+
 
 def test_generate_full_site_falls_back_to_local_disk_when_r2_not_configured(monkeypatch, tmp_path):
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)

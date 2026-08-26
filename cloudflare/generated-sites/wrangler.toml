@@ -9,3 +9,7 @@ compatibility_date = "2026-08-04"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "pontora-generated-sites"
+
+[[kv_namespaces]]
+binding = "SHORTLINKS"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"

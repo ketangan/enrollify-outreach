@@ -126,3 +126,70 @@ generate → upload files to R2 (survives the webapp process being recycled)
 needs to last is ever left waiting on the webapp process's local disk —
 the same principle the outreach mock-site pipeline already relies on via
 Cloudflare Workers + the Leads sheet.
+
+## Part 3 — Short links (optional, for the text-message box)
+
+Every generated concept also gets a short link
+(`https://sites.mypontora.com/p/ab12cd`) for the SMS-style message box on
+the job results page — self-hosted on your own domain rather than a
+third-party shortener, so a link in a cold text reads as legitimate. This
+part is fully optional: without it, the text box just uses the real long
+URLs instead of short ones — nothing breaks.
+
+### 1. Create a KV namespace
+
+1. Cloudflare dashboard → **Storage & Databases** → **KV** → **Create namespace**.
+2. Name it `pontora-shortlinks` (name doesn't matter functionally, just for
+   your own reference in the dashboard).
+3. Copy the **Namespace ID** shown after creation.
+
+### 2. Create an API token
+
+1. Same place you made the R2 token — **My Profile** → **API Tokens** →
+   **Create Token** (a *user* API token, not the R2-specific one from Part 1;
+   KV goes through Cloudflare's regular API, not the S3-compatible one).
+2. Use the **Edit Cloudflare Workers** template, or a custom token with
+   **Account → Workers KV Storage → Edit** permission.
+3. Scope it to your account. Create it and copy the token — same
+   one-time-visibility rule as the R2 token.
+
+### 3. Bind the namespace to the existing Worker
+
+1. Workers & Pages → `pontora-generated-sites` (the Worker from Part 1) →
+   **Settings** → **Bindings** → **Add binding** → **KV Namespace**.
+2. Variable name: `SHORTLINKS` (must match exactly — `worker.js` reads
+   `env.SHORTLINKS`). Namespace: the one you created above. Save.
+3. Re-deploy the Worker with the updated `cloudflare/generated-sites/worker.js`
+   from this repo (it now also handles `/p/<code>` short-link redirects) —
+   same Quick Edit or `wrangler deploy` steps as Part 1.
+
+### 4. Set the environment variables
+
+Locally (`.env`) and on Render (service → Environment):
+
+```
+CLOUDFLARE_API_TOKEN=<from step 2>
+CLOUDFLARE_ACCOUNT_ID=<same account ID as R2, from Part 1 step 2 — reused automatically if already set>
+CLOUDFLARE_KV_NAMESPACE_ID=<from step 1>
+```
+
+`GENERATED_SITES_BASE_URL` is already set from Part 1 and is reused for
+short links too (`{that domain}/p/{code}`).
+
+### Verifying it worked
+
+Generate a site as in Part 1's verification step, then check the log for a
+line like:
+
+```
+Generated 4 concept(s):
+  ...: https://sites.mypontora.com/sites/.../music-studio/index.html
+```
+
+then open the job's results page in the webapp — the text-message box
+should contain `https://sites.mypontora.com/p/...` links, not the long
+`/sites/...` ones. Click one to confirm it redirects to the real page.
+
+If `CLOUDFLARE_KV_NAMESPACE_ID` or the token is missing/wrong, the script
+logs a warning per link ("Short link creation failed... using long URL")
+and falls back automatically rather than failing the whole generation.

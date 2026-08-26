@@ -56,6 +56,15 @@ R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
 R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "pontora-generated-sites")
 GENERATED_SITES_BASE_URL = os.getenv("GENERATED_SITES_BASE_URL", "")
 
+# Cloudflare KV-backed short links (sites.mypontora.com/p/<code>) for the
+# text-message box on generated sites — a self-hosted shortener so the
+# link a prospect gets in a text is on-brand, not a third-party domain.
+# Separate from the R2 credentials above: KV writes go through Cloudflare's
+# regular API (a scoped API token), not the S3-compatible R2 API.
+CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "")
+CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "") or R2_ACCOUNT_ID
+CLOUDFLARE_KV_NAMESPACE_ID = os.getenv("CLOUDFLARE_KV_NAMESPACE_ID", "")
+
 # --- Gmail OAuth ---
 GMAIL_OAUTH_CLIENT_PATH = os.getenv(
     "GMAIL_OAUTH_CLIENT_PATH",

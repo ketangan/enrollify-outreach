@@ -1,8 +1,9 @@
-// Serves files from the pontora-generated-sites R2 bucket.
+// Serves files from the pontora-generated-sites R2 bucket, and resolves
+// short links (/p/<code>) via a KV namespace before falling through to R2.
 //
 // Deployed once (see docs/setup_site_generator.md). After that, the Python
-// side (src/r2_storage.py) uploads new business sites directly as R2
-// objects — no redeploy needed to add or update a site.
+// side (src/r2_storage.py, src/shortlinks.py) writes new sites/short links
+// directly — no redeploy needed to add or update either.
 //
 // Resolves directory-style URLs to index.html, e.g.
 // /sites/some-business-abc123/preschool-warm/  ->  key "sites/.../index.html"
@@ -20,6 +21,18 @@ const CONTENT_TYPE_BY_EXT = {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // Short links: /p/<code> -> 302 to whatever long URL is stored in KV.
+    // Checked first since it's a distinct namespace from R2 object keys.
+    const shortMatch = url.pathname.match(/^\/p\/([a-z0-9]+)$/);
+    if (shortMatch) {
+      const target = await env.SHORTLINKS.get(shortMatch[1]);
+      if (target === null) {
+        return new Response("Short link not found", { status: 404 });
+      }
+      return Response.redirect(target, 302);
+    }
+
     let key = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
     if (key === "" || key.endsWith("/")) {
       key = key + "index.html";
