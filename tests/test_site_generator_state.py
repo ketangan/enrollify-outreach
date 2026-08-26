@@ -103,3 +103,46 @@ def test_record_initial_generation_with_no_rendered_items_is_a_no_op(fake_sheet)
 
     assert fake_sheet == []
     assert state.get_org("empty") is None
+
+
+def test_short_url_is_persisted_and_readable(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-2", name="Test School", category="music",
+        rendered=[{
+            "type": "music", "version": "studio", "label": "Modern studio concept",
+            "url": "u1", "preview_url": "p1", "short_url": "https://sites.mypontora.com/p/abc123",
+        }],
+        job_id="job-1",
+    )
+
+    studio = state.get_org("org-2")["themes"]["music-studio"][0]
+    assert studio["short_url"] == "https://sites.mypontora.com/p/abc123"
+
+
+def test_short_url_falls_back_to_preview_url_for_older_rows_without_it(fake_sheet):
+    # Rows written before short_url existed as a column have nothing there —
+    # the SMS box should still have something to show, not a blank link.
+    state.record_initial_generation(
+        org_id="org-3", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "L", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+
+    studio = state.get_org("org-3")["themes"]["music-studio"][0]
+    assert studio["short_url"] == "p1"
+
+
+def test_record_regeneration_persists_short_url(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-4", name="Test School", category="preschool",
+        rendered=[{"type": "preschool", "version": "warm", "label": "L", "url": "u1", "preview_url": "p1", "short_url": "s1"}],
+        job_id="job-1",
+    )
+    state.record_regeneration(
+        org_id="org-4", theme="preschool-warm",
+        item={"subject_id": "org-4-v2", "label": "L", "url": "u2", "preview_url": "p2", "short_url": "s2"},
+        job_id="job-2",
+    )
+
+    history = state.get_org("org-4")["themes"]["preschool-warm"]
+    assert history[1]["short_url"] == "s2"

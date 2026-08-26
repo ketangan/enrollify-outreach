@@ -21,7 +21,7 @@ GENERATED_SITES_TAB = "Generated_Sites"
 HEADERS = [
     "org_id", "name", "category", "city", "state", "address",
     "theme", "version_n", "subject_id", "label", "url", "preview_url",
-    "revision_notes", "job_id", "created_at",
+    "revision_notes", "job_id", "created_at", "short_url",
 ]
 
 
@@ -61,6 +61,10 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
             "label": row.get("label", theme),
             "url": row.get("url", ""),
             "preview_url": row.get("preview_url") or row.get("url", ""),
+            # Rows written before short_url existed have nothing here —
+            # fall back to preview_url so the SMS box always has something
+            # to show rather than a blank link for older generations.
+            "short_url": row.get("short_url") or row.get("preview_url") or row.get("url", ""),
             "revision_notes": row.get("revision_notes", ""),
             "job_id": row.get("job_id", ""),
             "created_at": row.get("created_at", ""),
@@ -117,6 +121,7 @@ def record_initial_generation(
             theme, 1, org_id, item.get("label", theme),
             item["url"], item.get("preview_url", item["url"]),
             "", job_id, now,
+            item.get("short_url", item.get("preview_url", item["url"])),
         ])
     ws.append_rows(rows, value_input_option="USER_ENTERED")
 
@@ -144,4 +149,5 @@ def record_regeneration(
         theme, next_version_n, item.get("subject_id", ""), item.get("label", theme),
         item["url"], item.get("preview_url", item["url"]),
         revision_notes, job_id, datetime.now().isoformat(),
+        item.get("short_url", item.get("preview_url", item["url"])),
     ], value_input_option="USER_ENTERED")

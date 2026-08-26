@@ -25,7 +25,7 @@
       <label for="sms-message">Text message to send</label>
       <textarea id="sms-message" rows="12">Hi! This is Ketan — I put together a few different website design concepts for {{ job.params.name }}, just to show what a refreshed, modern site could look like. No cost, no obligation, just take a look:
 {% for item in result.rendered -%}
-{{ item.short_url }}
+{{ item.label }}: {{ item.short_url }}
 {% endfor -%}
 Take a look and let me know which direction feels right — happy to walk through any of them or make changes if none of them quite fit yet.</textarea>
       <button type="button" id="sms-copy-btn">Copy message</button>

@@ -155,8 +155,30 @@
             </form>
           </div>
         {% endfor %}
+        <div class="site-gen-text-box">
+          <label for="sms-message-{{ org.org_id }}">Text message to send</label>
+          <textarea id="sms-message-{{ org.org_id }}" rows="12">Hi! This is Ketan — I put together a few different website design concepts for {{ org.name }}, just to show what a refreshed, modern site could look like. No cost, no obligation, just take a look:
+{% for theme, versions in org.themes.items() -%}
+{{ versions[-1].label }}: {{ versions[-1].short_url }}
+{% endfor -%}
+Take a look and let me know which direction feels right — happy to walk through any of them or make changes if none of them quite fit yet.</textarea>
+          <button type="button" class="sms-copy-btn" data-target="sms-message-{{ org.org_id }}">Copy message</button>
+        </div>
       </div>
     </details>
   {% endfor %}
 {% endif %}
+<script>
+  document.querySelectorAll('.sms-copy-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var box = document.getElementById(btn.dataset.target);
+      box.select();
+      navigator.clipboard.writeText(box.value).then(function () {
+        var original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(function () { btn.textContent = original; }, 1500);
+      });
+    });
+  });
+</script>
 {% endblock %}
