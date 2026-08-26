@@ -24,9 +24,9 @@
     <div class="site-gen-text-box">
       <label for="sms-message">Text message to send</label>
       <textarea id="sms-message" rows="8">Hi! I put together a few website concepts for {{ job.params.name }} — take a look:
-{% for item in result.rendered %}
+{% for item in result.rendered -%}
 {{ item.short_url }}
-{% endfor %}
+{% endfor -%}
 Let me know what you think!</textarea>
       <button type="button" id="sms-copy-btn">Copy message</button>
     </div>

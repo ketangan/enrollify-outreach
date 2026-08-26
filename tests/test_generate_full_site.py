@@ -19,6 +19,16 @@ def _stub_website_existence_check(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _stub_shortlinks_unconfigured(monkeypatch):
+    """Every test in this file treats shortlinks as unconfigured by
+    default — without this, real CLOUDFLARE_* credentials in a developer's
+    local .env would make every test create a real, uncleaned Cloudflare KV
+    entry. Tests that specifically exercise the configured path override
+    this within the test itself (see test_generate_full_site_uses_short_links_when_configured)."""
+    monkeypatch.setattr(generate_full_site.shortlinks, "is_configured", lambda: False)
+
+
 def _stub_place(**overrides) -> places.DiscoveredPlace:
     # website defaults non-empty: a real Google Place usually has one on
     # file, and (more importantly for tests) a known website skips the new
