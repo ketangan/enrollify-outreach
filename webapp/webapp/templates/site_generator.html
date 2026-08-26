@@ -163,9 +163,10 @@
       <input type="text" name="revision_notes" placeholder='e.g. "focus on the trial class" or "lean into the outdoor program"'>
     </label>
     <p class="muted" style="font-size:12px; margin-top:4px;">
-      This steers written content only (which real details get emphasized). It
-      cannot change the visual theme — colors/layout/fonts are fixed per
-      concept, not generated from this text.
+      Steers written content (which real details get emphasized) and, if you
+      describe a color preference (e.g. "make it red and black"), the accent
+      color. It cannot change layout/fonts, and it cannot change which photos
+      are used — upload specific photos above for that.
     </p>
   </fieldset>
 
@@ -198,21 +199,25 @@
                 {% for v in versions %}<a href="{{ v.preview_url }}" target="_blank" rel="noopener">v{{ v.version_n }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
               </span>
             {% endif %}
-            <form method="POST" action="/site-generator/regenerate" class="site-gen-regen-form">
+            <form method="POST" action="/site-generator/regenerate" class="site-gen-regen-form" enctype="multipart/form-data">
               <input type="hidden" name="org_id" value="{{ org.org_id }}">
               <input type="hidden" name="theme" value="{{ theme }}">
-              <input type="text" name="revision_notes" placeholder="Optional: what should change? (leave blank to just regenerate)">
+              <input type="text" name="revision_notes" placeholder="Optional: change wording/color emphasis (leave blank to just regenerate)">
+              <input type="file" name="uploaded_photos" accept="image/*" multiple title="Upload photos to control exactly which ones are used on this regeneration">
               <button type="submit" class="btn-secondary">Regenerate</button>
             </form>
+            <p class="muted" style="font-size:11px; margin:2px 0 8px;">
+              Regenerating always re-fetches Google's photos fresh, so they can change even with no notes above — upload photos to choose exactly which ones are used instead. The text box only steers wording/color, never photos.
+            </p>
           </div>
         {% endfor %}
         <div class="site-gen-text-box">
           <label for="sms-message-{{ org.org_id }}">Text message to send</label>
-          <textarea id="sms-message-{{ org.org_id }}" rows="12">Hi{% if org.owner_name %} {{ org.owner_name }}{% endif %}! This is Ketan — I put together a few different website design concepts for {{ org.name }}, just to show what a refreshed, modern site could look like. No cost, no obligation, just take a look:
+          <textarea id="sms-message-{{ org.org_id }}" rows="12">Hi{% if org.owner_name %} {{ org.owner_name }}{% endif %}! This is Ketan — we build, redesign, and maintain websites, and help with student enrollment too. I put together a few concepts for {{ org.name }} to take a look at, no cost or obligation:
 {% for theme, versions in org.themes.items() -%}
-{{ versions[-1].label }}: {{ versions[-1].short_url }}
+{{ loop.index }}. {{ versions[-1].short_url }}
 {% endfor -%}
-Take a look and let me know which direction feels right — happy to walk through any of them or make changes if none of them quite fit yet.</textarea>
+Let me know which direction feels right!</textarea>
           <button type="button" class="sms-copy-btn" data-target="sms-message-{{ org.org_id }}">Copy message</button>
         </div>
         <form method="POST" action="/site-generator/delete" class="site-gen-delete-form"

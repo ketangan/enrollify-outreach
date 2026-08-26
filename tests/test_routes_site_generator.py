@@ -272,6 +272,55 @@ def test_regenerate_known_org_scopes_job_to_one_theme_and_versions_subject_id(mo
     assert captured["is_regeneration"] is True
 
 
+def test_regenerate_persists_uploaded_photos_and_passes_dimensions_as_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    _fake_sheet(monkeypatch)
+    site_generator_state.record_initial_generation(
+        org_id="riverside-music-abc123", name="Riverside Music Collective", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio concept", "url": "u1", "preview_url": "p1"}],
+        job_id="job-0",
+    )
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(routes_site_generator.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(routes_site_generator, "OUTPUT_DIR", tmp_path)
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/regenerate",
+        params={"key": "secret123"},
+        data={"org_id": "riverside-music-abc123", "theme": "music-studio"},
+        files=[("uploaded_photos", ("photo1.jpg", _real_jpeg_bytes(1500, 1000), "image/jpeg"))],
+        follow_redirects=False,
+    )
+
+    uploaded = json.loads(captured["uploaded_photos_json"])
+    assert len(uploaded) == 1
+    assert uploaded[0]["width"] == 1500
+    assert uploaded[0]["height"] == 1000
+
+
+def test_regenerate_without_uploaded_photos_sends_empty_string(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    _fake_sheet(monkeypatch)
+    site_generator_state.record_initial_generation(
+        org_id="riverside-music-abc123", name="Riverside Music Collective", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio concept", "url": "u1", "preview_url": "p1"}],
+        job_id="job-0",
+    )
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/regenerate",
+        params={"key": "secret123"},
+        data={"org_id": "riverside-music-abc123", "theme": "music-studio"},
+        follow_redirects=False,
+    )
+
+    assert captured["uploaded_photos_json"] == ""
+
+
 def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     calls = []

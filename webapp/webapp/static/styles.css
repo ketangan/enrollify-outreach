@@ -1304,6 +1304,11 @@ form.filters button:hover { background: #2d4229; }
   font-size: 13px;
 }
 
+.site-gen-regen-form input[type="file"] {
+  font-size: 12px;
+  max-width: 200px;
+}
+
 .site-gen-results {
   display: flex;
   gap: 32px;

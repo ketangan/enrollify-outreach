@@ -208,6 +208,7 @@ def site_generator_regenerate(
     org_id: str = Form(...),
     theme: str = Form(...),  # e.g. "preschool-warm"
     revision_notes: str = Form(""),
+    uploaded_photos: list[UploadFile] = File(default=[]),
 ):
     org = site_generator_state.get_org(org_id)
     if not org:
@@ -216,6 +217,8 @@ def site_generator_regenerate(
     history = org["themes"].get(theme, [])
     next_version_n = (max((v["version_n"] for v in history), default=0)) + 1
     theme_version_id = theme.split("-", 1)[1] if "-" in theme else theme
+    subject_id = f"{org_id}-v{next_version_n}"
+    persisted_uploads = _persist_uploaded_photos(uploaded_photos, subject_id)
 
     params = {
         "name": org["name"],
@@ -225,7 +228,8 @@ def site_generator_regenerate(
         "address": org.get("address", ""),
         "versions": theme_version_id,
         "revision_notes": revision_notes.strip(),
-        "subject_id": f"{org_id}-v{next_version_n}",
+        "uploaded_photos_json": json.dumps(persisted_uploads) if persisted_uploads else "",
+        "subject_id": subject_id,
         "base_url": "/generated-sites",
         "output_dir": str(OUTPUT_DIR),
         "is_regeneration": True,
