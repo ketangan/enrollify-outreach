@@ -18,7 +18,9 @@ import logging
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import urlencode
 
+from anthropic import Anthropic
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -27,7 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts import generate_website_mocks as mocks
-from src import config, no_website_schools, site_generator_state
+from src import config, no_website_schools, site_generator_state, website_existence_check
 from webapp.webapp import jobs_runner
 
 logger = logging.getLogger(__name__)
@@ -67,13 +69,27 @@ def new_subject_id(name: str) -> str:
 
 
 @router.get("/site-generator", response_class=HTMLResponse, dependencies=[Depends(require_access)])
-def site_generator_home(request: Request, page: int = 1, from_no_website_id: str = ""):
+def site_generator_home(
+    request: Request, page: int = 1, from_no_website_id: str = "",
+    checked_id: str = "", checked_found: str = "", checked_url: str = "",
+    checked_confidence: str = "", checked_reasoning: str = "",
+):
     page = max(page, 1)
     picker_rows, picker_total = no_website_schools.list_page(page=page, page_size=10)
 
     prefill = None
     if from_no_website_id:
         prefill = no_website_schools.get_by_id(from_no_website_id)
+
+    checked = None
+    if checked_id:
+        checked = {
+            "id": checked_id,
+            "found": checked_found == "true",
+            "url": checked_url,
+            "confidence": checked_confidence,
+            "reasoning": checked_reasoning,
+        }
 
     response = templates.TemplateResponse(
         request,
@@ -86,6 +102,7 @@ def site_generator_home(request: Request, page: int = 1, from_no_website_id: str
             "picker_total": picker_total,
             "picker_page_size": 10,
             "prefill": prefill,
+            "checked": checked,
         },
     )
     return _remember_key_cookie(request, response)
@@ -172,6 +189,36 @@ def site_generator_regenerate(
     }
     job_id = jobs_runner.submit_job("generate_full_site", params)
     return _remember_key_cookie(request, RedirectResponse(f"/site-generator/jobs/{job_id}", status_code=303))
+
+
+@router.post("/site-generator/check-website", dependencies=[Depends(require_access)])
+def site_generator_check_website(
+    request: Request, no_website_schools_id: str = Form(...), page: int = Form(1),
+):
+    # Runs the same thorough check generation itself blocks on, but standalone
+    # and synchronous (10-30s, not worth a background job for) — so a
+    # business known to actually have a site can be ruled out (or archived)
+    # right from the picker, without spending a full generation on it first.
+    row = no_website_schools.get_by_id(no_website_schools_id)
+    if not row:
+        raise HTTPException(404, f"Unknown No_Website_Schools row: {no_website_schools_id}")
+
+    result = website_existence_check.check_website_exists(
+        name=row.get("name", ""), category=row.get("category", ""),
+        city=row.get("city", ""), state=row.get("state", ""),
+        address=row.get("address", ""), phone=row.get("phone", ""),
+        client=Anthropic(),
+    )
+    found = bool(result["has_website"] and result["confidence"] in ("high", "medium"))
+    query = urlencode({
+        "page": page,
+        "checked_id": no_website_schools_id,
+        "checked_found": "true" if found else "false",
+        "checked_url": result.get("website_url", ""),
+        "checked_confidence": result.get("confidence", ""),
+        "checked_reasoning": result.get("reasoning", ""),
+    })
+    return _remember_key_cookie(request, RedirectResponse(f"/site-generator?{query}", status_code=303))
 
 
 @router.post("/site-generator/archive-no-website", dependencies=[Depends(require_access)])

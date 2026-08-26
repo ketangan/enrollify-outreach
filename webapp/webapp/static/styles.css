@@ -126,6 +126,19 @@ form.filters button {
 form.filters button:hover { background: #2d4229; }
 .muted-link { color: #777; font-size: 12px; text-decoration: none; }
 .muted-link:hover { text-decoration: underline; }
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fffaf2;
+  color: #3d5a3a;
+  border: 1px solid #cfc8bc;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  text-decoration: none;
+}
+.button-link:hover { background: #ede6d6; }
 
 .status-tag {
   display: inline-block;
@@ -158,6 +171,37 @@ form.filters button:hover { background: #2d4229; }
   text-decoration: none;
 }
 .pagination a:hover { text-decoration: underline; }
+
+.click-log-warning {
+  border-left: 4px solid #ffa726;
+  background: #fff8e1;
+  color: #5a4500;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin: 0 0 14px;
+}
+.click-log-table td {
+  vertical-align: top;
+}
+.click-log-table code {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.click-log-table td:nth-child(2),
+.click-log-table td:nth-child(3) {
+  max-width: 260px;
+  word-break: break-word;
+}
+.click-gesture {
+  display: inline-block;
+  background: #e3f2fd;
+  color: #0d47a1;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
 
 /* Review queue — mobile-friendly card */
 .review-tabs {
@@ -363,6 +407,23 @@ form.filters button:hover { background: #2d4229; }
 }
 .btn-danger:hover { background: #a13a2f; color: #fff5f4; }
 .site-gen-delete-form { margin-top: 16px; }
+.site-gen-inline-form { display: inline; }
+.check-result {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.check-result-found {
+  background: #fff3cd;
+  color: #5a4500;
+  border: 1px solid #ffe08a;
+}
+.check-result-found .site-gen-inline-form { display: block; margin-top: 8px; }
+.check-result-clear {
+  background: #e8f5e9;
+  color: #1b5e20;
+  border: 1px solid #a5d6a7;
+}
 
 .mock-controls {
   margin-top: 16px;

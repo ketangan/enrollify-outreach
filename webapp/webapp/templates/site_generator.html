@@ -20,7 +20,7 @@
   <p class="muted">{% if picker_page > 1 %}No more rows on this page.{% else %}Nothing in the queue right now.{% endif %}</p>
 {% else %}
   <table class="data-table">
-    <thead><tr><th>Business</th><th>Category</th><th>City</th><th>Google reviews</th><th>Yelp reviews</th><th></th></tr></thead>
+    <thead><tr><th>Business</th><th>Category</th><th>City</th><th>Google reviews</th><th>Yelp reviews</th><th colspan="2"></th></tr></thead>
     <tbody>
       {% for row in picker_rows %}
         <tr>
@@ -29,8 +29,39 @@
           <td>{{ row.city }}{% if row.state %}, {{ row.state }}{% endif %}</td>
           <td>{{ row.google_review_count if row.google_review_count else "—" }}{% if row.google_rating %} ({{ row.google_rating }}★){% endif %}</td>
           <td>{{ row.yelp_review_count if row.yelp_review_count else "—" }}{% if row.yelp_rating %} ({{ row.yelp_rating }}★){% endif %}</td>
+          <td>
+            <form method="POST" action="/site-generator/check-website" class="site-gen-inline-form">
+              <input type="hidden" name="no_website_schools_id" value="{{ row.id }}">
+              <input type="hidden" name="page" value="{{ picker_page }}">
+              <button type="submit" class="btn-secondary">Check for website</button>
+            </form>
+          </td>
           <td><a href="/site-generator?from_no_website_id={{ row.id }}#generate-form" class="btn-secondary">Use this</a></td>
         </tr>
+        {% if checked and checked.id == row.id %}
+          <tr class="site-gen-check-result-row">
+            <td colspan="7">
+              {% if checked.found %}
+                <div class="check-result check-result-found">
+                  <strong>Possible existing website found</strong>
+                  {% if checked.url %}— <a href="{{ checked.url }}" target="_blank" rel="noopener">{{ checked.url }}</a>{% endif %}
+                  ({{ checked.confidence }} confidence)
+                  {% if checked.reasoning %}<p class="muted">{{ checked.reasoning }}</p>{% endif %}
+                  <form method="POST" action="/site-generator/archive-no-website" class="site-gen-inline-form">
+                    <input type="hidden" name="no_website_schools_id" value="{{ row.id }}">
+                    <input type="hidden" name="existing_website_url" value="{{ checked.url }}">
+                    <button type="submit" class="btn-secondary">Archive — already has a website</button>
+                  </form>
+                </div>
+              {% else %}
+                <div class="check-result check-result-clear">
+                  No website found — safe to generate.
+                  {% if checked.reasoning %}<span class="muted">{{ checked.reasoning }}</span>{% endif %}
+                </div>
+              {% endif %}
+            </td>
+          </tr>
+        {% endif %}
       {% endfor %}
     </tbody>
   </table>

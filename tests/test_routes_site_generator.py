@@ -201,6 +201,93 @@ def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):
     assert calls == [("90277-abc123", "existing_website_found", "https://www.real.example/")]
 
 
+def test_check_website_redirects_with_found_result(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        no_website_schools, "get_by_id",
+        lambda row_id: {"id": row_id, "name": "Test Studio", "category": "music", "city": "Austin", "state": "TX", "address": "", "phone": ""},
+    )
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(
+        routes_site_generator.website_existence_check, "check_website_exists",
+        lambda **kw: {"has_website": True, "website_url": "https://www.real.example/", "confidence": "high", "reasoning": "Found it."},
+    )
+
+    resp = client.post(
+        "/site-generator/check-website",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "90277-abc123", "page": "2"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    location = resp.headers["location"]
+    assert location.startswith("/site-generator?")
+    assert "checked_id=90277-abc123" in location
+    assert "checked_found=true" in location
+    assert "page=2" in location
+
+
+def test_check_website_redirects_with_clear_result(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        no_website_schools, "get_by_id",
+        lambda row_id: {"id": row_id, "name": "Test Studio", "category": "music", "city": "Austin", "state": "TX", "address": "", "phone": ""},
+    )
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(
+        routes_site_generator.website_existence_check, "check_website_exists",
+        lambda **kw: {"has_website": False, "website_url": "", "confidence": "low", "reasoning": "no site found"},
+    )
+
+    resp = client.post(
+        "/site-generator/check-website",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "90277-abc123"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert "checked_found=false" in resp.headers["location"]
+
+
+def test_check_website_low_confidence_treated_as_not_found(monkeypatch):
+    # A low-confidence guess isn't strong enough to tell the user "this one
+    # already has a site" — matches generate_full_site's own blocking bar.
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        no_website_schools, "get_by_id",
+        lambda row_id: {"id": row_id, "name": "Test Studio", "category": "music", "city": "Austin", "state": "TX", "address": "", "phone": ""},
+    )
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(
+        routes_site_generator.website_existence_check, "check_website_exists",
+        lambda **kw: {"has_website": True, "website_url": "https://www.maybe.example/", "confidence": "low", "reasoning": "weak match"},
+    )
+
+    resp = client.post(
+        "/site-generator/check-website",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "90277-abc123"},
+        follow_redirects=False,
+    )
+
+    assert "checked_found=false" in resp.headers["location"]
+
+
+def test_check_website_unknown_row_returns_404(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(no_website_schools, "get_by_id", lambda row_id: None)
+
+    resp = client.post(
+        "/site-generator/check-website",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "does-not-exist"},
+    )
+
+    assert resp.status_code == 404
+
+
 def test_delete_calls_delete_org_and_redirects(monkeypatch):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     calls = []
@@ -216,6 +303,28 @@ def test_delete_calls_delete_org_and_redirects(monkeypatch):
     assert resp.status_code == 303
     assert resp.headers["location"] == "/site-generator"
     assert calls == ["riverside-music-abc123"]
+
+
+def test_home_renders_check_result_banner_when_query_params_present(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        no_website_schools, "list_page",
+        lambda page=1, page_size=10, **kw: ([{"id": "90277-abc123", "name": "Test Studio", "category": "music", "city": "Austin", "state": ""}], 1),
+    )
+
+    resp = client.get(
+        "/site-generator",
+        params={
+            "key": "secret123", "checked_id": "90277-abc123", "checked_found": "true",
+            "checked_url": "https://www.real.example/", "checked_confidence": "high",
+            "checked_reasoning": "Found on their Google Business Profile.",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert "Possible existing website found" in resp.text
+    assert "https://www.real.example/" in resp.text
+    assert "Found on their Google Business Profile." in resp.text
 
 
 def test_generate_passes_no_website_schools_id_through(monkeypatch):
