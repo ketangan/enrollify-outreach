@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -191,6 +192,31 @@ def _extract_components(addr_components: list[dict]) -> tuple[str, str, str]:
     return city, state, zip_code
 
 
+def _extract_from_formatted_address(address: str) -> tuple[str, str, str]:
+    """Best-effort parse for Places search results that include only a
+    formattedAddress, not addressComponents. Google commonly returns:
+    "123 Main St, Manhattan Beach, CA 90266, USA".
+
+    The fallback zip passed to _parse_place is the searched zip, not
+    necessarily the business zip, so formattedAddress is a better source
+    whenever it has a postal code."""
+    address = (address or "").strip()
+    if not address:
+        return "", "", ""
+
+    parts = [p.strip() for p in address.split(",") if p.strip()]
+    for idx, part in enumerate(parts):
+        match = re.search(r"\b([A-Z]{2})\s+(\d{5})(?:-\d{4})?\b", part)
+        if not match:
+            continue
+        city = parts[idx - 1] if idx > 0 else ""
+        return city, match.group(1), match.group(2)
+
+    zip_match = re.search(r"\b(\d{5})(?:-\d{4})?\b", address)
+    state_match = re.search(r"(?:^|,\s*)([A-Z]{2})(?:\s+\d{5}(?:-\d{4})?)?(?:,|$)", address)
+    return "", state_match.group(1) if state_match else "", zip_match.group(1) if zip_match else ""
+
+
 def _parse_place(raw: dict, category: str, fallback_zip: str) -> DiscoveredPlace:
     place_id = raw.get("id", "")
     address = raw.get("formattedAddress", "")
@@ -203,6 +229,10 @@ def _parse_place(raw: dict, category: str, fallback_zip: str) -> DiscoveredPlace
 
     addr_components = raw.get("addressComponents", [])
     city, state, zip_code = _extract_components(addr_components)
+    address_city, address_state, address_zip = _extract_from_formatted_address(address)
+    city = city or address_city
+    state = state or address_state
+    zip_code = zip_code or address_zip
     if not zip_code:
         zip_code = fallback_zip
     name = clean_school_name(
@@ -233,6 +263,14 @@ def _apply_details(place: DiscoveredPlace, details: dict) -> None:
     both parse the API response identically."""
     if not details:
         return
+    place.website = details.get("websiteUri") or place.website
+    place.phone = details.get("nationalPhoneNumber") or details.get("internationalPhoneNumber") or place.phone
+    place.address = details.get("formattedAddress") or place.address
+    city, state, zip_code = _extract_components(details.get("addressComponents", []))
+    address_city, address_state, address_zip = _extract_from_formatted_address(place.address)
+    place.city = city or address_city or place.city
+    place.state = state or address_state or place.state
+    place.zip = zip_code or address_zip or place.zip
     place.google_rating = details.get("rating")
     place.google_review_count = details.get("userRatingCount")
     reviews_raw = details.get("reviews", []) or []
