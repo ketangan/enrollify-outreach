@@ -60,6 +60,21 @@
                     <input type="hidden" name="existing_website_url" value="{{ checked.url }}">
                     <button type="submit" class="btn-secondary">Archive — already has a website</button>
                   </form>
+                  <form method="POST" action="/site-generator/promote-no-website" class="site-gen-promote-form">
+                    <input type="hidden" name="no_website_schools_id" value="{{ row.id }}">
+                    <input type="hidden" name="existing_website_url" value="{{ checked.url }}">
+                    <label>
+                      Enrollment method
+                      <select name="enrollment_method" required>
+                        <option value="">— pick one —</option>
+                        {% for method in enrollment_methods %}
+                          <option value="{{ method }}">{{ method }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <button type="submit" class="btn-primary">Add to outreach → owner lookup</button>
+                    <p class="muted">Use only after you confirm they do not have an online enrollment system.</p>
+                  </form>
                 </div>
               {% else %}
                 <div class="check-result check-result-clear">
@@ -127,7 +142,7 @@
 
     <label>
       <input type="checkbox" name="use_google" value="true" checked>
-      Look up Google reviews + photos automatically (via Places API, by name/city/address — not a pasted link)
+      Look up Google reviews automatically (and use a Google photo as the hero only if you do not upload one)
     </label>
 
     <label>
@@ -146,23 +161,13 @@
     </label>
 
     <label>
-      Top/hero photo <span class="muted" style="font-weight:400;">(optional — pick exactly which photo is the main image)</span>
+      Hero photo <span class="muted" style="font-weight:400;">(optional — the only image you need to choose)</span>
       <input type="file" name="hero_photo" accept="image/*">
     </label>
     <p class="muted" style="font-size:12px; margin-top:-8px;">
-      Leave blank and the best-quality photo (from the uploads below or
-      Google) gets picked automatically. Set this if that automatic choice
-      is wrong for a specific photo — it always wins, no matter its quality.
-    </p>
-
-    <label>
-      Other photos <span class="muted" style="font-weight:400;">(up to 6 — used for the remaining sections; Google photos only fill any gaps)</span>
-      <input type="file" name="uploaded_photos" accept="image/*" multiple>
-    </label>
-    <p class="muted" style="font-size:12px; margin-top:-8px;">
-      Placement among these is decided automatically by image quality, not
-      upload order — a low-res photo still gets used, just not blown up as
-      the main image.
+      This photo anchors the top of the page. The remaining image sections
+      stay on the curated stock photos built into the template, so the design
+      keeps its intended look.
     </p>
   </fieldset>
 
@@ -213,18 +218,14 @@
               <input type="hidden" name="org_id" value="{{ org.org_id }}">
               <input type="hidden" name="theme" value="{{ theme }}">
               <input type="text" name="revision_notes" placeholder="Optional: change wording/color emphasis (leave blank to just regenerate)">
-              <label class="site-gen-regen-photo-label" title="This exact photo always becomes the top/hero image, no matter its quality">
-                Top photo
+              <label class="site-gen-regen-photo-label" title="This exact photo becomes the hero image; the rest of the page keeps template stock photos">
+                Hero photo
                 <input type="file" name="hero_photo" accept="image/*">
-              </label>
-              <label class="site-gen-regen-photo-label" title="Fill the remaining sections — auto-placed by quality">
-                Other photos
-                <input type="file" name="uploaded_photos" accept="image/*" multiple>
               </label>
               <button type="submit" class="btn-secondary">Regenerate</button>
             </form>
             <p class="muted" style="font-size:11px; margin:2px 0 8px;">
-              Regenerating always re-fetches Google's photos fresh, so they can change even with no notes above. "Top photo" always becomes the hero image, no matter its quality — use it when the automatic pick is wrong. The text box only steers wording/color, never photos.
+              Regenerating can still refresh Google's data. "Hero photo" only changes the top image; the middle sections keep the template's stock photography. The text box steers wording/color, never photos.
             </p>
           </div>
         {% endfor %}

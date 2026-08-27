@@ -23,6 +23,7 @@ import re
 import sys
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -71,14 +72,79 @@ def _matches_text_search(row: dict, q_lower: str) -> bool:
 
 
 def _normalize_website(url: str) -> str:
-    """Lowercase, strip trailing slash + scheme + www. for dedupe comparison."""
+    """Lowercase, strip tracking/noise, scheme, leading www., and trailing slash."""
     if not url:
         return ""
-    u = url.strip().lower()
-    u = re.sub(r"^https?://", "", u)
-    u = re.sub(r"^www\.", "", u)
-    u = u.rstrip("/")
+    raw = url.strip().lower()
+    parsed = urlsplit(raw if re.match(r"^[a-z][a-z0-9+.-]*://", raw) else f"https://{raw}")
+    host = parsed.netloc or parsed.path.split("/")[0]
+    path = parsed.path if parsed.netloc else "/" + "/".join(parsed.path.split("/")[1:])
+    host = re.sub(r"^www\.", "", host).rstrip(".")
+    path = path.rstrip("/")
+    u = f"{host}{path if path and path != '/' else ''}"
     return u
+
+
+def _is_shared_website_host(host: str) -> bool:
+    """Hosts where the path usually identifies the business, not just the host."""
+    shared_hosts = (
+        "facebook.com",
+        "instagram.com",
+        "sites.google.com",
+        "wixsite.com",
+        "weebly.com",
+        "wordpress.com",
+        "blogspot.com",
+        "square.site",
+        "godaddysites.com",
+        "linktr.ee",
+        "yelp.com",
+    )
+    return any(host == shared or host.endswith(f".{shared}") for shared in shared_hosts)
+
+
+def _website_dedupe_keys(url: str) -> set[str]:
+    norm = _normalize_website(url)
+    if not norm:
+        return set()
+    host, _, path = norm.partition("/")
+    keys = {f"url:{norm}"}
+    if host and not _is_shared_website_host(host):
+        keys.add(f"host:{host}")
+    elif host and path:
+        keys.add(f"shared_url:{host}/{path}")
+    return keys
+
+
+def _normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())).strip()
+
+
+def _normalize_phone(value: str) -> str:
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    return digits
+
+
+def _school_identity_keys(*, name: str = "", city: str = "", state: str = "", address: str = "", phone: str = "") -> set[str]:
+    name_key = _normalize_text(name)
+    if not name_key:
+        return set()
+
+    keys: set[str] = set()
+    city_key = _normalize_text(city)
+    state_key = _normalize_text(state)
+    address_key = _normalize_text(address)
+    phone_key = _normalize_phone(phone)
+
+    if city_key and state_key:
+        keys.add(f"name_city_state:{name_key}|{city_key}|{state_key}")
+    if address_key:
+        keys.add(f"name_address:{name_key}|{address_key}")
+    if phone_key:
+        keys.add(f"name_phone:{name_key}|{phone_key}")
+    return keys
 
 
 def _generate_id(website: str) -> str:
@@ -88,30 +154,41 @@ def _generate_id(website: str) -> str:
     return f"manual-{h}"
 
 
-def _is_duplicate(website: str) -> tuple[bool, str]:
-    """Check Leads and Archive for an existing lead with the same website.
+def _is_duplicate(
+    website: str,
+    *,
+    name: str = "",
+    city: str = "",
+    state: str = "",
+    address: str = "",
+    phone: str = "",
+) -> tuple[bool, str]:
+    """Check Leads and Archive for an existing matching school.
 
     Returns (is_dup, where) where `where` is 'leads', 'archive', or ''.
     """
-    norm = _normalize_website(website)
-    if not norm:
+    website_keys = _website_dedupe_keys(website)
+    identity_keys = _school_identity_keys(name=name, city=city, state=state, address=address, phone=phone)
+    if not website_keys and not identity_keys:
         return False, ""
 
-    try:
-        leads_rows = sheets.read_all_rows(config.TAB_LEADS)
-    except Exception:
-        leads_rows = []
-    for r in leads_rows:
-        if _normalize_website(str(r.get("website", ""))) == norm:
-            return True, "leads"
-
-    try:
-        archive_rows = sheets.read_all_rows(config.TAB_ARCHIVE)
-    except Exception:
-        archive_rows = []
-    for r in archive_rows:
-        if _normalize_website(str(r.get("website", ""))) == norm:
-            return True, "archive"
+    for tab, where in ((config.TAB_LEADS, "leads"), (config.TAB_ARCHIVE, "archive")):
+        try:
+            rows = sheets.read_all_rows(tab)
+        except Exception:
+            rows = []
+        for r in rows:
+            if website_keys and website_keys & _website_dedupe_keys(str(r.get("website", ""))):
+                return True, where
+            row_identity_keys = _school_identity_keys(
+                name=str(r.get("name", "")),
+                city=str(r.get("city", "")),
+                state=str(r.get("state", "")),
+                address=str(r.get("address", "")),
+                phone=str(r.get("phone", "")),
+            )
+            if identity_keys and identity_keys & row_identity_keys:
+                return True, where
 
     return False, ""
 
@@ -276,7 +353,14 @@ def leads_add_submit(
             )
 
     # ─── Dedupe ─────────────────────────────────────────────────────
-    is_dup, where = _is_duplicate(website)
+    is_dup, where = _is_duplicate(
+        website,
+        name=name,
+        city=city,
+        state=state,
+        address=address,
+        phone=phone,
+    )
     if is_dup:
         return RedirectResponse(
             f"/leads/add?error=duplicate_in_{where}"

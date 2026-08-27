@@ -209,6 +209,7 @@ def test_generate_full_site_forced_hero_photo_wins_index_0(monkeypatch, tmp_path
     photos = captured["subject"]["_website_mock_photos"]
     assert photos[0] == "explicit-hero-choice"
     assert "big-upload" in photos[1:]
+    assert captured["subject"]["_website_mock_hero_photo"] == "explicit-hero-choice"
 
 
 def test_generate_full_site_never_overwrites_caller_supplied_phone(monkeypatch, tmp_path):

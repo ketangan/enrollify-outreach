@@ -14,10 +14,10 @@
   {% if error == 'name_and_website_required' %}
     Name and website are required.
   {% elif error == 'duplicate_in_leads' %}
-    A lead with this website already exists in the Leads tab.
+    A matching school already exists in the Leads tab.
     <a href="/leads?q={{ form.website }}" style="margin-left: 6px;">Find it →</a>
   {% elif error == 'duplicate_in_archive' %}
-    A lead with this website is in the Archive (previously processed).
+    A matching school is in the Archive (previously processed).
     Pick a different lead or restore it manually.
   {% elif error.startswith('skip_requires_') %}
     "Skip pipeline" needs all of: owner name, email, enrollment method.

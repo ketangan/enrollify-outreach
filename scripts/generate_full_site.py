@@ -223,13 +223,14 @@ def generate_full_site(
     each is fetched independently and its signal merged in.
 
     `hero_photo` (a single {"url", "width", "height"} dict), when given,
-    always becomes photos[0] — an explicit human choice, not a guess. Use
-    this when the automatic quality-based placement picked the wrong one.
+    always becomes the hero image — an explicit human choice, not a guess.
+    The remaining page sections keep using the template's curated stock
+    photos so one uneven upload cannot drag down the whole composition.
 
     `uploaded_photos` (each a {"url", "width", "height"} dict, already
     persisted by the caller — see webapp/webapp/routes_site_generator.py)
-    always get first claim on a photo slot over Google's; see
-    src/photo_quality.py for the selection-vs-placement split.
+    are still accepted as legacy hero candidates, but no longer become the
+    page-wide photo pool in new renders.
 
     Pass `versions` scoped to one theme (e.g. "warm") and reuse the same
     `subject_id` from a prior call to regenerate a single existing concept
@@ -347,6 +348,7 @@ def generate_full_site(
         uploaded_photos or [], google_photos, forced_hero=hero_photo,
     )
     if selected_photos:
+        subject["_website_mock_hero_photo"] = selected_photos[0]["url"]
         subject["_website_mock_photos"] = [p["url"] for p in selected_photos]
 
     rendered = mocks.render_mock_concepts(

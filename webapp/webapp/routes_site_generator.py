@@ -17,6 +17,7 @@ import json
 import logging
 import sys
 import uuid
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -29,8 +30,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts import generate_website_mocks as mocks
-from src import config, no_website_schools, photo_quality, r2_storage, site_generator_state, website_existence_check
+from src import config, no_website_schools, photo_quality, r2_storage, sheets, site_generator_state, website_existence_check
 from webapp.webapp import jobs_runner
+from webapp.webapp.routes_leads import (
+    ENROLLMENT_METHOD_OPTIONS,
+    _generate_id as _generate_manual_lead_id,
+    _is_duplicate as _lead_exists_for_website,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +78,73 @@ MAX_UPLOADED_PHOTOS = 6
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB — a boundary guard against an accidental huge attachment
 
 
+def _clean(value) -> str:
+    return str(value or "").strip()
+
+
+def _append_ready_for_owner_lookup_lead(row: dict, *, website: str, enrollment_method: str) -> str:
+    """Promote a No_Website_Schools row after the user verifies two facts:
+    it does have a real website, and it does not have an online enrollment
+    system. That skips discovery + classification, but not owner lookup."""
+    website = _clean(website)
+    enrollment_method = _clean(enrollment_method)
+    if not website:
+        raise HTTPException(400, "Website URL is required.")
+    if enrollment_method not in ENROLLMENT_METHOD_OPTIONS:
+        raise HTTPException(400, "Pick a valid enrollment method before adding this lead.")
+
+    is_dup, where = _lead_exists_for_website(
+        website,
+        name=row.get("name", ""),
+        city=row.get("city", ""),
+        state=row.get("state", ""),
+        address=row.get("address", ""),
+        phone=row.get("phone", ""),
+    )
+    if is_dup:
+        raise HTTPException(409, f"A matching school already exists in {where}.")
+
+    name = _clean(row.get("name"))
+    lead_id = _generate_manual_lead_id(website)
+    notes = "; ".join(
+        part for part in [
+            f"promoted_from_no_website:{_clean(row.get('id'))}",
+            "website_found_via_site_generator",
+            "manual_enrollment_method_confirmed",
+        ]
+        if part
+    )
+    new_row = [
+        lead_id,                                      # id
+        name,                                         # name
+        website,                                      # website
+        _clean(row.get("category")).lower(),          # category
+        _clean(row.get("city")),                      # city
+        _clean(row.get("state")),                     # state
+        _clean(row.get("zip")),                       # zip
+        _clean(row.get("phone")),                     # phone
+        _clean(row.get("address")),                   # address
+        date.today().isoformat(),                     # discovered_date
+        "ready_for_owner_lookup",                     # status
+        enrollment_method,                            # enrollment_method
+        "",                                           # owner_name
+        "",                                           # owner_title
+        "",                                           # owner_source_url
+        "",                                           # best_email
+        "",                                           # email_confidence
+        "site_generator_promote_to_owner_lookup",     # last_action
+        "",                                           # sent_at
+        "",                                           # sent_message_id
+        "",                                           # follow_up_at
+        "",                                           # follow_up_sent_at
+        "",                                           # replied_at
+        notes,                                        # notes
+        "",                                           # do_not_contact_reason
+    ]
+    sheets.get_tab(config.TAB_LEADS).append_row(new_row, value_input_option="USER_ENTERED")
+    return lead_id
+
+
 def _persist_uploaded_photos(files: list[UploadFile], subject_id: str, *, prefix: str = "upload") -> list[dict]:
     """Reads each uploaded file's bytes, records its real dimensions (so
     photo_quality can rank it against Google's photos later), and persists
@@ -83,15 +156,17 @@ def _persist_uploaded_photos(files: list[UploadFile], subject_id: str, *, prefix
     `prefix` distinguishes the filename (e.g. "hero" vs "upload") so a
     separately-persisted hero photo never collides with the general uploads
     batch's own upload-0/upload-1/... keys."""
+    files = [upload for upload in files[:MAX_UPLOADED_PHOTOS] if upload and upload.filename]
+    if not files:
+        return []
+
     use_r2 = r2_storage.is_configured()
     photos_dir = OUTPUT_DIR / "mocks" / subject_id / "photos"
     if not use_r2:
         photos_dir.mkdir(parents=True, exist_ok=True)
 
     persisted = []
-    for idx, upload in enumerate(files[:MAX_UPLOADED_PHOTOS]):
-        if not upload.filename:
-            continue
+    for idx, upload in enumerate(files):
         photo_bytes = upload.file.read()
         if not photo_bytes or len(photo_bytes) > MAX_UPLOAD_BYTES:
             logger.warning("Skipping uploaded photo %r: empty or over %d bytes", upload.filename, MAX_UPLOAD_BYTES)
@@ -150,6 +225,7 @@ def site_generator_home(
             "picker_q": q,
             "prefill": prefill,
             "checked": checked,
+            "enrollment_methods": ENROLLMENT_METHOD_OPTIONS,
         },
     )
     return _remember_key_cookie(request, response)
@@ -302,6 +378,37 @@ def site_generator_archive_no_website(
         existing_website_url=existing_website_url,
     )
     return _remember_key_cookie(request, RedirectResponse("/site-generator", status_code=303))
+
+
+@router.post("/site-generator/promote-no-website", dependencies=[Depends(require_access)])
+def site_generator_promote_no_website(
+    request: Request,
+    no_website_schools_id: str = Form(...),
+    existing_website_url: str = Form(...),
+    enrollment_method: str = Form(...),
+):
+    row = no_website_schools.get_by_id(no_website_schools_id)
+    if not row:
+        raise HTTPException(404, f"Unknown No_Website_Schools row: {no_website_schools_id}")
+
+    lead_id = _append_ready_for_owner_lookup_lead(
+        row,
+        website=existing_website_url,
+        enrollment_method=enrollment_method,
+    )
+    try:
+        no_website_schools.archive_row(
+            no_website_schools_id,
+            reason="promoted_to_leads",
+            existing_website_url=existing_website_url,
+        )
+    except Exception as e:
+        # The lead has already been added. Do not roll that back over picker
+        # cleanup; the duplicate guard will prevent a second lead if retried.
+        logger.warning("Lead %s added, but No_Website row %s could not be archived: %s", lead_id, no_website_schools_id, e)
+
+    query = urlencode({"q": row.get("name", "") or existing_website_url})
+    return _remember_key_cookie(request, RedirectResponse(f"/leads?{query}", status_code=303))
 
 
 @router.post("/site-generator/delete", dependencies=[Depends(require_access)])

@@ -25,6 +25,53 @@
 </div>
 {% endif %}
 
+{# ─── Anthropic usage pacing ───────────────────────── #}
+{% set au = anthropic_usage %}
+<section class="usage-card usage-card-{{ au.level }}">
+  <div class="usage-card__head">
+    <div>
+      <p class="section-label">Anthropic usage</p>
+      <h2>This month's Claude spend</h2>
+    </div>
+    <a class="button-link" href="/">Refresh</a>
+  </div>
+  {% if au.available %}
+    <div class="usage-metrics">
+      <div>
+        <span>Spent</span>
+        <strong>${{ "%.2f"|format(au.spent_usd) }}</strong>
+      </div>
+      <div>
+        <span>Budget</span>
+        <strong>{% if au.budget_usd %}${{ "%.2f"|format(au.budget_usd) }}{% else %}Unset{% endif %}</strong>
+      </div>
+      <div>
+        <span>Projected</span>
+        <strong>${{ "%.2f"|format(au.projected_month_usd) }}</strong>
+      </div>
+      <div>
+        <span>Daily room left</span>
+        <strong>{% if au.daily_allowance_usd is not none %}${{ "%.2f"|format(au.daily_allowance_usd) }}{% else %}Unknown{% endif %}</strong>
+      </div>
+    </div>
+    <p class="usage-rec rec-{{ au.level }}">{{ au.recommendation }}</p>
+    <p class="muted usage-note">
+      Resets {{ au.reset_at_local }}. Cost data can lag; use this for pacing, not invoice reconciliation.
+      Downstream uses Claude and Google Places. Generated-site runs avoid Places only when Google reviews/photos are off.
+    </p>
+  {% else %}
+    <p class="usage-rec rec-unknown">{{ au.recommendation }}</p>
+    <p class="muted usage-note">
+      Reset estimate: {{ au.reset_at_local }}. Add <code>ANTHROPIC_ADMIN_KEY</code>
+      and optionally <code>ANTHROPIC_MONTHLY_BUDGET_USD</code> to see live pacing.
+      Your regular <code>ANTHROPIC_API_KEY</code> is not enough for org cost reports.
+    </p>
+    {% if au.error %}
+      <p class="usage-error">{{ au.error }}</p>
+    {% endif %}
+  {% endif %}
+</section>
+
 <h2>Pipeline</h2>
 <p class="muted">Each box below is a stage. The counts show pending work — green means nothing to do, amber means action needed.</p>
 

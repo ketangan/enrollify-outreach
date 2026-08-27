@@ -84,9 +84,10 @@ def health():
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    from src import regions
+    from src import anthropic_usage, regions
     from webapp.webapp import dashboard
     stage_counts = dashboard.compute_stage_counts()
+    usage_summary = anthropic_usage.get_monthly_usage_summary()
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -95,6 +96,7 @@ def home(request: Request):
             "regions_list": regions.list_region_names(),
             "stage_counts": stage_counts,
             "recommendations": dashboard.compute_recommendations(stage_counts),
+            "anthropic_usage": usage_summary,
             "pipeline_alert": dashboard.compute_pipeline_alert(stage_counts),
             "running_jobs": dashboard.get_running_jobs(),
             "last_job": dashboard.get_last_finished_job(),

@@ -90,6 +90,45 @@ def test_merge_content_signals_carries_quote_source_and_author_with_the_winning_
     assert merged["quote_author"] == "Ben Kim"
 
 
+def test_merge_content_signals_carries_multiple_review_proof_points():
+    merged = generate_website_mocks.merge_content_signals([
+        {
+            "labels": ["Private lessons"],
+            "quote": "A Google review quote.",
+            "quote_source": "google_review",
+            "proof_points": [
+                {
+                    "label": "Private lessons",
+                    "text": "My daughter built real confidence in private piano lessons this year.",
+                    "source": "google_review",
+                    "author": "Ben Kim",
+                },
+                {
+                    "label": "Recitals",
+                    "text": "The recital gave our shy kid something exciting to work toward.",
+                    "source": "google_review",
+                    "author": "Maya R.",
+                },
+            ],
+        },
+        {
+            "labels": [],
+            "quote": "",
+            "proof_points": [
+                {
+                    "label": "Private lessons",
+                    "text": "My daughter built real confidence in private piano lessons this year.",
+                    "source": "google_review",
+                    "author": "Ben Kim",
+                },
+            ],
+        },
+    ])
+
+    assert len(merged["proof_points"]) == 2
+    assert merged["proof_points"][1]["author"] == "Maya R."
+
+
 def test_content_signal_from_website_tags_quote_source_as_website():
     from src import fetcher as fetcher_module
 
@@ -116,7 +155,10 @@ def test_content_signal_from_reviews_tags_quote_source_and_matches_author():
         {
             "author": "Ben Kim",
             "rating": 5,
-            "text": "My daughter loves her private lessons here and the recitals are wonderful events.",
+            "text": (
+                "My daughter loves her private lessons here and the recitals are wonderful events. "
+                "Her teacher made practice feel doable and she now plays every day at home."
+            ),
         },
     ]
     signal = generate_website_mocks.content_signal_from_reviews(
@@ -126,6 +168,8 @@ def test_content_signal_from_reviews_tags_quote_source_and_matches_author():
     assert signal["quote"]
     assert signal["quote_source"] == "google_review"
     assert signal["quote_author"] == "Ben Kim"
+    assert signal["proof_points"][0]["author"] == "Ben Kim"
+    assert signal["proof_points"][0]["source"] == "google_review"
 
 
 def test_content_signal_from_reviews_tags_pasted_yelp_text_without_an_author():
@@ -137,6 +181,21 @@ def test_content_signal_from_reviews_tags_pasted_yelp_text_without_an_author():
     assert signal["quote"]
     assert signal["quote_source"] == "yelp_review"
     assert signal.get("quote_author", "") == ""
+
+
+def test_content_signal_from_pasted_yelp_text_strips_review_attribution_prefix():
+    signal = generate_website_mocks.content_signal_from_reviews(
+        (
+            "Maya R. says: The recital gave him something exciting to work toward, "
+            "and his teacher made practice feel possible at home."
+        ),
+        mock_type="music",
+        category="music",
+        school_name="Test School",
+    )
+
+    assert signal["quote"].startswith("The recital gave him")
+    assert "says:" not in signal["proof_points"][0]["text"].lower()
 
 
 def test_derive_palette_from_colors_uses_given_accent_and_secondary():
@@ -480,6 +539,128 @@ def test_rendered_mock_uses_site_details_in_enrollment_pills():
     assert '<span class="option-pill">Private guitar lessons</span>' in rendered
     assert '<span class="option-pill">Recitals</span>' in rendered
     assert '<span class="option-pill">Trial lessons</span>' in rendered
+
+
+def test_music_performance_uses_review_proof_points_beyond_the_hero():
+    lead = _lead()
+    lead["_website_mock_site_anchors"] = ["private piano lessons", "recitals", "trial lessons"]
+    lead["_website_mock_site_quote"] = "My daughter loves her private lessons here."
+    lead["_website_mock_site_quote_source"] = "google_review"
+    lead["_website_mock_site_quote_author"] = "Ben Kim"
+    lead["_website_mock_proof_points"] = [
+        {
+            "label": "Private piano lessons",
+            "text": "The private piano lessons helped my daughter build confidence quickly.",
+            "source": "google_review",
+            "author": "Ben Kim",
+        },
+        {
+            "label": "Recitals",
+            "text": "The recital gave our shy kid something exciting to work toward.",
+            "source": "yelp_review",
+            "author": "",
+        },
+    ]
+
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "performance"))
+
+    assert "What families already say about the work." in rendered
+    assert "The private piano lessons helped my daughter build confidence quickly." in rendered
+    assert "Ben Kim, Google review" in rendered
+    assert "Yelp review" in rendered
+
+
+def test_real_uploaded_photos_do_not_create_contain_letterboxing():
+    lead = _lead()
+    lead["_website_mock_photos"] = ["real-photo-1.jpg", "real-photo-2.jpg", "real-photo-3.jpg"]
+
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
+
+    assert "--photo-fit: cover;" in rendered
+
+
+def test_music_academy_photo_strip_avoids_uploaded_hero_photos_when_possible():
+    lead = _lead()
+    lead["_website_mock_photos"] = [
+        "real-photo-1.jpg",
+        "real-photo-2.jpg",
+        "real-photo-3.jpg",
+        "real-photo-4.jpg",
+        "real-photo-5.jpg",
+    ]
+
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "academy"))
+
+    assert rendered.count("real-photo-1.jpg") == 1
+    assert rendered.count("real-photo-2.jpg") == 1
+    assert "real-photo-3.jpg" in rendered
+    assert "real-photo-4.jpg" in rendered
+
+
+def test_hero_photo_override_is_used_once_across_all_variants():
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        for variant in variants:
+            lead = _lead(category=mock_type)
+            lead["_website_mock_hero_photo"] = "chosen-hero.jpg"
+
+            rendered = generate_website_mocks._render_mock_html(lead, variant)
+
+            assert rendered.count("chosen-hero.jpg") == 1, f"{mock_type}/{variant.version_id}"
+
+
+def test_hero_photo_override_keeps_middle_sections_on_stock_photos():
+    lead = _lead(category="music")
+    lead["_website_mock_hero_photo"] = "chosen-hero.jpg"
+    lead["_website_mock_photos"] = [
+        "real-photo-1.jpg",
+        "real-photo-2.jpg",
+        "real-photo-3.jpg",
+    ]
+
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
+
+    assert "chosen-hero.jpg" in rendered
+    assert "real-photo-1.jpg" not in rendered
+    assert "real-photo-2.jpg" not in rendered
+    assert "real-photo-3.jpg" not in rendered
+    assert generate_website_mocks.PHOTO_SETS["music"]["studio"][0].split("?")[0] in rendered
+
+
+def test_music_collective_lineup_avoids_masthead_gallery_photos():
+    rendered = generate_website_mocks._render_mock_html(_lead(), _variant("music", "collective"))
+    collective_set = generate_website_mocks.PHOTO_SETS["music"]["collective"]
+
+    for hero_photo in collective_set:
+        assert rendered.count(hero_photo.split("?")[0]) == 1
+
+
+def test_mock_type_does_not_scale_from_viewport_width():
+    lead = _lead()
+    for variant in website_mocks.MOCK_VARIANTS["music"]:
+        rendered = generate_website_mocks._render_mock_html(lead, variant)
+        assert not re.search(r"font-size:\s*[^;{]*vw", rendered)
+        assert not re.search(r"--h1-size:\s*[^;{]*vw", rendered)
+        assert "min-height: 60vh" not in rendered
+
+
+def test_in_flow_headers_do_not_reserve_overlay_hero_space():
+    assert generate_website_mocks.HEADER_HERO_TOP["edge"] == "8rem"
+    assert generate_website_mocks.HEADER_HERO_TOP["bar"] == "3.25rem"
+    assert generate_website_mocks.HEADER_HERO_TOP["stack"] == "3rem"
+    assert generate_website_mocks.HEADER_HERO_TOP["rail"] == "3rem"
+    assert all("vw" not in value for value in generate_website_mocks.HEADER_HERO_TOP.values())
+
+
+def test_music_enrollment_flows_have_variant_specific_copy():
+    rendered = {
+        variant.version_id: generate_website_mocks._render_mock_html(_lead(), variant)
+        for variant in website_mocks.MOCK_VARIANTS["music"]
+    }
+
+    assert "Find a lesson time" in rendered["studio"]
+    assert "Request a trial lesson" in rendered["performance"]
+    assert "Find a group" in rendered["collective"]
+    assert "Request placement" in rendered["academy"]
 
 
 def test_rendered_mock_quotes_real_site_copy_in_hero():
@@ -843,14 +1024,14 @@ def test_collective_lineup_uses_instrument_photo_when_named(monkeypatch):
     assert photo_id in _collective_lineup_html(rendered)
 
 
-def test_collective_lineup_falls_back_to_generic_stock_when_no_instrument_named(monkeypatch):
+def test_collective_lineup_falls_back_to_non_hero_stock_when_no_instrument_named(monkeypatch):
     lead = _lead(category="music")
     lead["name"] = "Riverside Music Collective"  # no instrument named anywhere
     rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "collective"))
     lineup_html = _collective_lineup_html(rendered)
 
     for url in generate_website_mocks.PHOTO_SETS["music"]["collective"]:
-        assert url.split("?")[0] in lineup_html
+        assert url.split("?")[0] not in lineup_html
     for url in generate_website_mocks.INSTRUMENT_STOCK_PHOTOS.values():
         assert url.split("?")[0] not in lineup_html
 

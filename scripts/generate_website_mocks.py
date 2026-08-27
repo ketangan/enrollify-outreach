@@ -789,19 +789,102 @@ def _photo_urls(mock_type: str, version_id: str, category: str = "") -> list[str
 
 
 def _resolve_photos(lead: dict, mock_type: str, version_id: str, category: str) -> list[str]:
-    """Real business photos (a `_website_mock_photos` override — 3+ URLs or
-    local paths) take priority; falls back to the variant's themed stock
-    photo set when there aren't enough real ones. Every signature section
-    indexes up to photos[2] at minimum, so fewer than 3 real photos isn't
-    usable — fall back entirely rather than mixing a partial real set with
-    stock filler. Callers may pass more than 3 (up to however many were
-    actually uploaded) — modular-indexed sections (lesson-scroll,
-    band-strip, etc.) use however many are given for real variety instead
-    of only ever cycling through the same 3."""
+    """Resolve the page-level photo pool.
+
+    A `_website_mock_hero_photo` override is handled separately by
+    _render_variant_body so the selected real photo is used only in the hero.
+    The rest of the page then stays on curated stock images, preserving the
+    template composition instead of letting a few uneven real photos take
+    over the whole design.
+
+    Legacy `_website_mock_photos` still works when no hero-only override is
+    present: 3+ real URLs take priority; otherwise the variant's themed stock
+    photo set wins. Fewer than 3 real photos is not usable for the old
+    whole-page override because signature sections index up to photos[2]."""
+    if _clean(lead.get("_website_mock_hero_photo")):
+        return _photo_urls(mock_type, version_id, category)
     override = lead.get("_website_mock_photos")
     if isinstance(override, list) and len(override) >= 3:
         return override
     return _photo_urls(mock_type, version_id, category)
+
+
+def _dedupe_photos(photos: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for photo in photos:
+        photo = _clean(photo)
+        if not photo or photo in seen:
+            continue
+        seen.add(photo)
+        deduped.append(photo)
+    return deduped
+
+
+def _photo_fallback_pool(mock_type: str, version_id: str, category: str) -> list[str]:
+    """Stock backups used only when a section would otherwise repeat the
+    hero image. Uploaded/business photos stay first; these simply give the
+    renderer a non-repeating escape hatch when the real photo pool is too
+    small for hero + middle + band usage."""
+    base = _photo_urls(mock_type, version_id, category)
+    category_key = _clean(category).lower()
+    if mock_type == "sports" and category_key in PHOTO_SETS:
+        variant_sets = PHOTO_SETS[category_key]
+    else:
+        variant_sets = PHOTO_SETS.get(mock_type) or PHOTO_SETS["preschool"]
+    siblings: list[str] = []
+    for sibling_version, sibling_photos in variant_sets.items():
+        if sibling_version == version_id:
+            continue
+        siblings.extend(sibling_photos)
+    return _dedupe_photos(base + siblings)
+
+
+def _photo_sequence(ctx: dict, count: int, *, avoid: list[str] | None = None) -> list[str]:
+    """Return up to `count` photos, preferring the business/variant photo pool
+    while avoiding hero photos. If there are not enough non-hero real photos,
+    use stock fallbacks before repeating anything. Repetition is still allowed
+    as a last resort because an empty image slot is worse than a duplicate."""
+    avoid_set = set(_dedupe_photos(avoid or ctx.get("hero_photos", [])))
+    primary = [p for p in _dedupe_photos(ctx.get("photos", [])) if p not in avoid_set]
+    fallback = [
+        p
+        for p in _dedupe_photos(ctx.get("photo_fallbacks", []))
+        if p not in avoid_set and p not in primary
+    ]
+    candidates = primary + fallback
+    if not candidates:
+        candidates = _dedupe_photos(ctx.get("photos", [])) or _dedupe_photos(ctx.get("photo_fallbacks", []))
+    if not candidates:
+        return []
+    return [candidates[idx % len(candidates)] for idx in range(count)]
+
+
+def _with_hero_photos(ctx: dict, hero_photos: list[str]) -> dict:
+    return {**ctx, "hero_photos": _dedupe_photos(hero_photos)}
+
+
+def _hero_photo_override(ctx: dict) -> str:
+    return _clean(ctx.get("hero_photo_override"))
+
+
+def _single_hero_photo(ctx: dict, fallback_photo: str) -> str:
+    return _hero_photo_override(ctx) or fallback_photo
+
+
+def _hero_photo_gallery(ctx: dict, photos: list[str], count: int) -> list[str]:
+    gallery: list[str] = []
+    override = _hero_photo_override(ctx)
+    if override:
+        gallery.append(override)
+    for photo in _dedupe_photos(photos):
+        if len(gallery) >= count:
+            break
+        if photo not in gallery:
+            gallery.append(photo)
+    while gallery and len(gallery) < count:
+        gallery.append(gallery[len(gallery) % len(gallery)])
+    return gallery[:count]
 
 
 def _photo_style(photo_url: str) -> str:
@@ -968,6 +1051,17 @@ _QUOTE_SKIP_RE = re.compile(
     r"javascript|browser",
     re.IGNORECASE,
 )
+_REVIEW_ATTRIBUTION_RE = re.compile(
+    r"^(?:(?:[A-Z][\w'.-]*|[A-Z]\.)\s+){0,5}"
+    r"(?:says|said|writes|wrote|shared|shares|recommends):\s*",
+    re.IGNORECASE,
+)
+
+
+def _clean_quote_sentence(sentence: str) -> str:
+    sentence = sentence.strip(" -|•\t")
+    sentence = _REVIEW_ATTRIBUTION_RE.sub("", sentence).strip(" -|•\t")
+    return sentence
 
 
 def _site_quote_from_text(text: str) -> str:
@@ -977,7 +1071,7 @@ def _site_quote_from_text(text: str) -> str:
     if not signal:
         return ""
     for sentence in _QUOTE_SPLIT_RE.split(signal):
-        sentence = sentence.strip(" -|•\t")
+        sentence = _clean_quote_sentence(sentence)
         if not (40 <= len(sentence) <= 170):
             continue
         if len(sentence.split()) < 6:
@@ -989,6 +1083,110 @@ def _site_quote_from_text(text: str) -> str:
             continue  # likely a nav/banner fragment, not real sentence copy
         return sentence
     return ""
+
+
+def _proof_label_for_sentence(sentence: str, *, mock_type: str, category: str, school_name: str) -> str:
+    labels = _site_anchor_labels_from_text(
+        sentence,
+        mock_type=mock_type,
+        category=category,
+        school_name=school_name,
+        max_labels=1,
+    )
+    if labels:
+        return labels[0]
+    fallback = {
+        "preschool": "Parent trust",
+        "music": "Student progress",
+        "sports": "Family confidence",
+    }.get(mock_type, "Family feedback")
+    return fallback
+
+
+def _proof_points_from_text(
+    text: str,
+    *,
+    mock_type: str,
+    category: str,
+    school_name: str,
+    source: str = "",
+    author: str = "",
+    max_points: int = 4,
+) -> list[dict[str, str]]:
+    signal = re.sub(r"\s+", " ", _clean(text))
+    if not signal:
+        return []
+    points: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for sentence in _QUOTE_SPLIT_RE.split(signal):
+        sentence = _clean_quote_sentence(sentence)
+        if not (35 <= len(sentence) <= 210):
+            continue
+        if len(sentence.split()) < 6:
+            continue
+        if _QUOTE_SKIP_RE.search(sentence):
+            continue
+        key = _anchor_key(sentence)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        points.append({
+            "label": _proof_label_for_sentence(
+                sentence,
+                mock_type=mock_type,
+                category=category,
+                school_name=school_name,
+            ),
+            "text": sentence,
+            "source": source,
+            "author": author,
+        })
+        if len(points) >= max_points:
+            break
+    return points
+
+
+def _proof_points_from_reviews(
+    reviews: list[dict] | str,
+    *,
+    mock_type: str,
+    category: str,
+    school_name: str,
+) -> list[dict[str, str]]:
+    if isinstance(reviews, str):
+        return _proof_points_from_text(
+            reviews,
+            mock_type=mock_type,
+            category=category,
+            school_name=school_name,
+            source="yelp_review",
+        )
+
+    points: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for review in reviews:
+        if not isinstance(review, dict):
+            continue
+        text = _clean(review.get("text"))
+        if not text:
+            continue
+        for point in _proof_points_from_text(
+            text,
+            mock_type=mock_type,
+            category=category,
+            school_name=school_name,
+            source="google_review",
+            author=_clean(review.get("author")),
+            max_points=2,
+        ):
+            key = _anchor_key(point["text"])
+            if key in seen:
+                continue
+            seen.add(key)
+            points.append(point)
+            if len(points) >= 4:
+                return points
+    return points
 
 
 def _site_domain(website: str) -> str:
@@ -1026,7 +1224,14 @@ def content_signal_from_text(
         school_name=school_name,
     )
     quote = _site_quote_from_text(text)
-    return {"labels": labels, "quote": quote}
+    proof_points = _proof_points_from_text(
+        text,
+        mock_type=mock_type,
+        category=category,
+        school_name=school_name,
+        source="website",
+    )
+    return {"labels": labels, "quote": quote, "proof_points": proof_points}
 
 
 def content_signal_from_website(
@@ -1097,6 +1302,12 @@ def content_signal_from_reviews(
         school_name=school_name,
     )
     quote = signal.get("quote", "")
+    signal["proof_points"] = _proof_points_from_reviews(
+        reviews,
+        mock_type=mock_type,
+        category=category,
+        school_name=school_name,
+    )
     if quote:
         signal["quote_source"] = quote_source
         for review in review_dicts:
@@ -1118,6 +1329,8 @@ def merge_content_signals(signals: list[dict]) -> dict:
     quote = ""
     quote_source = ""
     quote_author = ""
+    proof_points: list[dict[str, str]] = []
+    seen_proof_keys: set[str] = set()
     for signal in signals:
         if not signal:
             continue
@@ -1131,7 +1344,29 @@ def merge_content_signals(signals: list[dict]) -> dict:
             quote = signal["quote"]
             quote_source = signal.get("quote_source", "")
             quote_author = signal.get("quote_author", "")
-    return {"labels": labels, "quote": quote, "quote_source": quote_source, "quote_author": quote_author}
+        for point in signal.get("proof_points", []):
+            if not isinstance(point, dict):
+                continue
+            text = _clean(point.get("text"))
+            key = _anchor_key(text)
+            if not key or key in seen_proof_keys:
+                continue
+            seen_proof_keys.add(key)
+            proof_points.append({
+                "label": _clean(point.get("label")),
+                "text": text,
+                "source": _clean(point.get("source")),
+                "author": _clean(point.get("author")),
+            })
+            if len(proof_points) >= 6:
+                break
+    return {
+        "labels": labels,
+        "quote": quote,
+        "quote_source": quote_source,
+        "quote_author": quote_author,
+        "proof_points": proof_points,
+    }
 
 
 def _site_signal_for_lead(lead: dict, variant: website_mocks.MockVariant) -> dict:
@@ -1175,6 +1410,33 @@ def _precomputed_site_anchors(lead: dict) -> list[str]:
     return []
 
 
+def _precomputed_proof_points(lead: dict) -> list[dict[str, str]]:
+    raw = lead.get("_website_mock_proof_points")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(raw, list):
+        return []
+    points = []
+    for point in raw:
+        if not isinstance(point, dict):
+            continue
+        text = _clean(point.get("text"))
+        if not text:
+            continue
+        points.append({
+            "label": _clean(point.get("label")) or "Family feedback",
+            "text": text,
+            "source": _clean(point.get("source")),
+            "author": _clean(point.get("author")),
+        })
+        if len(points) >= 6:
+            break
+    return points
+
+
 def _choice_labels(site_anchors: list[str], items: list[tuple[str, str]], max_labels: int = 4) -> list[str]:
     labels: list[str] = []
     seen: set[str] = set()
@@ -1196,6 +1458,45 @@ def _render_option_pills(labels: list[str]) -> str:
     return "".join(
         f'<span class="option-pill">{html.escape(label)}</span>'
         for label in labels[:4]
+    )
+
+
+def _proof_citation(point: dict[str, str]) -> str:
+    source = _clean(point.get("source"))
+    author = _clean(point.get("author"))
+    if source == "google_review":
+        return f"{author}, Google review" if author else "Google review"
+    if source == "yelp_review":
+        return "Yelp review"
+    if source == "website":
+        return "Current site"
+    return "Family feedback"
+
+
+def _display_proof_points(ctx: dict, limit: int = 3) -> list[dict[str, str]]:
+    quote_key = _anchor_key(ctx.get("site_quote"))
+    points = []
+    for point in ctx.get("proof_points", []):
+        text = _clean(point.get("text"))
+        if not text:
+            continue
+        if quote_key and _anchor_key(text) == quote_key:
+            continue
+        points.append(point)
+        if len(points) >= limit:
+            break
+    if not points:
+        points = [p for p in ctx.get("proof_points", []) if _clean(p.get("text"))][:limit]
+    return points
+
+
+def _render_proof_line(point: dict[str, str]) -> str:
+    return (
+        '<p class="proof-line">'
+        f'<span>{html.escape(_clean(point.get("label")) or "Family feedback")}</span>'
+        f'“{html.escape(_clean(point.get("text")))}”'
+        f'<cite>{html.escape(_proof_citation(point))}</cite>'
+        '</p>'
     )
 
 
@@ -1223,7 +1524,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "none",
         "display_tracking": "-0.005em",
         "display_weight": "620",
-        "h1_size": "clamp(44px, 6.4vw, 92px)",
+        "h1_size": "5.5rem",
         "header": "edge",
         "band": "pull-quote",
         "footer": "minimal",
@@ -1237,7 +1538,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "none",
         "display_tracking": "-0.012em",
         "display_weight": "640",
-        "h1_size": "clamp(40px, 5.6vw, 80px)",
+        "h1_size": "4.875rem",
         "header": "bar",
         "band": "side-note",
         "footer": "columns",
@@ -1251,7 +1552,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "none",
         "display_tracking": "-0.025em",
         "display_weight": "760",
-        "h1_size": "clamp(44px, 6.6vw, 94px)",
+        "h1_size": "5.625rem",
         "header": "stack",
         "band": "coverage",
         "footer": "strip",
@@ -1265,7 +1566,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "none",
         "display_tracking": "-0.01em",
         "display_weight": "400",
-        "h1_size": "clamp(50px, 7.2vw, 108px)",
+        "h1_size": "6.25rem",
         "header": "rail",
         "band": "photo-strip",
         "footer": "rule",
@@ -1279,7 +1580,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "none",
         "display_tracking": "-0.035em",
         "display_weight": "700",
-        "h1_size": "clamp(42px, 6vw, 86px)",
+        "h1_size": "5.125rem",
         "header": "edge",
         "band": "slots",
         "footer": "strip",
@@ -1293,7 +1594,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "none",
         "display_tracking": "-0.018em",
         "display_weight": "700",
-        "h1_size": "clamp(46px, 6.6vw, 98px)",
+        "h1_size": "5.75rem",
         "header": "stack",
         "band": "pull-quote",
         "footer": "rule",
@@ -1307,7 +1608,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "none",
         "display_tracking": "-0.005em",
         "display_weight": "600",
-        "h1_size": "clamp(44px, 6.2vw, 88px)",
+        "h1_size": "5.25rem",
         "header": "rail",
         "band": "coverage",
         "footer": "columns",
@@ -1321,7 +1622,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "uppercase",
         "display_tracking": "0.03em",
         "display_weight": "600",
-        "h1_size": "clamp(48px, 7.4vw, 104px)",
+        "h1_size": "6rem",
         "header": "bar",
         "band": "photo-strip",
         "footer": "minimal",
@@ -1335,7 +1636,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "uppercase",
         "display_tracking": "0.005em",
         "display_weight": "400",
-        "h1_size": "clamp(50px, 7.8vw, 112px)",
+        "h1_size": "6.375rem",
         "header": "edge",
         "band": "photo-strip",
         "footer": "strip",
@@ -1349,7 +1650,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "none",
         "display_tracking": "-0.012em",
         "display_weight": "600",
-        "h1_size": "clamp(40px, 5.4vw, 76px)",
+        "h1_size": "4.625rem",
         "header": "bar",
         "band": "coverage",
         "footer": "columns",
@@ -1363,7 +1664,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "none",
         "display_tracking": "-0.012em",
         "display_weight": "600",
-        "h1_size": "clamp(44px, 6.4vw, 92px)",
+        "h1_size": "5.5rem",
         "header": "stack",
         "band": "figures",
         "footer": "minimal",
@@ -1377,7 +1678,7 @@ VARIANT_STYLE: dict[tuple[str, str], dict[str, str]] = {
         "display_case": "uppercase",
         "display_tracking": "-0.01em",
         "display_weight": "400",
-        "h1_size": "clamp(36px, 4.8vw, 68px)",
+        "h1_size": "4.125rem",
         "header": "rail",
         "band": "side-note",
         "footer": "rule",
@@ -1397,13 +1698,14 @@ SHELL_TOKENS = {
     "rail": {"gutter": "clamp(20px, 4.5vw, 64px)", "section_y": "clamp(52px, 6vw, 86px)"},
 }
 
-# Overlay ("edge") and sticky ("bar") headers float above the hero, so the hero
-# has to reserve room for them. In-flow headers ("stack", "rail") do not.
+# Only the overlay edge header floats over the hero. Bar/stack/rail headers are
+# already in normal flow, so large hero clearance there creates dead colored
+# space and gets especially awkward when the browser is zoomed out.
 HEADER_HERO_TOP = {
-    "edge": "clamp(116px, 14vw, 190px)",
-    "bar": "clamp(116px, 14vw, 190px)",
-    "stack": "clamp(44px, 6vw, 80px)",
-    "rail": "clamp(44px, 6vw, 80px)",
+    "edge": "8rem",
+    "bar": "3.25rem",
+    "stack": "3rem",
+    "rail": "3rem",
 }
 
 
@@ -1632,10 +1934,10 @@ BAND_STRIP_CAPTIONS = {
 
 
 def _render_band_photo_strip(ctx: dict, items: list[tuple[str, str]]) -> str:
-    photos = ctx["photos"]
     captions = BAND_STRIP_CAPTIONS.get(ctx["type_id"], BAND_STRIP_CAPTIONS["preschool"])
+    photos = _photo_sequence(ctx, len(captions))
     cells = "".join(
-        f'<div class="band-strip__cell" {_photo_style(photos[idx % len(photos)])}>'
+        f'<div class="band-strip__cell" {_photo_style(photos[idx])}>'
         f"<span>{html.escape(caption)}</span></div>"
         for idx, caption in enumerate(captions)
     )
@@ -1738,6 +2040,81 @@ def _flow_config(ctx: dict) -> dict:
     category = _clean(ctx.get("raw_category")).lower()
 
     if type_id == "preschool":
+        if version_id == "structured":
+            return {
+                "kicker": "Admissions",
+                "headline": "Start with the right age group, then book the visit.",
+                "intro": (
+                    "Share your child's age and timing first, so the admissions reply can "
+                    "point you to the right room and the next tour window."
+                ),
+                "fields": [
+                    ("Child age", "3 years"),
+                    ("Start window", "Next 60 days"),
+                    ("Program", "Preschool"),
+                ],
+                "contact_fields": [
+                    ("Parent name", "First and last"),
+                    ("Email", "you@email.com"),
+                    ("Phone", "(000) 000-0000"),
+                ],
+                "button": "Begin admissions",
+                "assurance": "We reply with openings, tour times, and the next application step.",
+                "next_step": (
+                    "You'll get age-group fit, current availability, and the clearest next step "
+                    "instead of a generic contact-form receipt."
+                ),
+            }
+        if version_id == "explorer":
+            return {
+                "kicker": "Visit",
+                "headline": "Come see the classroom rhythm before you decide.",
+                "intro": (
+                    "Tell us what your child is curious about and when you want to visit. "
+                    "We'll suggest the best time to see the day in motion."
+                ),
+                "fields": [
+                    ("Child age", "4 years"),
+                    ("Best visit time", "Morning"),
+                    ("Interest", "Classroom tour"),
+                ],
+                "contact_fields": [
+                    ("Parent name", "First and last"),
+                    ("Email", "you@email.com"),
+                    ("Phone", "(000) 000-0000"),
+                ],
+                "button": "Plan a visit",
+                "assurance": "We reply within one business day with a visit time that shows real classroom activity.",
+                "next_step": (
+                    "You'll hear back with a tour time, the age group to visit, and what your child "
+                    "can expect to see."
+                ),
+            }
+        if version_id == "community":
+            return {
+                "kicker": "Join us",
+                "headline": "Tell us about your family and we'll help you feel it out.",
+                "intro": (
+                    "A short note gives us enough context to answer like people, not send back a "
+                    "packet of forms."
+                ),
+                "fields": [
+                    ("Child age", "2 years"),
+                    ("Family priority", "Warm teachers"),
+                    ("Timeline", "Exploring now"),
+                ],
+                "contact_fields": [
+                    ("Parent name", "First and last"),
+                    ("Email", "you@email.com"),
+                    ("Phone", "(000) 000-0000"),
+                ],
+                "button": "Start a conversation",
+                "assurance": "We reply personally. No automated drip, no pressure.",
+                "next_step": (
+                    "You'll get a human reply with whether the school feels like a fit, what is open, "
+                    "and how to visit."
+                ),
+            }
         return {
             "kicker": "Enrollment",
             "headline": "Tell us about your child and we'll take it from there.",
@@ -1765,21 +2142,90 @@ def _flow_config(ctx: dict) -> dict:
 
     if type_id == "music":
         if version_id == "performance":
-            headline = "Book a trial lesson and we'll match the teacher to the student."
-            button = "Request a trial lesson"
-        else:
-            headline = "Tell us who's playing and we'll find the right fit."
-            button = "Find a lesson time"
+            return {
+                "kicker": "Trial lesson",
+                "headline": "Book a trial lesson and we'll match the teacher to the student.",
+                "intro": (
+                    "Tell us the instrument, level, and schedule window. We'll suggest the teacher "
+                    "and trial time that make the most sense."
+                ),
+                "fields": [
+                    ("Instrument", "Piano"),
+                    ("Student level", "Beginner"),
+                    ("Goal", "Recital confidence"),
+                ],
+                "contact_fields": [
+                    ("Parent or student name", "First and last"),
+                    ("Email", "you@email.com"),
+                    ("Phone", "(000) 000-0000"),
+                ],
+                "button": "Request a trial lesson",
+                "assurance": "We reply within one business day with two or three times that fit.",
+                "next_step": (
+                    "You'll get a teacher suggestion, a trial slot, and what to prepare before "
+                    "the first lesson."
+                ),
+            }
+        if version_id == "collective":
+            return {
+                "kicker": "Group fit",
+                "headline": "Tell us what you play and we'll place you with the right group.",
+                "intro": (
+                    "Group lessons only work when level and goals line up. This gives us enough "
+                    "to recommend the right ensemble or class."
+                ),
+                "fields": [
+                    ("Instrument", "Guitar"),
+                    ("Group experience", "First group"),
+                    ("Best fit", "Beginner ensemble"),
+                ],
+                "contact_fields": [
+                    ("Parent or student name", "First and last"),
+                    ("Email", "you@email.com"),
+                    ("Phone", "(000) 000-0000"),
+                ],
+                "button": "Find a group",
+                "assurance": "We reply with the group level, schedule, and how the first session works.",
+                "next_step": (
+                    "You'll hear back with the class that matches the student's instrument, level, "
+                    "and comfort playing with others."
+                ),
+            }
+        if version_id == "academy":
+            return {
+                "kicker": "Placement",
+                "headline": "Start with a placement check, then follow a clear path.",
+                "intro": (
+                    "A quick placement request lets the studio recommend the right track instead "
+                    "of starting every student in the same place."
+                ),
+                "fields": [
+                    ("Instrument", "Violin"),
+                    ("Current level", "Some basics"),
+                    ("Track", "Structured lessons"),
+                ],
+                "contact_fields": [
+                    ("Parent or student name", "First and last"),
+                    ("Email", "you@email.com"),
+                    ("Phone", "(000) 000-0000"),
+                ],
+                "button": "Request placement",
+                "assurance": "We reply with the right starting point and the next lesson opening.",
+                "next_step": (
+                    "You'll get a recommended level, the first milestone, and open times with "
+                    "the right teacher."
+                ),
+            }
         return {
-            "kicker": "Start lessons",
-            "headline": headline,
+            "kicker": "Lesson match",
+            "headline": "Tell us who's playing and we'll find the right teacher and time.",
             "intro": (
-                "Two minutes here saves a week of phone tag. Tell us the level and "
-                "when you're free, and we'll come back with real times."
+                "Two minutes here saves a week of phone tag. Tell us the instrument, level, "
+                "and when you're free."
             ),
             "fields": [
+                ("Instrument", "Guitar"),
                 ("Student level", "Beginner"),
-                ("Lesson goal", "Start lessons"),
                 ("Best days", "Weekday evenings"),
             ],
             "contact_fields": [
@@ -1787,11 +2233,10 @@ def _flow_config(ctx: dict) -> dict:
                 ("Email", "you@email.com"),
                 ("Phone", "(000) 000-0000"),
             ],
-            "button": button,
+            "button": "Find a lesson time",
             "assurance": "We reply within one business day with two or three times that fit.",
             "next_step": (
-                "You'll get a teacher suggestion and specific lesson times, "
-                "not a form receipt."
+                "You'll get a teacher suggestion and specific lesson times, not a form receipt."
             ),
         }
 
@@ -2097,9 +2542,10 @@ def _render_hero_masthead(ctx: dict, cta_label: str) -> str:
     # section rendered as one flat full-viewport colour block. A photo row
     # along the bottom edge breaks that up without turning it into a
     # photo hero and competing with hero-bleed.
+    gallery_photos = ctx.get("hero_photos") or _photo_sequence(ctx, 3)
     gallery = "".join(
         f'<div class="hero-masthead__shot" {_photo_style(photo)}></div>'
-        for photo in ctx["photos"][:3]
+        for photo in gallery_photos[:3]
     )
     return f"""
       <section class="hero-masthead">
@@ -2161,10 +2607,10 @@ def _day_timeline_steps() -> list[tuple[str, str, str]]:
 
 
 def _render_day_timeline(ctx: dict) -> str:
-    photos = ctx["photos"]
     steps = _day_timeline_steps()
+    photos = _photo_sequence(ctx, len(steps))
     cards = "\n".join(
-        f'<article {_photo_style(photos[idx % len(photos)])}>'
+        f'<article {_photo_style(photos[idx])}>'
         f"<span>{html.escape(time)}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
         for idx, (time, title, body) in enumerate(steps)
     )
@@ -2189,7 +2635,7 @@ def _admissions_steps() -> list[tuple[str, str]]:
 
 
 def _render_admissions_path(ctx: dict) -> str:
-    photo = ctx["photos"][1]
+    photo = _photo_sequence(ctx, 1)[0]
     steps = _admissions_steps()
     items_html = "\n".join(
         f'<li><span>{idx:02d}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p>'
@@ -2209,35 +2655,51 @@ def _render_admissions_path(ctx: dict) -> str:
 
 
 def _render_lesson_scroll(ctx: dict, items: list[tuple[str, str]]) -> str:
-    photos = ctx["photos"]
+    photos = _photo_sequence(ctx, max(1, min(len(items), len(ctx["photos"]))))
+    proof_points = _display_proof_points(ctx, limit=3)
     # Cap at 3 cards to match the 3 stock photos per category — same reason
     # the day-timeline is capped at 3 steps. The 4th item still feeds the
     # enrollment panel's program-interest pills via the full `items` list.
-    cards = "\n".join(
-        f'<article {_photo_style(photos[idx % len(photos)])}>'
-        f"<h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
-        for idx, (title, body) in enumerate(items[:len(photos)])
-    )
+    cards = []
+    for idx, (title, body) in enumerate(items[:len(photos)]):
+        proof = _render_proof_line(proof_points[idx]) if idx < len(proof_points) else ""
+        cards.append(
+            f'<article {_photo_style(photos[idx])}>'
+            f"<h3>{html.escape(title)}</h3><p>{html.escape(body)}</p>{proof}</article>"
+        )
     return f"""
       <section class="lesson-scroll" id="programs">
         <div class="lesson-scroll__head">
           <p class="section-kicker">Lesson path</p>
           <h2>Find the right fit before the first call.</h2>
         </div>
-        <div class="lesson-scroll__track">{cards}</div>
+        <div class="lesson-scroll__track">{"".join(cards)}</div>
       </section>
 """
 
 
 def _render_showcase_marquee(ctx: dict, items: list[tuple[str, str]]) -> str:
-    stubs = "\n".join(
-        f"<article><span>{html.escape(title)}</span><p>{html.escape(body)}</p></article>"
-        for title, body in items[:3]
-    )
+    proof_points = _display_proof_points(ctx, limit=3)
+    if proof_points:
+        stubs = "\n".join(
+            "<article>"
+            f"<span>{html.escape(_clean(point.get('label')) or 'Family feedback')}</span>"
+            f"<p>“{html.escape(_clean(point.get('text')))}”</p>"
+            f"<small>{html.escape(_proof_citation(point))}</small>"
+            "</article>"
+            for point in proof_points
+        )
+        heading = "What families already say about the work."
+    else:
+        stubs = "\n".join(
+            f"<article><span>{html.escape(title)}</span><p>{html.escape(body)}</p></article>"
+            for title, body in items[:3]
+        )
+        heading = "Every lesson points toward a stage."
     return f"""
       <section class="showcase-marquee" id="programs">
         <p class="section-kicker">Upcoming</p>
-        <h2>Every lesson points toward a stage.</h2>
+        <h2>{html.escape(heading)}</h2>
         <div class="showcase-marquee__row">{stubs}</div>
       </section>
 """
@@ -2291,7 +2753,7 @@ def _explorer_themes() -> list[tuple[str, str]]:
 
 
 def _render_explorer_spotlight(ctx: dict) -> str:
-    photo = ctx["photos"][0]
+    photo = _photo_sequence(ctx, 1)[0]
     themes = _explorer_themes()
     featured_title, featured_body = themes[0]
     rest_html = "\n".join(
@@ -2359,8 +2821,13 @@ def _render_collective_lineup(ctx: dict) -> str:
     # real content, falling back to the generic on-theme stock set for
     # anything not identified.
     roles = _collective_roles()
-    photos = [INSTRUMENT_STOCK_PHOTOS[i] for i in _detect_instruments(ctx)[:3]]
-    for url in PHOTO_SETS["music"]["collective"]:
+    avoid = set(ctx.get("hero_photos", []))
+    photos = [
+        INSTRUMENT_STOCK_PHOTOS[i]
+        for i in _detect_instruments(ctx)[:3]
+        if INSTRUMENT_STOCK_PHOTOS[i] not in avoid
+    ]
+    for url in _photo_sequence(ctx, 3, avoid=list(avoid) + photos):
         if len(photos) >= 3:
             break
         if url not in photos:
@@ -2369,6 +2836,11 @@ def _render_collective_lineup(ctx: dict) -> str:
         f'<article {_photo_style(photos[idx])}><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>'
         for idx, (title, body) in enumerate(roles)
     )
+    proof_points = _display_proof_points(ctx, limit=2)
+    proof_html = ""
+    if proof_points:
+        proof_items = "".join(_render_proof_line(point) for point in proof_points)
+        proof_html = f'<div class="collective-proof">{proof_items}</div>'
     return f"""
       <section class="collective-lineup" id="programs">
         <div class="collective-lineup__head">
@@ -2376,6 +2848,7 @@ def _render_collective_lineup(ctx: dict) -> str:
           <h2>Group classes built around real skill levels.</h2>
         </div>
         <div class="collective-lineup__row">{cards}</div>
+        {proof_html}
       </section>
 """
 
@@ -2391,17 +2864,26 @@ def _academy_levels() -> list[tuple[str, str]]:
 
 def _render_academy_path(ctx: dict) -> str:
     levels = _academy_levels()
-    items_html = "\n".join(
-        f'<li><span>{idx:02d}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></li>'
-        for idx, (title, body) in enumerate(levels, start=1)
-    )
+    proof_points = _display_proof_points(ctx, limit=4)
+    items = []
+    for idx, (title, body) in enumerate(levels, start=1):
+        proof = ""
+        if idx <= len(proof_points):
+            point = proof_points[idx - 1]
+            proof = (
+                f'<em>{html.escape(_clean(point.get("label")))}: '
+                f'“{html.escape(_clean(point.get("text")))}”</em>'
+            )
+        items.append(
+            f'<li><span>{idx:02d}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p>{proof}</li>'
+        )
     return f"""
       <section class="academy-path" id="programs">
         <div class="academy-path__head">
           <p class="section-kicker">The curriculum</p>
           <h2>Every student can see what's next.</h2>
         </div>
-        <ol class="academy-path__steps">{items_html}</ol>
+        <ol class="academy-path__steps">{"".join(items)}</ol>
       </section>
 """
 
@@ -2415,8 +2897,8 @@ def _camp_sessions() -> list[tuple[str, str, str]]:
 
 
 def _render_camp_calendar(ctx: dict) -> str:
-    photos = ctx["photos"]
     sessions = _camp_sessions()
+    photos = _photo_sequence(ctx, len(sessions))
     cards = "\n".join(
         f'<article {_photo_style(photos[idx])}><span>{html.escape(week)}</span>'
         f"<h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
@@ -2471,62 +2953,86 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
     # alone. The typeface pairing, header shape, page shell and footer come
     # from VARIANT_STYLE and are likewise unique within a category.
     if type_id == "preschool" and version_id == "structured":
-        hero = _render_hero_split(ctx, "See enrollment steps", photos[0])
+        hero_photo = _single_hero_photo(ctx, photos[0])
+        ctx = _with_hero_photos(ctx, [hero_photo])
+        hero = _render_hero_split(ctx, "See enrollment steps", hero_photo)
         signature = _render_admissions_path(ctx)
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-preschool-structured"
     elif type_id == "preschool" and version_id == "explorer":
+        hero_photos = _hero_photo_gallery(ctx, photos, 3)
+        ctx = _with_hero_photos(ctx, hero_photos)
         hero = _render_hero_masthead(ctx, "See this week's theme")
         signature = _render_explorer_spotlight(ctx)
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-preschool-explorer"
     elif type_id == "preschool" and version_id == "community":
-        hero = _render_hero_collage(ctx, "Start the conversation", photos[0], photos[1])
+        hero_photos = _hero_photo_gallery(ctx, photos, 2)
+        ctx = _with_hero_photos(ctx, hero_photos)
+        hero = _render_hero_collage(ctx, "Start the conversation", hero_photos[0], hero_photos[1])
         signature = _render_community_reasons(ctx)
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-preschool-community"
     elif type_id == "preschool":
-        hero = _render_hero(ctx, "Ask about openings", photos[0])
+        hero_photo = _single_hero_photo(ctx, photos[0])
+        ctx = _with_hero_photos(ctx, [hero_photo])
+        hero = _render_hero(ctx, "Ask about openings", hero_photo)
         signature = _render_day_timeline(ctx)
         enrollment = _render_enrollment_cta(ctx, items)
         layout_class = "mock-layout-preschool-warm"
     elif type_id == "music" and version_id == "performance":
-        hero = _render_hero_split(ctx, "Book a trial lesson", photos[2])
+        hero_photo = _single_hero_photo(ctx, photos[2])
+        ctx = _with_hero_photos(ctx, [hero_photo])
+        hero = _render_hero_split(ctx, "Book a trial lesson", hero_photo)
         signature = _render_showcase_marquee(ctx, items)
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-music-performance"
     elif type_id == "music" and version_id == "collective":
+        hero_photos = _hero_photo_gallery(ctx, photos, 3)
+        ctx = _with_hero_photos(ctx, hero_photos)
         hero = _render_hero_masthead(ctx, "Join a group class")
         signature = _render_collective_lineup(ctx)
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-music-collective"
     elif type_id == "music" and version_id == "academy":
-        hero = _render_hero_collage(ctx, "See the curriculum", photos[0], photos[1])
+        hero_photos = _hero_photo_gallery(ctx, photos, 2)
+        ctx = _with_hero_photos(ctx, hero_photos)
+        hero = _render_hero_collage(ctx, "See the curriculum", hero_photos[0], hero_photos[1])
         signature = _render_academy_path(ctx)
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-music-academy"
     elif type_id == "music":
-        hero = _render_hero(ctx, "Find the right lesson", photos[0])
+        hero_photo = _single_hero_photo(ctx, photos[0])
+        ctx = _with_hero_photos(ctx, [hero_photo])
+        hero = _render_hero(ctx, "Find the right lesson", hero_photo)
         signature = _render_lesson_scroll(ctx, items)
         enrollment = _render_enrollment_inline(ctx, items)
         layout_class = "mock-layout-music-studio"
     elif type_id == "sports" and version_id == "trust":
-        hero = _render_hero_split(ctx, "Ask us anything", photos[0])
+        hero_photo = _single_hero_photo(ctx, photos[0])
+        ctx = _with_hero_photos(ctx, [hero_photo])
+        hero = _render_hero_split(ctx, "Ask us anything", hero_photo)
         signature = _render_parent_qa(ctx)
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-sports-trust"
     elif type_id == "sports" and version_id == "camp":
+        hero_photos = _hero_photo_gallery(ctx, photos, 3)
+        ctx = _with_hero_photos(ctx, hero_photos)
         hero = _render_hero_masthead(ctx, "Reserve a spot")
         signature = _render_camp_calendar(ctx)
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-sports-camp"
     elif type_id == "sports" and version_id == "team":
-        hero = _render_hero_collage(ctx, "Ask about tryouts", photos[0], photos[1])
+        hero_photos = _hero_photo_gallery(ctx, photos, 2)
+        ctx = _with_hero_photos(ctx, hero_photos)
+        hero = _render_hero_collage(ctx, "Ask about tryouts", hero_photos[0], hero_photos[1])
         signature = _render_team_roster(ctx)
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-sports-team"
     else:
-        hero = _render_hero(ctx, "Claim a trial spot", photos[1])
+        hero_photo = _single_hero_photo(ctx, photos[1])
+        ctx = _with_hero_photos(ctx, [hero_photo])
+        hero = _render_hero(ctx, "Claim a trial spot", hero_photo)
         signature = _render_stat_block(ctx)
         enrollment = _render_enrollment_cta(ctx, items)
         layout_class = "mock-layout-sports-action"
@@ -2628,6 +3134,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     site_quote = _clean(lead.get("_website_mock_site_quote"))
     site_quote_source = _clean(lead.get("_website_mock_site_quote_source"))
     site_quote_author = _clean(lead.get("_website_mock_site_quote_author"))
+    proof_points = _precomputed_proof_points(lead)
     site_anchors_html = _render_site_anchors(site_anchor_labels)
     items = _program_blurbs(
         variant.type_id,
@@ -2636,6 +3143,11 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     )
     items = _personalize_items(items, site_anchor_labels)
     photos = _resolve_photos(lead, variant.type_id, variant.version_id, _clean(lead.get("category")))
+    photo_fallbacks = _photo_fallback_pool(
+        variant.type_id,
+        variant.version_id,
+        _clean(lead.get("category")),
+    )
     ctx = {
         "name": escaped_name,
         "initial": escaped_name[:1] or "P",
@@ -2649,8 +3161,11 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
         "site_quote": site_quote,
         "site_quote_source": site_quote_source,
         "site_quote_author": site_quote_author,
+        "proof_points": proof_points,
         "site_domain": _site_domain(website),
         "photos": photos,
+        "photo_fallbacks": photo_fallbacks,
+        "hero_photo_override": _clean(lead.get("_website_mock_hero_photo")),
         "type_id": variant.type_id,
         "version_id": variant.version_id,
         "raw_category": _clean(lead.get("category")),
@@ -2698,6 +3213,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       --gutter: {shell["gutter"]};
       --section-y: {shell["section_y"]};
       --hero-top: {hero_top};
+      --photo-fit: cover;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -2719,7 +3235,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       letter-spacing: var(--display-tracking);
     }}
     h1 {{ font-size: var(--h1-size); line-height: .98; margin: 0 0 24px; }}
-    h2 {{ font-size: clamp(28px, 3.8vw, 52px); line-height: 1.03; margin: 0 0 18px; }}
+    h2 {{ font-size: 3rem; line-height: 1.03; margin: 0 0 18px; }}
     h3 {{ font-size: 21px; line-height: 1.16; margin: 14px 0 8px; }}
     p {{ color: var(--muted); font-size: 17px; line-height: 1.58; margin: 0; letter-spacing: 0; }}
     @media (prefers-reduced-motion: no-preference) {{
@@ -2920,7 +3436,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
          typical landscape photo hard top and bottom, dead-center, with no
          way to adjust it per-photo. Shorter height means less gets cropped
          off any given photo, real or uploaded. */
-      min-height: 60vh;
+      min-height: 32rem;
       display: flex;
       align-items: flex-end;
       padding: var(--gutter);
@@ -2930,18 +3446,18 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
         linear-gradient(180deg, var(--hero-overlay-a) 0%, transparent 30%, var(--hero-overlay-b) 100%),
         var(--hero-photo);
       background-repeat: no-repeat, no-repeat;
-      /* The gradient overlay still covers the full box (it has no
-         intrinsic aspect ratio to clash with); the photo itself uses
-         "contain" so the whole photo is always visible — no cropping,
-         ever, at the cost of the secondary-color background showing
-         through on the sides when the photo's aspect ratio doesn't match
-         the hero's. A crop that cuts off faces is a worse failure mode
-         than a visible background color bar. */
-      background-size: cover, contain;
+      /* The gradient overlay covers the full box; the photo should too.
+         Contain preserves every pixel, but it creates dead color bars in
+         mismatched frames and makes the mock look unfinished. */
+      background-size: cover, var(--photo-fit);
       background-position: center, center top;
       color: white;
     }}
     .hero-bleed__content {{ max-width: 760px; }}
+    .hero-split__panel h1,
+    .hero-collage__panel h1 {{
+      font-size: min(var(--h1-size), 4.75rem);
+    }}
     .hero-bleed h1, .hero-bleed p, .hero-bleed .eyebrow,
     .hero-split__panel h1, .hero-split__panel p, .hero-split__panel .eyebrow,
     .hero-masthead h1, .hero-masthead p, .hero-masthead .eyebrow,
@@ -2963,7 +3479,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-split {{
       display: grid;
       grid-template-columns: 1fr 1fr;
-      min-height: 60vh;  /* was 78vh — see .hero-bleed comment on cropping */
+      min-height: 32rem;  /* was 78vh — too dominant when browser zoomed out */
     }}
     .hero-split__panel {{
       display: flex;
@@ -2979,7 +3495,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: var(--soft);
       background-image: var(--hero-photo);
       background-repeat: no-repeat;
-      background-size: contain;
+      background-size: cover;
       background-position: center top;
       min-height: 260px;
     }}
@@ -2999,7 +3515,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     }}
     .hero-masthead__top h1 {{
       max-width: 1100px;
-      font-size: clamp(46px, 8.5vw, 118px);
+      font-size: 5.75rem;
       line-height: .95;
     }}
     .hero-masthead__row {{
@@ -3016,7 +3532,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-collage {{
       display: grid;
       grid-template-columns: 1fr 1fr;
-      min-height: 60vh;  /* was 78vh — see .hero-bleed comment on cropping */
+      min-height: 32rem;  /* was 78vh — too dominant when browser zoomed out */
     }}
     .hero-collage__panel {{
       display: flex;
@@ -3038,7 +3554,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-collage__photo {{
       background-color: var(--soft);
       background-repeat: no-repeat;
-      background-size: contain;
+      background-size: cover;
       background-position: center top;
       border-radius: var(--radius);
       box-shadow: 0 24px 60px rgba(0,0,0,.18);
@@ -3081,6 +3597,31 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       letter-spacing: .04em;
       color: rgba(255,255,255,.6);
     }}
+    .proof-line {{
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255,255,255,.25);
+      color: rgba(255,255,255,.88);
+      font-size: 13px;
+      line-height: 1.4;
+    }}
+    .proof-line span {{
+      display: block;
+      margin-bottom: 5px;
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }}
+    .proof-line cite {{
+      display: block;
+      margin-top: 6px;
+      color: rgba(255,255,255,.62);
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 800;
+    }}
 
     /* Signature: preschool-warm — a real day, hour by hour */
     .day-timeline {{ padding-top: var(--section-y); padding-bottom: var(--section-y); }}
@@ -3096,7 +3637,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       color: white;
       background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.74)), var(--photo);
-      background-size: cover;
+      background-repeat: no-repeat, no-repeat;
+      background-size: cover, var(--photo-fit);
       background-position: center top;
       box-shadow: 0 18px 44px rgba(0,0,0,.14);
     }}
@@ -3153,7 +3695,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       border-radius: var(--radius);
       background-color: var(--soft);
       background-image: var(--photo);
-      background-size: cover;
+      background-repeat: no-repeat;
+      background-size: var(--photo-fit);
       background-position: center top;
     }}
 
@@ -3179,7 +3722,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       color: white;
       background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.76)), var(--photo);
-      background-size: cover;
+      background-repeat: no-repeat, no-repeat;
+      background-size: cover, var(--photo-fit);
       background-position: center top;
       box-shadow: 0 20px 46px rgba(43,33,64,.22);
     }}
@@ -3211,6 +3755,15 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       color: var(--accent);
     }}
     .showcase-marquee__row p {{ color: rgba(255,255,255,.76); font-size: 15px; }}
+    .showcase-marquee__row small {{
+      display: block;
+      margin-top: 12px;
+      color: rgba(255,255,255,.55);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }}
 
     /* Signature: sports-action — a scoreboard, information not decoration */
     .stat-block {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--ink); }}
@@ -3222,7 +3775,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       font-family: var(--display-font);
       font-variation-settings: var(--display-vf);
       font-weight: var(--display-weight);
-      font-size: clamp(40px, 6vw, 68px);
+      font-size: 4rem;
       color: var(--accent);
       line-height: 1;
     }}
@@ -3271,7 +3824,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       color: white;
       background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.72)), var(--photo);
-      background-size: cover;
+      background-repeat: no-repeat, no-repeat;
+      background-size: cover, var(--photo-fit);
       background-position: center top;
     }}
     .explorer-spotlight__featured span {{ color: var(--accent); font-weight: 900; font-size: 13px; text-transform: uppercase; }}
@@ -3315,11 +3869,22 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       min-height: 180px;
       background-color: var(--soft);
       background-image: var(--photo);
-      background-size: cover;
+      background-repeat: no-repeat;
+      background-size: var(--photo-fit);
       background-position: center top;
     }}
     .collective-lineup__row h3 {{ font-size: 18px; margin: 16px 18px 6px; }}
     .collective-lineup__row p {{ font-size: 14px; margin: 0 18px 18px; }}
+    .collective-proof {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 22px;
+      padding: 20px;
+      border-radius: var(--radius);
+      background: var(--secondary);
+    }}
+    .collective-proof .proof-line {{ margin: 0; padding-top: 0; border-top: 0; }}
 
     /* Signature: music-academy — a vertical curriculum ladder, text only */
     .academy-path {{ padding-top: var(--section-y); padding-bottom: var(--section-y); }}
@@ -3349,6 +3914,16 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     }}
     .academy-path__steps h3 {{ font-size: 19px; margin: 0 0 6px; }}
     .academy-path__steps p {{ font-size: 15px; }}
+    .academy-path__steps em {{
+      display: block;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      font-style: italic;
+      border-left: 3px solid var(--accent);
+      padding-left: 10px;
+    }}
 
     /* Signature: sports-camp — a skewed, high-energy dated calendar */
     .camp-calendar {{ padding-top: var(--section-y); padding-bottom: var(--section-y); }}
@@ -3364,7 +3939,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       color: white;
       background-color: var(--secondary);
       background-image: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.72)), var(--photo);
-      background-size: cover;
+      background-repeat: no-repeat, no-repeat;
+      background-size: cover, var(--photo-fit);
       background-position: center top;
       box-shadow: 0 18px 44px rgba(0,0,0,.16);
     }}
@@ -3441,7 +4017,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       font-variation-settings: var(--display-vf);
       font-weight: var(--display-weight);
       letter-spacing: var(--display-tracking);
-      font-size: clamp(26px, 3.6vw, 46px);
+      font-size: 2.625rem;
       line-height: 1.16;
       color: var(--ink);
       max-width: 900px;
@@ -3473,7 +4049,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       border-top: 2px solid var(--accent);
       padding-top: 14px;
     }}
-    .band-note__body {{ font-size: clamp(17px, 1.6vw, 21px); line-height: 1.6; max-width: 780px; color: var(--ink); }}
+    .band-note__body {{ font-size: 1.25rem; line-height: 1.6; max-width: 780px; color: var(--ink); }}
     .band-coverage {{ padding-block: var(--section-y); }}
     .band-coverage__head {{ max-width: 620px; margin-bottom: 26px; }}
     .band-coverage__list {{
@@ -3508,7 +4084,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       font-family: var(--display-font);
       font-variation-settings: var(--display-vf);
       font-weight: var(--display-weight);
-      font-size: clamp(38px, 5vw, 60px);
+      font-size: 3.5rem;
       line-height: 1;
       color: var(--accent);
     }}
@@ -3518,7 +4094,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       min-height: clamp(200px, 26vw, 320px);
       background-color: var(--soft);
       background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.62)), var(--photo);
-      background-size: cover;
+      background-repeat: no-repeat, no-repeat;
+      background-size: cover, var(--photo-fit);
       background-position: center top;
       display: flex;
       align-items: flex-end;
@@ -3552,7 +4129,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       padding: clamp(24px, 4vw, 44px);
       box-shadow: 0 24px 70px rgba(15, 40, 80, .12);
     }}
-    .enrollment-copy h2 {{ font-size: clamp(28px, 3.6vw, 46px); }}
+    .enrollment-copy h2 {{ font-size: 2.625rem; }}
     .next-step-note {{
       display: grid;
       gap: 6px;
@@ -3717,7 +4294,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       border-radius: var(--radius);
       background-color: rgba(255,255,255,.09);
       background-image: var(--photo);
-      background-size: cover;
+      background-repeat: no-repeat;
+      background-size: var(--photo-fit);
       background-position: center top;
     }}
 
@@ -3730,7 +4308,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       text-align: center;
     }}
     .enrollment-cta__inner {{ max-width: 620px; margin: 0 auto; }}
-    .enrollment-cta h2 {{ color: white; font-size: clamp(28px, 4vw, 46px); }}
+    .enrollment-cta h2 {{ color: white; font-size: 2.625rem; }}
     .enrollment-cta p {{ color: rgba(255,255,255,.82); }}
     .enrollment-cta .section-kicker {{ color: var(--accent); }}
     .enrollment-cta__actions {{ margin-top: 26px; display: grid; gap: 14px; justify-items: center; }}
@@ -3925,6 +4503,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       .day-timeline__strip, .admissions-path__steps, .stat-block__row, .showcase-marquee__row,
       .parent-qa__grid, .explorer-spotlight__layout, .community-reasons__row,
       .collective-lineup__row, .camp-calendar__row, .team-roster__row,
+      .collective-proof,
       .band-coverage__list, .band-figures__row, .band-strip,
       .footer-columns, .footer-rule, .footer-strip,
       .mock-form, .enrollment-inline__form {{
@@ -3945,14 +4524,18 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       .hero-collage__photos {{ min-height: 320px; order: -1; }}
       .hero-masthead__row {{ grid-template-columns: 1fr; }}
       .hero-masthead__action {{ justify-content: flex-start; }}
+      h1 {{ font-size: min(var(--h1-size), 4.75rem); }}
+      h2, .enrollment-copy h2, .enrollment-cta h2 {{ font-size: 2.35rem; }}
+      .hero-masthead__top h1 {{ font-size: 5rem; }}
       .enrollment-steps__row {{ grid-template-columns: 1fr; }}
       .topbar-rail {{ grid-template-columns: 1fr; }}
     }}
     @media (max-width: 580px) {{
-      .hero-bleed {{ min-height: 50vh; /* was 72vh, scaled down to match the 60vh desktop base */ }}
+      .hero-bleed {{ min-height: 28rem; }}
       .primary {{ width: 100%; }}
       .enrollment-cta__actions button, .enrollment-steps__cta button {{ width: 100%; }}
-      h1 {{ font-size: 40px; }}
+      h1, .hero-masthead__top h1 {{ font-size: 2.5rem; }}
+      h2, .enrollment-copy h2, .enrollment-cta h2 {{ font-size: 2rem; }}
     }}
   </style>
 </head>
@@ -4042,6 +4625,7 @@ def render_mock_concepts(
     render_subject["_website_mock_site_quote"] = content_signal.get("quote", "")
     render_subject["_website_mock_site_quote_source"] = content_signal.get("quote_source", "")
     render_subject["_website_mock_site_quote_author"] = content_signal.get("quote_author", "")
+    render_subject["_website_mock_proof_points"] = content_signal.get("proof_points", [])
 
     rendered = []
     for item in payload:

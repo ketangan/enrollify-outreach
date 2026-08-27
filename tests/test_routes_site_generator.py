@@ -24,8 +24,11 @@ def _real_jpeg_bytes(width: int, height: int) -> bytes:
 def _stub_no_website_picker(monkeypatch):
     """GET /site-generator reads the No_Website_Schools picker on every
     request — without this, every test hitting that route makes a real,
-    slow Google Sheets API call (~5s each, observed directly)."""
+    slow Google Sheets API call (~5s each, observed directly). It also reads
+    Generated_Sites for the existing-org list, which must stay stubbed for
+    route tests unless a test explicitly installs its own fake sheet."""
     monkeypatch.setattr(no_website_schools, "list_page", lambda page=1, page_size=10, **kw: ([], 0))
+    monkeypatch.setattr(site_generator_state, "list_orgs", lambda: [])
 
 
 class _FakeWorksheet:
@@ -482,6 +485,137 @@ def test_check_website_redirects_with_found_result(monkeypatch):
     assert "checked_id=90277-abc123" in location
     assert "checked_found=true" in location
     assert "page=2" in location
+
+
+def test_found_website_result_offers_promote_to_owner_lookup(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    row = {
+        "id": "90277-abc123",
+        "name": "Coast Music",
+        "category": "music",
+        "city": "Manhattan Beach",
+        "state": "CA",
+    }
+    monkeypatch.setattr(no_website_schools, "list_page", lambda page=1, page_size=10, **kw: ([row], 1))
+
+    resp = client.get(
+        "/site-generator",
+        params={
+            "key": "secret123",
+            "checked_id": "90277-abc123",
+            "checked_found": "true",
+            "checked_url": "https://coastmusicrocks.com",
+            "checked_confidence": "high",
+            "checked_reasoning": "Found dedicated site.",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert 'action="/site-generator/promote-no-website"' in resp.text
+    assert 'name="enrollment_method"' in resp.text
+    assert "Add to outreach → owner lookup" in resp.text
+
+
+def test_promote_no_website_adds_ready_for_owner_lookup_lead_and_archives_source(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    from webapp.webapp import routes_site_generator
+
+    source_row = {
+        "id": "90277-abc123",
+        "name": "Coast Music",
+        "category": "music",
+        "city": "Manhattan Beach",
+        "state": "CA",
+        "zip": "90266",
+        "phone": "(310) 555-0100",
+        "address": "123 Highland Ave",
+    }
+    appended_rows = []
+    archive_calls = []
+
+    class _LeadWorksheet:
+        def append_row(self, row, value_input_option=None):
+            appended_rows.append(row)
+
+    monkeypatch.setattr(no_website_schools, "get_by_id", lambda row_id: source_row if row_id == source_row["id"] else None)
+    monkeypatch.setattr(routes_site_generator, "_lead_exists_for_website", lambda website, **kwargs: (False, ""))
+    monkeypatch.setattr(routes_site_generator.sheets, "get_tab", lambda tab: _LeadWorksheet())
+    monkeypatch.setattr(
+        no_website_schools,
+        "archive_row",
+        lambda row_id, *, reason, existing_website_url="": archive_calls.append((row_id, reason, existing_website_url)) or True,
+    )
+
+    resp = client.post(
+        "/site-generator/promote-no-website",
+        params={"key": "secret123"},
+        data={
+            "no_website_schools_id": "90277-abc123",
+            "existing_website_url": "https://coastmusicrocks.com",
+            "enrollment_method": "contact_form_qualify",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/leads?q=Coast+Music"
+    assert len(appended_rows) == 1
+    row = appended_rows[0]
+    assert row[1] == "Coast Music"
+    assert row[2] == "https://coastmusicrocks.com"
+    assert row[10] == "ready_for_owner_lookup"
+    assert row[11] == "contact_form_qualify"
+    assert row[17] == "site_generator_promote_to_owner_lookup"
+    assert "promoted_from_no_website:90277-abc123" in row[23]
+    assert archive_calls == [("90277-abc123", "promoted_to_leads", "https://coastmusicrocks.com")]
+
+
+def test_promote_no_website_rejects_duplicate_lead(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    from webapp.webapp import routes_site_generator
+
+    monkeypatch.setattr(
+        no_website_schools,
+        "get_by_id",
+        lambda row_id: {"id": row_id, "name": "Coast Music", "category": "music"},
+    )
+    monkeypatch.setattr(routes_site_generator, "_lead_exists_for_website", lambda website, **kwargs: (True, "leads"))
+
+    resp = client.post(
+        "/site-generator/promote-no-website",
+        params={"key": "secret123"},
+        data={
+            "no_website_schools_id": "90277-abc123",
+            "existing_website_url": "https://coastmusicrocks.com",
+            "enrollment_method": "contact_form_qualify",
+        },
+    )
+
+    assert resp.status_code == 409
+    assert "matching school already exists in leads" in resp.text
+
+
+def test_promote_no_website_rejects_invalid_enrollment_method(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+
+    monkeypatch.setattr(
+        no_website_schools,
+        "get_by_id",
+        lambda row_id: {"id": row_id, "name": "Coast Music", "category": "music"},
+    )
+
+    resp = client.post(
+        "/site-generator/promote-no-website",
+        params={"key": "secret123"},
+        data={
+            "no_website_schools_id": "90277-abc123",
+            "existing_website_url": "https://coastmusicrocks.com",
+            "enrollment_method": "online_system_exclude",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "Pick a valid enrollment method" in resp.text
 
 
 def test_check_website_redirects_with_clear_result(monkeypatch):

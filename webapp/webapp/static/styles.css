@@ -435,6 +435,35 @@ form.filters button:hover { background: #2d4229; }
   border: 1px solid #ffe08a;
 }
 .check-result-found .site-gen-inline-form { display: block; margin-top: 8px; }
+.site-gen-promote-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(90, 69, 0, .18);
+}
+.site-gen-promote-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 260px;
+  font-weight: 650;
+}
+.site-gen-promote-form select {
+  min-height: 36px;
+  padding: 6px 8px;
+}
+.site-gen-promote-form .btn-primary {
+  width: auto;
+  min-height: 36px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+.site-gen-promote-form .muted {
+  flex-basis: 100%;
+  margin: 0;
+}
 .check-result-clear {
   background: #e8f5e9;
   color: #1b5e20;
@@ -621,6 +650,79 @@ form.filters button:hover { background: #2d4229; }
 }
 .status-bar-idle a { color: #3d5a3a; }
 
+/* Anthropic usage pacing */
+.usage-card {
+  background: #fff;
+  border: 1px solid #ddd7ca;
+  border-left: 5px solid #9da6b3;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 0 0 24px;
+  box-shadow: 0 10px 28px rgba(61, 54, 45, .06);
+}
+.usage-card-ok { border-left-color: #4caf50; }
+.usage-card-caution { border-left-color: #ffa726; }
+.usage-card-avoid { border-left-color: #d88b7a; }
+.usage-card-unknown { border-left-color: #9da6b3; }
+.usage-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.section-label {
+  margin: 0 0 4px;
+  color: #777;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.usage-metrics div {
+  background: #fbf8f3;
+  border: 1px solid #eee4d5;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.usage-metrics span {
+  display: block;
+  color: #777;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.usage-metrics strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+  color: #1a1915;
+}
+.usage-rec {
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  border-radius: 4px;
+  border-left: 3px solid #ccc;
+  font-size: 13px;
+}
+.rec-unknown { background: #eef1f4; color: #3f4752; border-left-color: #9da6b3; }
+.usage-note { margin-bottom: 0; }
+.usage-error {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: #ffebee;
+  color: #6b0000;
+  font-size: 12px;
+}
+
 /* Pipeline flow — horizontal on desktop, stacked on mobile */
 .pipeline-flow {
   display: flex;
@@ -780,6 +882,7 @@ form.filters button:hover { background: #2d4229; }
 @media (max-width: 900px) {
   .pipeline-flow { flex-direction: column; }
   .phase-arrow { transform: rotate(90deg); justify-content: center; }
+  .usage-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Job statuses */
