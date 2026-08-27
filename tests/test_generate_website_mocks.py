@@ -794,6 +794,78 @@ def test_on_accent_text_clears_aa_contrast_for_every_palette():
             )
 
 
+def test_detect_instruments_finds_named_instruments_in_business_name():
+    ctx = {"name": "Riverside Piano and Violin Studio", "site_quote": "", "site_anchor_labels": []}
+    assert generate_website_mocks._detect_instruments(ctx) == ["piano", "violin"]
+
+
+def test_detect_instruments_finds_instruments_in_quote_and_labels():
+    ctx = {"name": "Test School", "site_quote": "My daughter loves her guitar lessons here.", "site_anchor_labels": ["Drum circle"]}
+    found = generate_website_mocks._detect_instruments(ctx)
+    assert "guitar" in found
+    assert "drums" in found
+
+
+def test_detect_instruments_matches_singing_and_vocal_as_voice():
+    ctx = {"name": "Test", "site_quote": "", "site_anchor_labels": ["Singing lessons for kids"]}
+    assert generate_website_mocks._detect_instruments(ctx) == ["voice"]
+
+    ctx2 = {"name": "Test", "site_quote": "Great vocal coach.", "site_anchor_labels": []}
+    assert generate_website_mocks._detect_instruments(ctx2) == ["voice"]
+
+
+def test_detect_instruments_returns_empty_when_nothing_named():
+    ctx = {"name": "Riverside Music Collective", "site_quote": "Great school, we love it here.", "site_anchor_labels": ["Trial lessons"]}
+    assert generate_website_mocks._detect_instruments(ctx) == []
+
+
+def test_detect_instruments_does_not_duplicate_repeated_mentions():
+    ctx = {"name": "Piano Piano Piano Academy", "site_quote": "", "site_anchor_labels": []}
+    assert generate_website_mocks._detect_instruments(ctx) == ["piano"]
+
+
+def _collective_lineup_html(rendered: str) -> str:
+    """Isolates just the collective-lineup card row markup — grepping the
+    whole page risks false-positive matches against this file's own source
+    comments (which mention these class/URL names in explanatory text)."""
+    start = rendered.index('class="collective-lineup__row">')
+    return rendered[start:rendered.index("</section>", start)]
+
+
+def test_collective_lineup_uses_instrument_photo_when_named(monkeypatch):
+    lead = _lead(category="music")
+    lead["name"] = "Riverside Violin Studio"
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "collective"))
+
+    # & is HTML-escaped to &amp; in an inline style attribute, so check the
+    # unambiguous photo-id portion of the URL rather than the raw string.
+    photo_id = generate_website_mocks.INSTRUMENT_STOCK_PHOTOS["violin"].split("?")[0]
+    assert photo_id in _collective_lineup_html(rendered)
+
+
+def test_collective_lineup_falls_back_to_generic_stock_when_no_instrument_named(monkeypatch):
+    lead = _lead(category="music")
+    lead["name"] = "Riverside Music Collective"  # no instrument named anywhere
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "collective"))
+    lineup_html = _collective_lineup_html(rendered)
+
+    for url in generate_website_mocks.PHOTO_SETS["music"]["collective"]:
+        assert url.split("?")[0] in lineup_html
+    for url in generate_website_mocks.INSTRUMENT_STOCK_PHOTOS.values():
+        assert url.split("?")[0] not in lineup_html
+
+
+def test_collective_lineup_ignores_real_uploaded_photos_uses_stock_instead():
+    # Deliberately bypasses ctx["photos"] even when real photos exist — a
+    # "who plays together" card row reads oddly reusing the same 1-2 real
+    # photos already shown elsewhere on the page.
+    lead = _lead(category="music")
+    lead["_website_mock_photos"] = ["real-photo-1.jpg", "real-photo-2.jpg", "real-photo-3.jpg"]
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "collective"))
+
+    assert "real-photo-1.jpg" not in _collective_lineup_html(rendered)
+
+
 def test_on_accent_prefers_white_only_when_white_actually_clears_aa():
     # A near-black accent: white is both correct and sufficient.
     assert generate_website_mocks._on_accent_color("#12312f", "#12312f") == "#ffffff"

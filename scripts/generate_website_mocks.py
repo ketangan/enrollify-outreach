@@ -613,6 +613,51 @@ def _visual_palette(variant: website_mocks.MockVariant, color_override: dict | N
     return base
 
 
+# Used only by _render_collective_lineup (the music-collective concept's
+# "Group classes" card row) — each card there names a specific instrument
+# when one can be identified from the business's real content, rather than
+# a generic recital/performance stock photo. One photo per instrument is
+# enough: cards mix instrument-specific photos with the generic "collective"
+# PHOTO_SETS entry above when fewer than 3 instruments are identified, so no
+# single photo repeats across a row of 3. Each URL verified live (curl 200)
+# before being committed here.
+INSTRUMENT_STOCK_PHOTOS = {
+    "piano": "https://images.unsplash.com/photo-1587977318625-6e88a0cd5603?auto=format&fit=crop&w=1400&q=80",
+    "violin": "https://images.unsplash.com/photo-1692552950398-63feb911b8e2?auto=format&fit=crop&w=1400&q=80",
+    "guitar": "https://images.unsplash.com/photo-1501059104508-e158516511cd?auto=format&fit=crop&w=1400&q=80",
+    "drums": "https://images.unsplash.com/photo-1738235574387-e154dac9e9e5?auto=format&fit=crop&w=1400&q=80",
+    "voice": "https://images.unsplash.com/photo-1453738773917-9c3eff1db985?auto=format&fit=crop&w=1400&q=80",
+}
+
+# Ordered so a compound match (e.g. "singing lessons") resolves to one
+# instrument key consistently — order doesn't matter today since patterns
+# don't overlap, but keeps future additions unambiguous.
+INSTRUMENT_KEYWORDS = {
+    "piano": r"\bpiano\b",
+    "violin": r"\bviolin\b",
+    "guitar": r"\bguitar\b",
+    "drums": r"\bdrums?\b",
+    "voice": r"\bvoice\b|\bvocal\b|\bsing(?:ing)?\b",
+}
+
+
+def _detect_instruments(ctx: dict) -> list[str]:
+    """Scans whatever real text is available (business name, real quote,
+    regex-extracted labels) for named instruments — never guesses beyond
+    what's actually mentioned. Returns unique instrument keys in the order
+    they were found; empty if none are named anywhere."""
+    haystack = " ".join([
+        ctx.get("name", ""),
+        ctx.get("site_quote", ""),
+        " ".join(ctx.get("site_anchor_labels", [])),
+    ]).lower()
+    found = []
+    for instrument, pattern in INSTRUMENT_KEYWORDS.items():
+        if re.search(pattern, haystack) and instrument not in found:
+            found.append(instrument)
+    return found
+
+
 # Each variant within a category gets its own themed 3-photo set, distinct
 # from its siblings — e.g. music-performance shows stage/recital energy
 # while music-academy shows structured curriculum shots. Sharing one pool
@@ -2305,8 +2350,21 @@ def _collective_roles() -> list[tuple[str, str]]:
 
 
 def _render_collective_lineup(ctx: dict) -> str:
-    photos = ctx["photos"]
+    # Only ever called for the music/collective concept (see the branch that
+    # calls this below) — deliberately uses stock instrument photos instead
+    # of ctx["photos"] (the business's own real photos), since a "who plays
+    # together" card row reads oddly with 3 crops of the same one or two
+    # real photos already used elsewhere on the page. Cards show a named
+    # instrument's photo when one is actually mentioned in the business's
+    # real content, falling back to the generic on-theme stock set for
+    # anything not identified.
     roles = _collective_roles()
+    photos = [INSTRUMENT_STOCK_PHOTOS[i] for i in _detect_instruments(ctx)[:3]]
+    for url in PHOTO_SETS["music"]["collective"]:
+        if len(photos) >= 3:
+            break
+        if url not in photos:
+            photos.append(url)
     cards = "\n".join(
         f'<article {_photo_style(photos[idx])}><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>'
         for idx, (title, body) in enumerate(roles)
