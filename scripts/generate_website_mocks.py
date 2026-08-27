@@ -83,7 +83,7 @@ def _programs_for(mock_type: str, category: str) -> list[str]:
 def _hero_headline(mock_type: str, variant_id: str, school_name: str) -> str:
     if mock_type == "preschool":
         if variant_id == "structured":
-            return "Tour, apply, and enroll without the paperwork chase."
+            return "A first visit that feels clear before day one."
         if variant_id == "explorer":
             return "A new theme to discover every week."
         if variant_id == "community":
@@ -112,8 +112,8 @@ def _hero_intro(mock_type: str, variant_id: str, school_name: str) -> str:
     if mock_type == "preschool":
         if variant_id == "structured":
             return (
-                f"At {school_name}, families can see age groups, "
-                "tour requests, application steps, and waitlist expectations in one flow."
+                f"At {school_name}, families can understand the classroom rhythm, "
+                "plan a visit, and know what happens before the first morning."
             )
         if variant_id == "explorer":
             return (
@@ -702,7 +702,7 @@ PHOTO_SETS = {
         "explorer": [
             "https://images.unsplash.com/photo-1606080255438-f908756a0169?auto=format&fit=crop&w=1400&q=80",
             "https://images.unsplash.com/photo-1601034188350-4154a8d1e9c7?auto=format&fit=crop&w=1400&q=80",
-            "https://images.unsplash.com/photo-1690748747428-d5226f2af24d?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=1400&q=80",
         ],
         "community": [
             "https://images.unsplash.com/photo-1588075592446-265fd1e6e76f?auto=format&fit=crop&w=1400&q=80",
@@ -2627,27 +2627,31 @@ def _render_day_timeline(ctx: dict) -> str:
 
 def _admissions_steps() -> list[tuple[str, str]]:
     return [
-        ("Check age group & schedule", "Ages, openings, and daily schedule are laid out before you call."),
-        ("Request a tour", "See the classrooms and meet staff before deciding anything."),
-        ("Submit application", "One form captures what the office needs to move you forward."),
-        ("Confirm placement", "A clear yes, waitlist, or next date, no guessing."),
+        ("Find the right classroom", "Ages, openings, and the daily rhythm are clear before a family reaches out."),
+        ("Plan a visit", "Families can see the room, meet the teachers, and ask practical questions."),
+        ("Share child details", "A short inquiry captures age, start timing, and what the family wants to understand."),
+        ("Feel ready for day one", "The reply explains openings, next steps, and what to bring if it feels like a fit."),
     ]
 
 
 def _render_admissions_path(ctx: dict) -> str:
-    photo = _photo_sequence(ctx, 1)[0]
+    photos = _photo_sequence(ctx, 2)
     steps = _admissions_steps()
-    items_html = "\n".join(
-        f'<li><span>{idx:02d}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p>'
-        + (f'<figure {_photo_style(photo)}></figure>' if idx == 2 else "")
-        + "</li>"
-        for idx, (title, body) in enumerate(steps, start=1)
-    )
+    items = []
+    for idx, (title, body) in enumerate(steps, start=1):
+        photo_html = ""
+        if idx in (2, 4) and photos:
+            photo = photos[0 if idx == 2 else min(1, len(photos) - 1)]
+            photo_html = f'<figure {_photo_style(photo)}></figure>'
+        items.append(
+            f'<li><span>{idx:02d}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p>{photo_html}</li>'
+        )
+    items_html = "\n".join(items)
     return f"""
       <section class="admissions-path" id="programs">
         <div class="admissions-path__head">
-          <p class="section-kicker">From inquiry to first day</p>
-          <h2>Every step, laid out before you ask.</h2>
+          <p class="section-kicker">From first look to first morning</p>
+          <h2>A simple path for families deciding where their child belongs.</h2>
         </div>
         <ol class="admissions-path__steps">{items_html}</ol>
       </section>
@@ -2746,7 +2750,7 @@ def _render_parent_qa(ctx: dict) -> str:
 
 def _explorer_themes() -> list[tuple[str, str]]:
     return [
-        ("Bugs & backyard science", "Magnifying glasses, bug jars, and a lot of very serious questions about ants."),
+        ("Messy art & color mixing", "Paint, big paper, and the kind of hands-on project children want to talk about later."),
         ("Water play week", "Pouring, measuring, and the first real lessons in cause and effect."),
         ("Building & blocks", "Towers fall down. Kids build them again. That's most of the lesson."),
     ]

@@ -27,13 +27,14 @@
   </p>
 {% else %}
   <table class="data-table">
-    <thead><tr><th>Business</th><th>Category</th><th>City</th><th>Google reviews</th><th>Yelp reviews</th><th colspan="2"></th></tr></thead>
+    <thead><tr><th>Business</th><th>Category</th><th>City</th><th>Address</th><th>Google reviews</th><th>Yelp reviews</th><th colspan="2"></th></tr></thead>
     <tbody>
       {% for row in picker_rows %}
         <tr>
           <td>{{ row.name }}</td>
           <td>{{ row.category }}</td>
           <td>{{ row.city }}{% if row.state %}, {{ row.state }}{% endif %}</td>
+          <td>{{ row.address if row.address else "—" }}</td>
           <td>{{ row.google_review_count if row.google_review_count else "—" }}{% if row.google_rating %} ({{ row.google_rating }}★){% endif %}</td>
           <td>{{ row.yelp_review_count if row.yelp_review_count else "—" }}{% if row.yelp_rating %} ({{ row.yelp_rating }}★){% endif %}</td>
           <td>
@@ -48,7 +49,7 @@
         </tr>
         {% if checked and checked.id == row.id %}
           <tr class="site-gen-check-result-row">
-            <td colspan="7">
+            <td colspan="8">
               {% if checked.found %}
                 <div class="check-result check-result-found">
                   <strong>Possible existing website found</strong>

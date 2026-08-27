@@ -428,11 +428,27 @@ def test_mock_copy_avoids_meta_template_language():
 def test_mock_headlines_read_like_public_site_copy_not_mail_merge():
     music = generate_website_mocks._render_mock_html(_lead(), _variant("music", "studio"))
     performance = generate_website_mocks._render_mock_html(_lead(), _variant("music", "performance"))
+    structured_preschool = generate_website_mocks._render_mock_html(
+        _lead(category="preschool"),
+        _variant("preschool", "structured"),
+    )
 
     assert "<h1>Private lessons that fit real schedules.</h1>" in music
     assert "<h1>Lessons with a stage to grow toward.</h1>" in performance
+    assert "<h1>A first visit that feels clear before day one.</h1>" in structured_preschool
+    assert "paperwork chase" not in structured_preschool
     assert "Mark Fitchett's Guitar School, with lesson paths" not in music
     assert "Show families what students at Mark Fitchett's Guitar School are working toward." not in performance
+
+
+def test_preschool_explorer_featured_photo_matches_theme_copy():
+    lead = _lead(category="preschool")
+    lead["_website_mock_hero_photo"] = "https://example.com/real-hero.jpg"
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("preschool", "explorer"))
+
+    assert "Messy art &amp; color mixing" in rendered
+    assert "photo-1503454537195-1dcabb73ffb9" in rendered
+    assert "photo-1690748747428-d5226f2af24d" not in rendered
 
 
 def test_mock_versions_use_distinct_visual_palettes():
@@ -871,7 +887,7 @@ def test_structured_preschool_admissions_path_is_a_real_sequence():
     assert '<ol class="admissions-path__steps">' in rendered
     assert "<span>01</span>" in rendered
     assert "<span>04</span>" in rendered
-    assert rendered.count("<figure") == 1
+    assert rendered.count("<figure") == 2
 
 
 def test_every_variant_has_an_identity_style_entry():

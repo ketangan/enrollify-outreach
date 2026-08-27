@@ -103,6 +103,25 @@ def test_site_generator_shows_no_match_message_for_empty_search(monkeypatch):
     assert 'No matches for "nonexistent-business"' in resp.text
 
 
+def test_site_generator_no_website_grid_shows_address(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    row = {
+        "id": "90277-abc123",
+        "name": "Coast Music",
+        "category": "music",
+        "city": "Manhattan Beach",
+        "state": "CA",
+        "address": "719 10th St, Manhattan Beach, CA 90266",
+    }
+    monkeypatch.setattr(no_website_schools, "list_page", lambda page=1, page_size=10, **kw: ([row], 1))
+
+    resp = client.get("/site-generator", params={"key": "secret123"})
+
+    assert resp.status_code == 200
+    assert "<th>Address</th>" in resp.text
+    assert "719 10th St, Manhattan Beach, CA 90266" in resp.text
+
+
 def test_generate_submits_job_with_fresh_subject_id_and_redirects(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     captured = {}
