@@ -194,7 +194,7 @@
     <details class="site-gen-org">
       <summary>
         <span class="site-gen-org-name">{{ org.name }}</span>
-        <span class="lead-meta">{{ org.category }}{% if org.city %} · {{ org.city }}{{ ", " + org.state if org.state }}{% endif %} · {{ org.themes|length }} concept{{ "s" if org.themes|length != 1 }}</span>
+        <span class="lead-meta">{{ org.category }}{% if org.city %} · {{ org.city }}{{ ", " + org.state if org.state }}{% endif %} · {{ org.themes|length }} concept{{ "s" if org.themes|length != 1 }}{% if org.phone %} · {{ org.phone }}{% endif %}</span>
       </summary>
       <div class="site-gen-org-body">
         {% for theme, versions in org.themes.items() %}
@@ -230,11 +230,14 @@
         {% endfor %}
         <div class="site-gen-text-box">
           <label for="sms-message-{{ org.org_id }}">Text message to send</label>
-          <textarea id="sms-message-{{ org.org_id }}" rows="12">Hi{% if org.owner_name %} {{ org.owner_name }}{% endif %}! This is Ketan — we build, redesign, and maintain websites, and help with student enrollment too. I put together a few concepts for {{ org.name }} to take a look at, no cost or obligation:
+          <textarea id="sms-message-{{ org.org_id }}" rows="14">Hi{% if org.owner_name %} {{ org.owner_name }}{% endif %}! This is Ketan — we build, redesign, and maintain websites, and also help schools streamline student enrollment.
+
+I put together a few website concepts for {{ org.name }} so you can get a feel for what we could create for you:
+
 {% for theme, versions in org.themes.items() -%}
-{{ loop.index }}. {{ versions[-1].short_url }}
-{% endfor -%}
-Let me know which direction feels right!</textarea>
+Option {{ loop.index }}: {{ versions[-1].short_url }}
+{% endfor %}
+Take a look when you get a chance! If you like elements from different concepts, or have a completely different direction in mind, I’d be happy to explore that too.</textarea>
           <button type="button" class="sms-copy-btn" data-target="sms-message-{{ org.org_id }}">Copy message</button>
         </div>
         <form method="POST" action="/site-generator/delete" class="site-gen-delete-form"

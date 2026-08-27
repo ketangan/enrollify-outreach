@@ -316,6 +316,28 @@ def test_regenerate_known_org_scopes_job_to_one_theme_and_versions_subject_id(mo
     assert captured["is_regeneration"] is True
 
 
+def test_regenerate_passes_orgs_known_phone_through(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    _fake_sheet(monkeypatch)
+    site_generator_state.record_initial_generation(
+        org_id="riverside-music-abc123", name="Riverside Music Collective", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio concept", "url": "u1", "preview_url": "p1", "phone": "(512) 555-0100"}],
+        job_id="job-0",
+    )
+
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/regenerate",
+        params={"key": "secret123"},
+        data={"org_id": "riverside-music-abc123", "theme": "music-studio"},
+        follow_redirects=False,
+    )
+
+    assert captured["phone"] == "(512) 555-0100"
+
+
 def test_regenerate_persists_uploaded_photos_and_passes_dimensions_as_json(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     _fake_sheet(monkeypatch)

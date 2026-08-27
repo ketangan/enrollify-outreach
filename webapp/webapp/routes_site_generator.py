@@ -240,6 +240,7 @@ def site_generator_regenerate(
         "city": org.get("city", ""),
         "state": org.get("state", ""),
         "address": org.get("address", ""),
+        "phone": org.get("phone", ""),
         "versions": theme_version_id,
         "revision_notes": revision_notes.strip(),
         "uploaded_photos_json": json.dumps(persisted_uploads) if persisted_uploads else "",

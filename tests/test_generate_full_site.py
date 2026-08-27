@@ -238,6 +238,23 @@ def test_generate_full_site_never_overwrites_caller_supplied_phone(monkeypatch, 
     assert captured["subject"]["phone"] == "(512) 555-0100"
 
 
+def test_generate_full_site_attaches_resolved_phone_to_rendered_items(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        generate_full_site.places, "find_business",
+        lambda name, city, state, **kw: _stub_place(phone="(999) 999-9999"),
+    )
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    # No phone supplied by the caller — Places' number wins by default, and
+    # every rendered item carries it so record_initial_generation can persist it.
+    assert all(item["phone"] == "(999) 999-9999" for item in rendered)
+
+
 def test_generate_full_site_falls_back_gracefully_on_places_auth_error(monkeypatch, tmp_path):
     # find_business() already swallows non-auth failures internally (matches
     # discover_zip's convention in places.py) and returns None for those —

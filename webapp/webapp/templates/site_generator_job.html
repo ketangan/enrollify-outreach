@@ -23,11 +23,14 @@
     </ul>
     <div class="site-gen-text-box">
       <label for="sms-message">Text message to send</label>
-      <textarea id="sms-message" rows="12">Hi{% if result.owner_name %} {{ result.owner_name }}{% endif %}! This is Ketan — we build, redesign, and maintain websites, and help with student enrollment too. I put together a few concepts for {{ job.params.name }} to take a look at, no cost or obligation:
+      <textarea id="sms-message" rows="14">Hi{% if result.owner_name %} {{ result.owner_name }}{% endif %}! This is Ketan — we build, redesign, and maintain websites, and also help schools streamline student enrollment.
+
+I put together a few website concepts for {{ job.params.name }} so you can get a feel for what we could create for you:
+
 {% for item in result.rendered -%}
-{{ loop.index }}. {{ item.short_url }}
-{% endfor -%}
-Let me know which direction feels right!</textarea>
+Option {{ loop.index }}: {{ item.short_url }}
+{% endfor %}
+Take a look when you get a chance! If you like elements from different concepts, or have a completely different direction in mind, I’d be happy to explore that too.</textarea>
       <button type="button" id="sms-copy-btn">Copy message</button>
     </div>
   </div>

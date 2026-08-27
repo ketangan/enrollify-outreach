@@ -357,7 +357,10 @@ def generate_full_site(
     persisted = _persist_rendered(rendered, subject_id, output_dir, site_name=name)
     persisted = _add_short_links(persisted, subject_id=subject_id)
     return [
-        {**{k: v for k, v in item.items() if k != "html"}, "subject_id": subject_id, "owner_name": owner_name}
+        {
+            **{k: v for k, v in item.items() if k != "html"},
+            "subject_id": subject_id, "owner_name": owner_name, "phone": subject["phone"],
+        }
         for item in persisted
     ]
 

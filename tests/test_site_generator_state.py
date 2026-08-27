@@ -331,3 +331,116 @@ def test_delete_org_continues_past_no_website_schools_reset_failure(fake_sheet, 
 
     assert state.delete_org("org-12") is True
     assert state.get_org("org-12") is None
+
+
+def test_phone_is_persisted_and_readable(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-13", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1", "phone": "(512) 555-0100"}],
+        job_id="job-1",
+    )
+
+    org = state.get_org("org-13")
+    assert org["phone"] == "(512) 555-0100"
+
+
+def test_phone_defaults_to_empty_when_never_resolved(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-14", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+
+    org = state.get_org("org-14")
+    assert org["phone"] == ""
+
+
+def test_record_regeneration_persists_phone_falling_back_to_orgs_known_phone(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-15", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1", "phone": "(512) 555-0100"}],
+        job_id="job-1",
+    )
+    # A regen run that, say, couldn't resolve a phone this time (item has
+    # none) must not blank out the org's already-known phone.
+    state.record_regeneration(
+        org_id="org-15", theme="music-studio",
+        item={"subject_id": "org-15-v2", "label": "Studio", "url": "u2", "preview_url": "p2"},
+        job_id="job-2",
+    )
+
+    org = state.get_org("org-15")
+    assert org["phone"] == "(512) 555-0100"
+
+
+def test_backfill_missing_phones_reads_no_website_schools_once_for_multiple_orgs(fake_sheet, monkeypatch):
+    state.record_initial_generation(
+        org_id="org-16", name="Test School A", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1", no_website_schools_id="90045-aaa111",
+    )
+    state.record_initial_generation(
+        org_id="org-17", name="Test School B", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1", no_website_schools_id="90045-bbb222",
+    )
+
+    calls = []
+
+    def _fake_read_all_rows(tab):
+        if tab == state.no_website_schools.config.TAB_NO_WEBSITE:
+            calls.append(tab)
+            return [
+                {"id": "90045-aaa111", "phone": "(512) 555-0100"},
+                {"id": "90045-bbb222", "phone": "(512) 555-0200"},
+            ]
+        return list(fake_sheet)
+
+    monkeypatch.setattr(state.sheets, "read_all_rows", _fake_read_all_rows)
+
+    orgs = {o["org_id"]: o for o in state.list_orgs()}
+
+    assert orgs["org-16"]["phone"] == "(512) 555-0100"
+    assert orgs["org-17"]["phone"] == "(512) 555-0200"
+    assert len(calls) == 1  # one read for both orgs, not one per org
+
+
+def test_backfill_missing_phones_skips_orgs_with_no_picker_origin(fake_sheet, monkeypatch):
+    state.record_initial_generation(
+        org_id="org-18", name="Manually Typed Business", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",  # no no_website_schools_id — nothing to backfill from
+    )
+
+    calls = []
+
+    def _fake_read_all_rows(tab):
+        if tab == state.no_website_schools.config.TAB_NO_WEBSITE:
+            calls.append(tab)
+        return list(fake_sheet)
+
+    monkeypatch.setattr(state.sheets, "read_all_rows", _fake_read_all_rows)
+
+    org = state.get_org("org-18")
+
+    assert org["phone"] == ""
+    assert calls == []
+
+
+def test_backfill_missing_phones_survives_lookup_failure(fake_sheet, monkeypatch):
+    state.record_initial_generation(
+        org_id="org-19", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1", no_website_schools_id="90045-ccc333",
+    )
+
+    def _boom(tab):
+        if tab == state.no_website_schools.config.TAB_NO_WEBSITE:
+            raise RuntimeError("Sheets down")
+        return list(fake_sheet)
+
+    monkeypatch.setattr(state.sheets, "read_all_rows", _boom)
+
+    org = state.get_org("org-19")  # must not raise
+
+    assert org["phone"] == ""

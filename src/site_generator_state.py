@@ -25,7 +25,7 @@ HEADERS = [
     "org_id", "name", "category", "city", "state", "address",
     "theme", "version_n", "subject_id", "label", "url", "preview_url",
     "revision_notes", "job_id", "created_at", "short_url", "owner_name",
-    "no_website_schools_id",
+    "no_website_schools_id", "phone",
 ]
 
 
@@ -50,6 +50,7 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
             "created_at": row.get("created_at", ""),
             "owner_name": "",
             "no_website_schools_id": "",
+            "phone": "",
             "themes": {},
         })
         # Earliest row's created_at represents when the org was first
@@ -65,6 +66,11 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
         # generation) — an org-level fact, so first non-empty wins here too.
         if not org["no_website_schools_id"] and str(row.get("no_website_schools_id", "")).strip():
             org["no_website_schools_id"] = str(row["no_website_schools_id"]).strip()
+        # Phone is an org-level fact too — rows written before this column
+        # existed (or a run that couldn't resolve one) have nothing here, so
+        # first non-empty wins the same way owner_name does.
+        if not org["phone"] and str(row.get("phone", "")).strip():
+            org["phone"] = str(row["phone"]).strip()
 
         try:
             version_n = int(row.get("version_n") or 1)
@@ -91,11 +97,36 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
     return orgs
 
 
+def _backfill_missing_phones(orgs: list[dict]) -> None:
+    """Orgs generated before the `phone` column existed (or from a run that
+    didn't resolve one) have nothing in Generated_Sites for it. For any org
+    that was generated from the No_Website_Schools picker, that row still
+    has the real phone on file — read it once (not per-org) and fill in the
+    gap in memory. Best-effort display-only backfill: never writes it back
+    to Generated_Sites, so a regeneration is still what actually persists it."""
+    needs_backfill = [o for o in orgs if not o.get("phone") and o.get("no_website_schools_id")]
+    if not needs_backfill:
+        return
+    try:
+        nws_rows = {
+            str(r.get("id", "")).strip(): str(r.get("phone", "")).strip()
+            for r in sheets.read_all_rows(no_website_schools.config.TAB_NO_WEBSITE)
+        }
+    except Exception as e:
+        logger.warning("Could not backfill phone numbers from No_Website_Schools: %s", e)
+        return
+    for org in needs_backfill:
+        phone = nws_rows.get(org["no_website_schools_id"], "")
+        if phone:
+            org["phone"] = phone
+
+
 def list_orgs() -> list[dict]:
     """Newest-created first."""
     _ensure_tab()
     rows = sheets.read_all_rows(GENERATED_SITES_TAB)
     orgs = list(_rows_to_orgs(rows).values())
+    _backfill_missing_phones(orgs)
     orgs.sort(key=lambda o: o.get("created_at", ""), reverse=True)
     return orgs
 
@@ -106,7 +137,10 @@ def get_org(org_id: str) -> dict | None:
     matching = [r for r in rows if str(r.get("org_id", "")).strip() == org_id]
     if not matching:
         return None
-    return _rows_to_orgs(matching).get(org_id)
+    org = _rows_to_orgs(matching).get(org_id)
+    if org:
+        _backfill_missing_phones([org])
+    return org
 
 
 def record_initial_generation(
@@ -123,7 +157,9 @@ def record_initial_generation(
 ) -> None:
     """Register a brand-new org and its first (version 1) render of every
     theme returned. rendered items are render_mock_concepts()-shaped dicts:
-    {type, version, label, url, preview_url}.
+    {type, version, label, url, preview_url}, plus "owner_name"/"phone"
+    (both resolved by generate_full_site() — user-supplied or filled in via
+    Places lookup).
 
     `no_website_schools_id`, when this org was generated from the picker,
     is recorded so a later delete_org() can put the row back in the queue
@@ -145,6 +181,7 @@ def record_initial_generation(
             item.get("short_url", item.get("preview_url", item["url"])),
             item.get("owner_name", ""),
             no_website_schools_id,
+            item.get("phone", ""),
         ])
     ws.append_rows(rows, value_input_option="USER_ENTERED")
 
@@ -175,6 +212,7 @@ def record_regeneration(
         item.get("short_url", item.get("preview_url", item["url"])),
         item.get("owner_name", ""),
         "",  # no_website_schools_id is an org-level fact set once at creation, not re-passed here
+        item.get("phone") or org.get("phone", ""),
     ], value_input_option="USER_ENTERED")
 
 
