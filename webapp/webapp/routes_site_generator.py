@@ -194,6 +194,7 @@ def site_generator_home(
     request: Request, page: int = 1, from_no_website_id: str = "", q: str = "",
     checked_id: str = "", checked_found: str = "", checked_url: str = "",
     checked_confidence: str = "", checked_reasoning: str = "",
+    duplicate_org_id: str = "",
 ):
     page = max(page, 1)
     picker_rows, picker_total = no_website_schools.list_page(page=page, page_size=10, q=q)
@@ -212,12 +213,16 @@ def site_generator_home(
             "reasoning": checked_reasoning,
         }
 
+    orgs = site_generator_state.list_orgs()
+    duplicate_org = next((o for o in orgs if o.get("org_id") == duplicate_org_id), None)
+
     response = templates.TemplateResponse(
         request,
         "site_generator.html",
         {
             "page_title": "Site Generator",
-            "orgs": site_generator_state.list_orgs(),
+            "orgs": orgs,
+            "duplicate_org": duplicate_org,
             "picker_rows": picker_rows,
             "picker_page": page,
             "picker_total": picker_total,
@@ -258,6 +263,20 @@ def site_generator_generate(
     uploaded_photos: list[UploadFile] = File(default=[]),
     hero_photo: UploadFile | None = File(default=None),
 ):
+    existing_org = site_generator_state.find_existing_org(
+        name=name,
+        category=category,
+        address=address,
+        phone=phone,
+        no_website_schools_id=no_website_schools_id,
+    )
+    if existing_org:
+        query = urlencode({"duplicate_org_id": existing_org["org_id"]})
+        return _remember_key_cookie(
+            request,
+            RedirectResponse(f"/site-generator?{query}#org-{existing_org['org_id']}", status_code=303),
+        )
+
     subject_id = new_subject_id(name)
     persisted_uploads = _persist_uploaded_photos(uploaded_photos, subject_id)
     persisted_hero = _persist_uploaded_photos(
@@ -286,6 +305,22 @@ def site_generator_generate(
     }
     job_id = jobs_runner.submit_job("generate_full_site", params)
     return _remember_key_cookie(request, RedirectResponse(f"/site-generator/jobs/{job_id}", status_code=303))
+
+
+@router.post("/site-generator/select-version", dependencies=[Depends(require_access)])
+def site_generator_select_version(
+    request: Request,
+    org_id: str = Form(...),
+    theme: str = Form(...),
+    version_n: int = Form(...),
+):
+    ok = site_generator_state.select_sms_version(org_id, theme, version_n)
+    if not ok:
+        raise HTTPException(404, "Could not find that generated-site version.")
+    return _remember_key_cookie(
+        request,
+        RedirectResponse(f"/site-generator#org-{org_id}", status_code=303),
+    )
 
 
 @router.post("/site-generator/regenerate", dependencies=[Depends(require_access)])

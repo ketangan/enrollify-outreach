@@ -29,6 +29,7 @@ def _stub_no_website_picker(monkeypatch):
     route tests unless a test explicitly installs its own fake sheet."""
     monkeypatch.setattr(no_website_schools, "list_page", lambda page=1, page_size=10, **kw: ([], 0))
     monkeypatch.setattr(site_generator_state, "list_orgs", lambda: [])
+    monkeypatch.setattr(site_generator_state, "find_existing_org", lambda **kw: None)
 
 
 class _FakeWorksheet:
@@ -41,6 +42,16 @@ class _FakeWorksheet:
 
     def append_row(self, row, value_input_option=None):
         self._rows_store.append(dict(zip(site_generator_state.HEADERS, row)))
+
+    def get_all_values(self):
+        rows = [site_generator_state.HEADERS]
+        for row in self._rows_store:
+            rows.append([str(row.get(h, "")) for h in site_generator_state.HEADERS])
+        return rows
+
+    def update_cell(self, row_idx, col_idx, value):
+        header = site_generator_state.HEADERS[col_idx - 1]
+        self._rows_store[row_idx - 2][header] = value
 
 
 def _fake_sheet(monkeypatch) -> list[dict]:
@@ -150,6 +161,36 @@ def test_generate_submits_job_with_fresh_subject_id_and_redirects(monkeypatch, t
     assert captured["params"]["subject_id"].startswith("riverside-music-collective-")
     assert captured["params"]["is_regeneration"] is False
     assert captured["params"]["use_google"] is True
+
+
+def test_generate_redirects_to_existing_org_instead_of_duplicate(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    existing = {
+        "org_id": "green-garden-preschool-1224e2",
+        "name": "Green Garden Preschool",
+        "category": "preschool",
+        "address": "11871 Lindblade St, Culver City, CA 90230, USA",
+    }
+    captured = {}
+    monkeypatch.setattr(site_generator_state, "find_existing_org", lambda **kw: captured.update(kw) or existing)
+    submit_calls = []
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: submit_calls.append((kind, params)) or "job-1")
+
+    resp = client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={
+            "name": "Green Garden Preschool",
+            "category": "preschool",
+            "address": "11871 Lindblade St, Culver City, CA 90230, USA",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/site-generator?duplicate_org_id=green-garden-preschool-1224e2#org-green-garden-preschool-1224e2"
+    assert captured["name"] == "Green Garden Preschool"
+    assert submit_calls == []
 
 
 def test_generate_persists_uploaded_photos_and_passes_dimensions_as_json(monkeypatch, tmp_path):
@@ -497,6 +538,56 @@ def test_regenerate_without_uploaded_photos_sends_empty_string(monkeypatch, tmp_
 
     assert captured["uploaded_photos_json"] == ""
     assert captured["hero_photo_json"] == ""
+
+
+def test_select_version_calls_state_and_redirects(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    calls = []
+    monkeypatch.setattr(
+        site_generator_state,
+        "select_sms_version",
+        lambda org_id, theme, version_n: calls.append((org_id, theme, version_n)) or True,
+    )
+
+    resp = client.post(
+        "/site-generator/select-version",
+        params={"key": "secret123"},
+        data={"org_id": "org-1", "theme": "music-studio", "version_n": "1"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/site-generator#org-org-1"
+    assert calls == [("org-1", "music-studio", 1)]
+
+
+def test_home_uses_selected_version_in_text_message(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        site_generator_state,
+        "list_orgs",
+        lambda: [{
+            "org_id": "org-1",
+            "name": "Riverside Music",
+            "category": "music",
+            "city": "Austin",
+            "state": "TX",
+            "phone": "",
+            "themes": {
+                "music-studio": [
+                    {"version_n": 1, "label": "Studio concept", "preview_url": "p1", "short_url": "https://short/v1", "selected_for_sms": True},
+                    {"version_n": 2, "label": "Studio concept", "preview_url": "p2", "short_url": "https://short/v2", "selected_for_sms": False},
+                ],
+            },
+        }],
+    )
+
+    resp = client.get("/site-generator", params={"key": "secret123"})
+
+    assert resp.status_code == 200
+    assert "Option 1: https://short/v1" in resp.text
+    assert "Option 1: https://short/v2" not in resp.text
+    assert 'id="org-org-1"' in resp.text
 
 
 def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):

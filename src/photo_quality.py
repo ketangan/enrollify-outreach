@@ -39,6 +39,38 @@ MIN_HERO_DIMENSION_PX = 800
 # hero-only override, so this padding is mostly for backward compatibility.
 MIN_REAL_PHOTOS = 3
 
+# Below this width:height ratio, a photo is portrait/square enough that
+# background-size:cover in a wide hero crops real content off the top or
+# bottom (confirmed live: an 800x1000 upload lost ~70% of its height this
+# way). Above it, cover's edge-to-edge fill is safe enough to prefer over
+# contain's dead-color letterbox bars.
+MIN_HERO_ASPECT_RATIO = 1.3
+
+
+def hero_is_acceptable(photo: dict) -> bool:
+    """A human's explicit hero choice still needs a quality floor — a small,
+    heavily-compressed source image (a scraped Yelp thumbnail, an old logo
+    scan) looks bad as a full-bleed hero no matter how it's fit into the
+    frame. Below MIN_HERO_DIMENSION_PX, the override should be skipped in
+    favor of a bundled stock photo, rather than blocking hero overrides
+    outright for every photo regardless of quality."""
+    width = photo.get("width") or 0
+    height = photo.get("height") or 0
+    return min(width, height) >= MIN_HERO_DIMENSION_PX
+
+
+def hero_fit_mode(photo: dict) -> str:
+    """"cover" (fill edge-to-edge, cropping overflow) for photos already
+    landscape-shaped enough to survive that; "contain" (show the whole
+    photo, letterboxed) for anything more portrait/square, where cover
+    would cut off the subject. Unknown dimensions default to "contain" —
+    assuming a photo is fine risks cropping something that wasn't."""
+    width = photo.get("width") or 0
+    height = photo.get("height") or 0
+    if not width or not height:
+        return "contain"
+    return "cover" if (width / height) >= MIN_HERO_ASPECT_RATIO else "contain"
+
 
 def read_dimensions(image_bytes: bytes) -> tuple[int, int] | None:
     """(width, height) in pixels, or None if the bytes aren't a readable

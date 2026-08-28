@@ -206,9 +206,12 @@ def test_generate_full_site_forced_hero_photo_wins_index_0(monkeypatch, tmp_path
 
     generate_full_site.generate_full_site(
         name="Riverside Music Collective", category="music",
-        # Deliberately low quality — automatic ranking would never pick this
-        # for the hero slot, but an explicit choice must win anyway.
-        hero_photo={"url": "explicit-hero-choice", "width": 300, "height": 300},
+        # Clears the quality floor (>=800px) but would lose on quality_rank
+        # alone against the sharper 3000x3000 upload — automatic ranking
+        # would never pick this for the hero slot, but an explicit choice
+        # must win anyway, as long as it isn't outright too small/bad
+        # to use (see the quality-floor test below for that boundary).
+        hero_photo={"url": "explicit-hero-choice", "width": 900, "height": 900},
         uploaded_photos=[{"url": "big-upload", "width": 3000, "height": 3000}],
         base_url="https://example.com", output_dir=tmp_path,
     )
@@ -217,6 +220,38 @@ def test_generate_full_site_forced_hero_photo_wins_index_0(monkeypatch, tmp_path
     assert photos[0] == "explicit-hero-choice"
     assert "big-upload" in photos[1:]
     assert captured["subject"]["_website_mock_hero_photo"] == "explicit-hero-choice"
+
+
+def test_generate_full_site_hero_override_below_quality_floor_falls_back(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(
+        generate_full_site.places, "fetch_photo_bytes",
+        lambda photo_name, max_width_px=1200: (_real_jpeg_bytes(3000, 3000), "image/jpeg"),
+    )
+
+    captured = {}
+    original_render = generate_full_site.mocks.render_mock_concepts
+
+    def _capture_render(subject, **kwargs):
+        captured["subject"] = dict(subject)
+        return original_render(subject, **kwargs)
+
+    monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _capture_render)
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        # Genuinely too small to use as a hero at all (a scraped Yelp
+        # thumbnail, not just "not the sharpest option") — must be skipped
+        # entirely, not honored just because it was explicitly chosen.
+        hero_photo={"url": "too-small-to-use", "width": 300, "height": 300},
+        uploaded_photos=[{"url": "big-upload", "width": 3000, "height": 3000}],
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    photos = captured["subject"]["_website_mock_photos"]
+    assert "too-small-to-use" not in photos
+    assert photos[0] == "big-upload"
 
 
 def test_generate_full_site_explicit_hero_keeps_middle_sections_on_bundled_stock(monkeypatch, tmp_path):
@@ -228,7 +263,7 @@ def test_generate_full_site_explicit_hero_keeps_middle_sections_on_bundled_stock
         use_google_places=False,
         versions="studio",
         subject_id="hero-stock-test",
-        hero_photo={"url": "explicit-hero-choice", "width": 300, "height": 300},
+        hero_photo={"url": "explicit-hero-choice", "width": 900, "height": 900},
         uploaded_photos=[{"url": "extra-upload", "width": 3000, "height": 3000}],
         base_url="https://example.com", output_dir=tmp_path,
     )

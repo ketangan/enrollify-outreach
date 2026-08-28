@@ -14,6 +14,7 @@ templates expect, so callers don't need to know rows are the storage format.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 
 from src import no_website_schools, r2_storage, sheets, shortlinks
@@ -25,12 +26,41 @@ HEADERS = [
     "org_id", "name", "category", "city", "state", "address",
     "theme", "version_n", "subject_id", "label", "url", "preview_url",
     "revision_notes", "job_id", "created_at", "short_url", "owner_name",
-    "no_website_schools_id", "phone",
+    "no_website_schools_id", "phone", "selected_for_sms",
 ]
+
+_SPACE_RE = re.compile(r"\s+")
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+_NON_DIGIT_RE = re.compile(r"\D+")
 
 
 def _ensure_tab() -> None:
     sheets.ensure_headers(GENERATED_SITES_TAB, HEADERS)
+
+
+def _clean(value) -> str:
+    return str(value or "").strip()
+
+
+def _truthy(value) -> bool:
+    return _clean(value).lower() in {"1", "true", "yes", "y", "selected"}
+
+
+def _normalize_name(value) -> str:
+    return _NON_ALNUM_RE.sub(" ", _clean(value).lower()).strip()
+
+
+def _normalize_address(value) -> str:
+    return _SPACE_RE.sub(" ", _clean(value).lower()).strip()
+
+
+def _normalize_phone(value) -> str:
+    digits = _NON_DIGIT_RE.sub("", _clean(value))
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
+def _cell(row: list[str], idx: int) -> str:
+    return row[idx].strip() if idx < len(row) else ""
 
 
 def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
@@ -89,12 +119,111 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
             "revision_notes": row.get("revision_notes", ""),
             "job_id": row.get("job_id", ""),
             "created_at": row.get("created_at", ""),
+            "selected_for_sms": _truthy(row.get("selected_for_sms", "")),
         })
 
     for org in orgs.values():
         for versions in org["themes"].values():
             versions.sort(key=lambda v: v["version_n"])
+            selected = [v for v in versions if v.get("selected_for_sms")]
+            if selected:
+                selected_winner = selected[-1]
+            elif versions:
+                selected_winner = versions[-1]
+            else:
+                selected_winner = None
+            for version in versions:
+                version["selected_for_sms"] = bool(selected_winner and version is selected_winner)
     return orgs
+
+
+def find_existing_org(
+    *,
+    name: str,
+    category: str = "",
+    address: str = "",
+    phone: str = "",
+    no_website_schools_id: str = "",
+) -> dict | None:
+    """Find a generated-site org that already represents this business.
+
+    This intentionally uses only strong identity signals. Same source
+    No_Website_Schools row is definitive; otherwise, exact normalized name
+    plus address or phone is required. Name/city alone is too weak because
+    multi-location schools are common enough to make that dangerous.
+    """
+    _ensure_tab()
+    wanted_source_id = _clean(no_website_schools_id)
+    wanted_name = _normalize_name(name)
+    wanted_address = _normalize_address(address)
+    wanted_phone = _normalize_phone(phone)
+
+    if not any([wanted_source_id, wanted_name and wanted_address, wanted_name and wanted_phone]):
+        return None
+
+    rows = sheets.read_all_rows(GENERATED_SITES_TAB)
+    orgs = _rows_to_orgs(rows)
+    for org in orgs.values():
+        if wanted_source_id and _clean(org.get("no_website_schools_id")) == wanted_source_id:
+            return {**org, "duplicate_match_reason": "same source row"}
+
+        if wanted_name and _normalize_name(org.get("name")) != wanted_name:
+            continue
+
+        if wanted_address and _normalize_address(org.get("address")) == wanted_address:
+            return {**org, "duplicate_match_reason": "same name and address"}
+        if wanted_phone and _normalize_phone(org.get("phone")) == wanted_phone:
+            return {**org, "duplicate_match_reason": "same name and phone"}
+    return None
+
+
+def select_sms_version(org_id: str, theme: str, version_n: int) -> bool:
+    """Mark one version of one theme as the version used in SMS/text copy."""
+    org_id = _clean(org_id)
+    theme = _clean(theme)
+    if not org_id or not theme:
+        return False
+    try:
+        version_n = int(version_n)
+    except (TypeError, ValueError):
+        return False
+
+    _ensure_tab()
+    ws = sheets.get_tab(GENERATED_SITES_TAB)
+    all_values = ws.get_all_values()
+    if not all_values:
+        return False
+    header = all_values[0]
+    needed = {"org_id", "theme", "version_n", "selected_for_sms"}
+    if not needed.issubset(set(header)):
+        return False
+
+    org_col = header.index("org_id")
+    theme_col = header.index("theme")
+    version_col = header.index("version_n")
+    selected_col = header.index("selected_for_sms")
+
+    matching_rows: list[tuple[int, int]] = []
+    target_row_idx: int | None = None
+    for idx in range(1, len(all_values)):
+        row = all_values[idx]
+        if _cell(row, org_col) != org_id or _cell(row, theme_col) != theme:
+            continue
+        try:
+            row_version = int(_cell(row, version_col) or 1)
+        except ValueError:
+            row_version = 1
+        row_idx = idx + 1
+        matching_rows.append((row_idx, row_version))
+        if row_version == version_n:
+            target_row_idx = row_idx
+
+    if target_row_idx is None:
+        return False
+
+    for row_idx, _row_version in matching_rows:
+        ws.update_cell(row_idx, selected_col + 1, "yes" if row_idx == target_row_idx else "")
+    return True
 
 
 def _backfill_missing_phones(orgs: list[dict]) -> None:
@@ -182,6 +311,7 @@ def record_initial_generation(
             item.get("owner_name", ""),
             no_website_schools_id,
             item.get("phone", ""),
+            "yes",
         ])
     ws.append_rows(rows, value_input_option="USER_ENTERED")
 
@@ -213,7 +343,9 @@ def record_regeneration(
         item.get("owner_name", ""),
         "",  # no_website_schools_id is an org-level fact set once at creation, not re-passed here
         item.get("phone") or org.get("phone", ""),
+        "yes",
     ], value_input_option="USER_ENTERED")
+    select_sms_version(org_id, theme, next_version_n)
 
 
 def delete_org(org_id: str) -> bool:

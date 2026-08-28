@@ -144,3 +144,29 @@ def test_forced_hero_not_duplicated_if_also_present_in_uploaded_pool():
     assert urls[0] == "chosen"
     assert urls.count("chosen") == 1
     assert "other" in urls
+
+
+def test_hero_is_acceptable_rejects_small_photos():
+    assert photo_quality.hero_is_acceptable({"width": 400, "height": 400}) is False
+    assert photo_quality.hero_is_acceptable({"width": 2000, "height": 2000}) is True
+
+
+def test_hero_is_acceptable_rejects_missing_dimensions():
+    assert photo_quality.hero_is_acceptable({}) is False
+    assert photo_quality.hero_is_acceptable({"url": "x"}) is False
+
+
+def test_hero_fit_mode_uses_cover_for_landscape_photos():
+    assert photo_quality.hero_fit_mode({"width": 2000, "height": 1200}) == "cover"
+
+
+def test_hero_fit_mode_uses_contain_for_portrait_or_square_photos():
+    # The real failure mode this session: an 800x1000 portrait upload lost
+    # ~70% of its height under cover in a wide hero.
+    assert photo_quality.hero_fit_mode({"width": 800, "height": 1000}) == "contain"
+    assert photo_quality.hero_fit_mode({"width": 1000, "height": 1000}) == "contain"
+
+
+def test_hero_fit_mode_defaults_to_contain_for_unknown_dimensions():
+    assert photo_quality.hero_fit_mode({}) == "contain"
+    assert photo_quality.hero_fit_mode({"width": 2000, "height": 0}) == "contain"

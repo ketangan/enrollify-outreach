@@ -24,6 +24,10 @@ class _FakeWorksheet:
         # row_idx is 1-indexed with row 1 being the header.
         del self._rows_store[row_idx - 2]
 
+    def update_cell(self, row_idx, col_idx, value):
+        header = state.HEADERS[col_idx - 1]
+        self._rows_store[row_idx - 2][header] = value
+
 
 @pytest.fixture
 def fake_sheet(monkeypatch):
@@ -81,6 +85,8 @@ def test_record_regeneration_appends_new_version_without_touching_others(fake_sh
     assert history[1]["version_n"] == 2
     assert history[1]["url"] == "u2"
     assert history[1]["revision_notes"] == "Make it warmer"
+    assert fake_sheet[0]["selected_for_sms"] == ""
+    assert fake_sheet[1]["selected_for_sms"] == "yes"
 
 
 def test_record_regeneration_on_unknown_org_is_a_no_op(fake_sheet):
@@ -142,6 +148,55 @@ def test_short_url_falls_back_to_preview_url_for_older_rows_without_it(fake_shee
     assert studio["short_url"] == "p1"
 
 
+def test_sms_selection_defaults_to_latest_version_for_older_rows(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-sms-1", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1", "short_url": "s1"}],
+        job_id="job-1",
+    )
+    fake_sheet[0]["selected_for_sms"] = ""
+    state.record_regeneration(
+        org_id="org-sms-1", theme="music-studio",
+        item={"subject_id": "org-sms-1-v2", "label": "Studio", "url": "u2", "preview_url": "p2", "short_url": "s2"},
+        job_id="job-2",
+    )
+    fake_sheet[1]["selected_for_sms"] = ""
+
+    history = state.get_org("org-sms-1")["themes"]["music-studio"]
+
+    assert [v["selected_for_sms"] for v in history] == [False, True]
+
+
+def test_select_sms_version_marks_one_theme_version(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-sms-2", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1", "short_url": "s1"}],
+        job_id="job-1",
+    )
+    state.record_regeneration(
+        org_id="org-sms-2", theme="music-studio",
+        item={"subject_id": "org-sms-2-v2", "label": "Studio", "url": "u2", "preview_url": "p2", "short_url": "s2"},
+        job_id="job-2",
+    )
+
+    assert state.select_sms_version("org-sms-2", "music-studio", 1) is True
+
+    history = state.get_org("org-sms-2")["themes"]["music-studio"]
+    assert [v["selected_for_sms"] for v in history] == [True, False]
+    assert fake_sheet[0]["selected_for_sms"] == "yes"
+    assert fake_sheet[1]["selected_for_sms"] == ""
+
+
+def test_select_sms_version_rejects_unknown_version(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-sms-3", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+
+    assert state.select_sms_version("org-sms-3", "music-studio", 9) is False
+
+
 def test_record_regeneration_persists_short_url(fake_sheet):
     state.record_initial_generation(
         org_id="org-4", name="Test School", category="preschool",
@@ -156,6 +211,51 @@ def test_record_regeneration_persists_short_url(fake_sheet):
 
     history = state.get_org("org-4")["themes"]["preschool-warm"]
     assert history[1]["short_url"] == "s2"
+
+
+def test_find_existing_org_matches_same_no_website_source_id(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-existing-1", name="Green Garden Preschool", category="preschool",
+        address="11871 Lindblade St, Culver City, CA 90230, USA",
+        rendered=[{"type": "preschool", "version": "warm", "label": "Warm", "url": "u1", "preview_url": "p1"}],
+        no_website_schools_id="90045-abc123",
+    )
+
+    existing = state.find_existing_org(
+        name="Something Else",
+        category="preschool",
+        no_website_schools_id="90045-abc123",
+    )
+
+    assert existing["org_id"] == "org-existing-1"
+    assert existing["duplicate_match_reason"] == "same source row"
+
+
+def test_find_existing_org_matches_same_name_and_address(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-existing-2", name="Green Garden Preschool", category="preschool",
+        address="11871 Lindblade St, Culver City, CA 90230, USA",
+        rendered=[{"type": "preschool", "version": "warm", "label": "Warm", "url": "u1", "preview_url": "p1"}],
+    )
+
+    existing = state.find_existing_org(
+        name="  Green   Garden Preschool ",
+        category="preschool",
+        address="11871 Lindblade St, Culver City, CA 90230, USA",
+    )
+
+    assert existing["org_id"] == "org-existing-2"
+    assert existing["duplicate_match_reason"] == "same name and address"
+
+
+def test_find_existing_org_does_not_match_name_only(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-existing-3", name="Green Garden Preschool", category="preschool",
+        address="11871 Lindblade St, Culver City, CA 90230, USA",
+        rendered=[{"type": "preschool", "version": "warm", "label": "Warm", "url": "u1", "preview_url": "p1"}],
+    )
+
+    assert state.find_existing_org(name="Green Garden Preschool", category="preschool") is None
 
 
 def test_owner_name_is_persisted_at_org_level(fake_sheet):

@@ -702,9 +702,10 @@ PHOTO_SETS = {
             "https://images.unsplash.com/photo-1588075592405-d3d4f0846961?auto=format&fit=crop&w=1400&q=80",
         ],
         "explorer": [
-            "https://images.unsplash.com/photo-1606080255438-f908756a0169?auto=format&fit=crop&w=1400&q=80",
-            "https://images.unsplash.com/photo-1601034188350-4154a8d1e9c7?auto=format&fit=crop&w=1400&q=80",
-            "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1567746455504-cb3213f8f5b8?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1680634658557-6303317c5a25?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1564429097439-e400382dc893?auto=format&fit=crop&w=1400&q=80",
+            "https://images.unsplash.com/photo-1564429238817-393bd4286b2d?auto=format&fit=crop&w=1400&q=80",
         ],
         "community": [
             "https://images.unsplash.com/photo-1588075592446-265fd1e6e76f?auto=format&fit=crop&w=1400&q=80",
@@ -925,8 +926,8 @@ def _hero_photo_override(ctx: dict) -> str:
     return _clean(ctx.get("hero_photo_override"))
 
 
-def _single_hero_photo(ctx: dict, fallback_photo: str) -> str:
-    return _hero_photo_override(ctx) or fallback_photo
+def _single_hero_photo(ctx: dict, fallback_photo: str, *, allow_override: bool = True) -> str:
+    return _hero_photo_override(ctx) if allow_override and _hero_photo_override(ctx) else fallback_photo
 
 
 def _hero_photo_gallery(ctx: dict, photos: list[str], count: int) -> list[str]:
@@ -948,8 +949,24 @@ def _photo_style(photo_url: str) -> str:
     return f"style=\"--photo: url('{html.escape(_photo_display_url(photo_url), quote=True)}')\""
 
 
-def _hero_photo_style(photo_url: str) -> str:
-    return f"style=\"--hero-photo: url('{html.escape(_photo_display_url(photo_url), quote=True)}')\""
+def _hero_photo_style(photo_url: str, fit: str = "cover") -> str:
+    return (
+        f"style=\"--hero-photo: url('{html.escape(_photo_display_url(photo_url), quote=True)}'); "
+        f"--photo-fit: {fit}\""
+    )
+
+
+def _hero_photo_fit_for(ctx: dict, hero_photo: str) -> str:
+    """Only apply the computed fit mode when the resolved hero photo is
+    actually the real-photo override (see photo_quality.hero_fit_mode,
+    computed once in generate_full_site.py where the photo's real
+    dimensions are known) — bundled stock fallbacks are pre-curated to a
+    safe landscape shape and should always cover, regardless of ctx's
+    stashed fit value (which describes the override photo, not the
+    fallback)."""
+    if hero_photo and hero_photo == _hero_photo_override(ctx):
+        return ctx.get("hero_photo_fit") or "cover"
+    return "cover"
 
 
 COMMON_SITE_ANCHOR_PATTERNS = [
@@ -2157,7 +2174,7 @@ def _flow_config(ctx: dict) -> dict:
                 ),
                 "fields": [
                     ("Child age", "2 years"),
-                    ("Family priority", "Warm teachers"),
+                    ("Best next step", "Schedule a tour"),
                     ("Timeline", "Exploring now"),
                 ],
                 "contact_fields": [
@@ -2553,10 +2570,11 @@ def _hero_quote_or_anchors(ctx: dict) -> tuple[str, str]:
 def _render_hero(ctx: dict, cta_label: str, hero_photo: str) -> str:
     quote_html, anchors_html = _hero_quote_or_anchors(ctx)
     return f"""
-      <section class="hero-bleed" {_hero_photo_style(hero_photo)}>
+      <section class="hero-bleed" {_hero_photo_style(hero_photo, _hero_photo_fit_for(ctx, hero_photo))}>
         <div class="hero-bleed__content">
           <p class="eyebrow">{ctx["category"]} in {ctx["city"]}</p>
-          <h1>{ctx["headline"]}</h1>
+          <h1>{ctx["name"]}</h1>
+          <p class="hero-tagline">{ctx["headline"]}</p>
           <p>{ctx["intro"]}</p>
           {quote_html}
           {anchors_html}
@@ -2575,13 +2593,14 @@ def _render_hero_split(ctx: dict, cta_label: str, hero_photo: str) -> str:
       <section class="hero-split">
         <div class="hero-split__panel">
           <p class="eyebrow">{ctx["category"]} in {ctx["city"]}</p>
-          <h1>{ctx["headline"]}</h1>
+          <h1>{ctx["name"]}</h1>
+          <p class="hero-tagline">{ctx["headline"]}</p>
           <p>{ctx["intro"]}</p>
           {quote_html}
           {anchors_html}
           <a class="primary light" href="#next-step">{html.escape(cta_label)}</a>
         </div>
-        <div class="hero-split__photo" {_hero_photo_style(hero_photo)}></div>
+        <div class="hero-split__photo" {_hero_photo_style(hero_photo, _hero_photo_fit_for(ctx, hero_photo))}></div>
       </section>
 """
 
@@ -2608,10 +2627,11 @@ def _render_hero_masthead(ctx: dict, cta_label: str) -> str:
       <section class="hero-masthead">
         <div class="hero-masthead__top">
           <p class="eyebrow">{ctx["category"]} in {ctx["city"]}</p>
-          <h1>{ctx["headline"]}</h1>
+          <h1>{ctx["name"]}</h1>
         </div>
         <div class="hero-masthead__row">
           <div class="hero-masthead__intro">
+            <p class="hero-tagline">{ctx["headline"]}</p>
             <p>{ctx["intro"]}</p>
             {quote_html}
             {anchors_html}
@@ -2638,7 +2658,8 @@ def _render_hero_collage(ctx: dict, cta_label: str, photo_a: str, photo_b: str) 
       <section class="hero-collage">
         <div class="hero-collage__panel">
           <p class="eyebrow">{ctx["category"]} in {ctx["city"]}</p>
-          <h1>{ctx["headline"]}</h1>
+          <h1>{ctx["name"]}</h1>
+          <p class="hero-tagline">{ctx["headline"]}</p>
           <p>{ctx["intro"]}</p>
           {quote_html}
           {anchors_html}
@@ -2653,13 +2674,13 @@ def _render_hero_collage(ctx: dict, cta_label: str, photo_a: str, photo_b: str) 
 
 
 def _day_timeline_steps() -> list[tuple[str, str, str]]:
-    # Exactly 3: matches the 3 stock photos available per category, so no
-    # image repeats across the strip (a repeated photo reads as a mistake,
-    # not a real day).
+    # Exactly 3: the warm concept is a quick "picture the morning" strip.
+    # Keep each label tied to the bundled photo slot; vague captions like
+    # "Outdoor play" are worse than no caption when the image is indoors.
     return [
-        ("7:30am", "Drop-off", "A quick hello, a cubby, and a calm start to the morning."),
-        ("12:00pm", "Outdoor play", "Fresh air and movement, the kind of tired that makes naptime easy."),
-        ("3:00pm", "Pickup", "A quick note on the day before families head home."),
+        ("8:30am", "Open play", "Children settle in with blocks, pretend play, and a room that already feels familiar."),
+        ("9:30am", "Teacher-led circle", "Songs, stories, and small-group attention give the morning a calm rhythm."),
+        ("10:45am", "Creative table", "Drawing, early writing, and simple projects build confidence one small skill at a time."),
     ]
 
 
@@ -2684,22 +2705,22 @@ def _render_day_timeline(ctx: dict) -> str:
 
 def _admissions_steps() -> list[tuple[str, str]]:
     return [
-        ("Find the right classroom", "Ages, openings, and the daily rhythm are clear before a family reaches out."),
-        ("Plan a visit", "Families can see the room, meet the teachers, and ask practical questions."),
-        ("Share child details", "A short inquiry captures age, start timing, and what the family wants to understand."),
-        ("Feel ready for day one", "The reply explains openings, next steps, and what to bring if it feels like a fit."),
+        ("Compare age groups", "Families can see toddler, preschool, and pre-K fit before they reach out."),
+        ("Visit the room", "The tour is anchored around the classroom, the teachers, and the daily rhythm."),
+        ("Ask practical questions", "Schedules, start timing, readiness, and openings are handled in one place."),
+        ("Know what comes next", "The follow-up explains the right room, next tour window, and enrollment step."),
     ]
 
 
 def _render_admissions_path(ctx: dict) -> str:
-    photos = _photo_sequence(ctx, 2)
+    photos = _photo_sequence(ctx, len(_admissions_steps()))
     steps = _admissions_steps()
     items = []
     for idx, (title, body) in enumerate(steps, start=1):
         photo_html = ""
-        if idx in (2, 4) and photos:
-            photo = photos[0 if idx == 2 else min(1, len(photos) - 1)]
-            photo_html = f'<figure {_photo_style(photo)}></figure>'
+        if photos:
+            photo = photos[(idx - 1) % len(photos)]
+            photo_html = f'<figure aria-label="{html.escape(title)}" {_photo_style(photo)}></figure>'
         items.append(
             f'<li><span>{idx:02d}</span><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p>{photo_html}</li>'
         )
@@ -2711,6 +2732,76 @@ def _render_admissions_path(ctx: dict) -> str:
           <h2>A simple path for families deciding where their child belongs.</h2>
         </div>
         <ol class="admissions-path__steps">{items_html}</ol>
+      </section>
+"""
+
+
+PRESCHOOL_DETAIL_SECTIONS = {
+    "warm": {
+        "kicker": "Parent confidence",
+        "headline": "A homepage that answers the questions parents ask before they call.",
+        "items": [
+            ("Age fit", "Toddlers, preschoolers, and pre-K families can quickly see where their child belongs."),
+            ("Teacher warmth", "The page makes the people and classroom rhythm visible before a tour."),
+            ("Daily communication", "Parents know how updates, routines, meals, rest, and pickup notes work."),
+            ("Tour clarity", "The next step is a real tour request, not a vague contact form."),
+        ],
+    },
+    "structured": {
+        "kicker": "Decision support",
+        "headline": "The practical details that keep interested families moving.",
+        "items": [
+            ("Programs by age", "Age ranges and classroom fit are separated instead of buried in paragraph copy."),
+            ("Availability", "Openings and waitlist language can be shown without forcing a phone call."),
+            ("Visit expectations", "Parents know what they will see, who they will meet, and what to ask."),
+            ("Follow-up path", "After the visit, the family knows the application and start-date sequence."),
+        ],
+    },
+    "explorer": {
+        "kicker": "Learning in action",
+        "headline": "More than a gallery: show how curiosity turns into a real day.",
+        "items": [
+            ("Art and materials", "Photos support hands-on work instead of acting like generic decoration."),
+            ("Early literacy", "Story, conversation, and letter play get framed as part of the classroom rhythm."),
+            ("Number sense", "Sorting, counting, building, and measuring become visible to parents."),
+            ("Social growth", "Small groups, turn-taking, and independent choices show what readiness really means."),
+        ],
+    },
+    "community": {
+        "kicker": "Belonging",
+        "headline": "Trust comes from the everyday details, not a slogan.",
+        "items": [
+            ("Warm handoff", "The first few minutes of the morning should feel easy to understand."),
+            ("Teacher continuity", "Families want to know the adults their child sees every day."),
+            ("Parent connection", "Communication, events, and classroom updates make the school feel open."),
+            ("A longer path", "A site should show how children grow from first visit to kindergarten readiness."),
+        ],
+    },
+}
+
+
+def _render_preschool_detail_section(ctx: dict) -> str:
+    config = PRESCHOOL_DETAIL_SECTIONS.get(ctx["version_id"], PRESCHOOL_DETAIL_SECTIONS["warm"])
+    cards = "\n".join(
+        f"<article><h3>{html.escape(title)}</h3><p>{html.escape(body)}</p></article>"
+        for title, body in config["items"]
+    )
+    proof_points = _display_proof_points(ctx, limit=2)
+    proof_html = ""
+    if proof_points:
+        proof_html = (
+            '<div class="preschool-detail__proof">'
+            + "".join(_render_proof_line(point) for point in proof_points)
+            + "</div>"
+        )
+    return f"""
+      <section class="preschool-detail preschool-detail--{html.escape(ctx["version_id"])}">
+        <div class="preschool-detail__head">
+          <p class="section-kicker">{html.escape(config["kicker"])}</p>
+          <h2>{html.escape(config["headline"])}</h2>
+        </div>
+        <div class="preschool-detail__grid">{cards}</div>
+        {proof_html}
       </section>
 """
 
@@ -3018,6 +3109,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, [hero_photo])
         hero = _render_hero_split(ctx, "See enrollment steps", hero_photo)
         signature = _render_admissions_path(ctx)
+        detail = _render_preschool_detail_section(ctx)
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-preschool-structured"
     elif type_id == "preschool" and version_id == "explorer":
@@ -3025,6 +3117,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, hero_photos)
         hero = _render_hero_masthead(ctx, "See this week's theme")
         signature = _render_explorer_spotlight(ctx)
+        detail = _render_preschool_detail_section(ctx)
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-preschool-explorer"
     elif type_id == "preschool" and version_id == "community":
@@ -3032,13 +3125,22 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, hero_photos)
         hero = _render_hero_collage(ctx, "Start the conversation", hero_photos[0], hero_photos[1])
         signature = _render_community_reasons(ctx)
+        detail = _render_preschool_detail_section(ctx)
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-preschool-community"
     elif type_id == "preschool":
+        # Was allow_override=False (warm's hero could never use an uploaded
+        # photo, no matter its quality) — that overcorrected for one bad,
+        # small, badly-cropped Yelp photo. The real fix is upstream: a
+        # quality floor rejects genuinely bad photos before they ever reach
+        # ctx (photo_quality.hero_is_acceptable), and hero_photo_fit
+        # switches a portrait/square photo to "contain" instead of cropping
+        # it. A good uploaded photo should still win here like everywhere else.
         hero_photo = _single_hero_photo(ctx, photos[0])
         ctx = _with_hero_photos(ctx, [hero_photo])
         hero = _render_hero(ctx, "Ask about openings", hero_photo)
         signature = _render_day_timeline(ctx)
+        detail = _render_preschool_detail_section(ctx)
         enrollment = _render_enrollment_cta(ctx, items)
         layout_class = "mock-layout-preschool-warm"
     elif type_id == "music" and version_id == "performance":
@@ -3046,6 +3148,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, [hero_photo])
         hero = _render_hero_split(ctx, "Book a trial lesson", hero_photo)
         signature = _render_showcase_marquee(ctx, items)
+        detail = ""
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-music-performance"
     elif type_id == "music" and version_id == "collective":
@@ -3053,6 +3156,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, hero_photos)
         hero = _render_hero_masthead(ctx, "Join a group class")
         signature = _render_collective_lineup(ctx)
+        detail = ""
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-music-collective"
     elif type_id == "music" and version_id == "academy":
@@ -3060,6 +3164,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, hero_photos)
         hero = _render_hero_collage(ctx, "See the curriculum", hero_photos[0], hero_photos[1])
         signature = _render_academy_path(ctx)
+        detail = ""
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-music-academy"
     elif type_id == "music":
@@ -3067,6 +3172,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, [hero_photo])
         hero = _render_hero(ctx, "Find the right lesson", hero_photo)
         signature = _render_lesson_scroll(ctx, items)
+        detail = ""
         enrollment = _render_enrollment_inline(ctx, items)
         layout_class = "mock-layout-music-studio"
     elif type_id == "sports" and version_id == "trust":
@@ -3074,6 +3180,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, [hero_photo])
         hero = _render_hero_split(ctx, "Ask us anything", hero_photo)
         signature = _render_parent_qa(ctx)
+        detail = ""
         enrollment = _render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-sports-trust"
     elif type_id == "sports" and version_id == "camp":
@@ -3081,6 +3188,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, hero_photos)
         hero = _render_hero_masthead(ctx, "Reserve a spot")
         signature = _render_camp_calendar(ctx)
+        detail = ""
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-sports-camp"
     elif type_id == "sports" and version_id == "team":
@@ -3088,6 +3196,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, hero_photos)
         hero = _render_hero_collage(ctx, "Ask about tryouts", hero_photos[0], hero_photos[1])
         signature = _render_team_roster(ctx)
+        detail = ""
         enrollment = _render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-sports-team"
     else:
@@ -3095,6 +3204,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         ctx = _with_hero_photos(ctx, [hero_photo])
         hero = _render_hero(ctx, "Claim a trial spot", hero_photo)
         signature = _render_stat_block(ctx)
+        detail = ""
         enrollment = _render_enrollment_cta(ctx, items)
         layout_class = "mock-layout-sports-action"
 
@@ -3104,6 +3214,7 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
     <main class="mock-layout {layout_class}">
       {hero}
       {signature}
+      {detail}
       {band}
       {enrollment}
     </main>
@@ -3227,6 +3338,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
         "photos": photos,
         "photo_fallbacks": photo_fallbacks,
         "hero_photo_override": _clean(lead.get("_website_mock_hero_photo")),
+        "hero_photo_fit": _clean(lead.get("_website_mock_hero_photo_fit")) or "cover",
         "type_id": variant.type_id,
         "version_id": variant.version_id,
         "raw_category": _clean(lead.get("category")),
@@ -3295,10 +3407,21 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       text-transform: var(--display-case);
       letter-spacing: var(--display-tracking);
     }}
-    h1 {{ font-size: var(--h1-size); line-height: .98; margin: 0 0 24px; }}
+    h1 {{ font-size: var(--h1-size); line-height: .98; margin: 0 0 14px; }}
     h2 {{ font-size: 3rem; line-height: 1.03; margin: 0 0 18px; }}
     h3 {{ font-size: 21px; line-height: 1.16; margin: 14px 0 8px; }}
     p {{ color: var(--muted); font-size: 17px; line-height: 1.58; margin: 0; letter-spacing: 0; }}
+    .hero-tagline {{
+      max-width: 720px;
+      margin: 0 0 14px;
+      font-family: var(--display-font);
+      font-variation-settings: var(--display-vf);
+      font-size: 1.55rem;
+      line-height: 1.25;
+      font-weight: var(--display-weight);
+      letter-spacing: 0;
+      color: inherit;
+    }}
     @media (prefers-reduced-motion: no-preference) {{
       a, button, .day-timeline__strip article, .lesson-scroll__track article, .option-pill {{
         transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease;
@@ -3587,6 +3710,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       padding: clamp(28px, 4vw, 48px) 0 clamp(24px, 3vw, 34px);
     }}
     .hero-masthead__intro p {{ max-width: 520px; }}
+    .hero-masthead__intro .hero-tagline {{ max-width: 620px; font-size: 1.7rem; }}
     .hero-masthead__action {{ display: flex; justify-content: flex-end; }}
 
     /* Hero: photo collage — two offset photos, not one dominant image */
@@ -3760,6 +3884,54 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-size: var(--photo-fit);
       background-position: center top;
     }}
+
+    /* Preschool detail section: the parent questions behind the pretty page */
+    .preschool-detail {{
+      padding-top: var(--section-y);
+      padding-bottom: var(--section-y);
+      background: var(--paper);
+      border-top: 1px solid var(--line);
+    }}
+    .preschool-detail__head {{
+      max-width: 760px;
+      margin-bottom: 30px;
+    }}
+    .preschool-detail__grid {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      border: 1px solid var(--line);
+      background: var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }}
+    .preschool-detail__grid article {{
+      min-height: 190px;
+      padding: 24px 22px;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }}
+    .preschool-detail__grid article::before {{
+      content: "";
+      width: 36px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--accent);
+    }}
+    .preschool-detail__grid h3 {{ font-size: 18px; margin: 18px 0 8px; }}
+    .preschool-detail__grid p {{ font-size: 14.5px; line-height: 1.48; }}
+    .preschool-detail__proof {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 22px;
+      padding: 20px;
+      border-radius: var(--radius);
+      background: var(--secondary);
+    }}
+    .preschool-detail__proof .proof-line {{ margin: 0; padding-top: 0; border-top: 0; }}
 
     /* Signature: music-studio — an overlapping, hand-arranged lesson scroll */
     .lesson-scroll {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--soft); }}
@@ -4564,7 +4736,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       .day-timeline__strip, .admissions-path__steps, .stat-block__row, .showcase-marquee__row,
       .parent-qa__grid, .explorer-spotlight__layout, .community-reasons__row,
       .collective-lineup__row, .camp-calendar__row, .team-roster__row,
-      .collective-proof,
+      .collective-proof, .preschool-detail__grid, .preschool-detail__proof,
       .band-coverage__list, .band-figures__row, .band-strip,
       .footer-columns, .footer-rule, .footer-strip,
       .mock-form, .enrollment-inline__form {{

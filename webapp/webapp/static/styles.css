@@ -424,6 +424,41 @@ form.filters button:hover { background: #2d4229; }
 .btn-danger:hover { background: #a13a2f; color: #fff5f4; }
 .site-gen-delete-form { margin-top: 16px; }
 .site-gen-inline-form { display: inline; }
+.site-gen-version-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.site-gen-version-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 1px solid #d4cdb8;
+  border-radius: 999px;
+  background: #fff;
+  color: #4b463d;
+  font-weight: 650;
+}
+.site-gen-version-choice input {
+  margin: 0;
+}
+.site-gen-version-choice.is-selected {
+  border-color: #3d5a3a;
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+.site-gen-version-view {
+  margin-right: 4px;
+  font-size: 12px;
+}
+.site-gen-version-submit {
+  padding: 4px 8px;
+  font-size: 12px;
+}
 .check-result {
   padding: 10px 14px;
   border-radius: 6px;

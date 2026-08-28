@@ -2,6 +2,14 @@
 {% block content %}
 <h2>Site generator</h2>
 
+{% if duplicate_org %}
+  <div class="pipeline-alert pipeline-alert-warning">
+    <strong>Already generated.</strong>
+    I found {{ duplicate_org.name }} in the generated businesses list, so I did not create another duplicate.
+    Use the regenerate controls on that existing record if you want a new version.
+  </div>
+{% endif %}
+
 <p class="muted" style="max-width: 720px;">
   Generates a full business website (not a mock/placeholder) from real
   content: Google Places reviews and photos, pasted Yelp review text, an
@@ -197,7 +205,7 @@
   <p class="muted">Nothing generated yet.</p>
 {% else %}
   {% for org in orgs %}
-    <details class="site-gen-org">
+    <details class="site-gen-org" id="org-{{ org.org_id }}" {% if duplicate_org and duplicate_org.org_id == org.org_id %}open{% endif %}>
       <summary>
         <span class="site-gen-org-name">{{ org.name }}</span>
         <span class="lead-meta">{{ org.category }}{% if org.city %} · {{ org.city }}{{ ", " + org.state if org.state }}{% endif %} · {{ org.themes|length }} concept{{ "s" if org.themes|length != 1 }}{% if org.phone %} · {{ org.phone }}{% endif %}</span>
@@ -205,16 +213,25 @@
       <div class="site-gen-org-body">
         {% for theme, versions in org.themes.items() %}
           {% set latest = versions[-1] %}
+          {% set selected_versions = versions | selectattr("selected_for_sms") | list %}
+          {% set selected = selected_versions[-1] if selected_versions else latest %}
           <div class="site-gen-theme">
-            <a href="{{ latest.preview_url }}" target="_blank" rel="noopener" class="btn-primary">
-              {{ latest.label }}{% if versions|length > 1 %} (v{{ latest.version_n }}){% endif %} ↗
+            <a href="{{ selected.preview_url }}" target="_blank" rel="noopener" class="btn-primary">
+              {{ selected.label }}{% if versions|length > 1 %} (v{{ selected.version_n }}){% endif %} ↗
             </a>
-            {% if versions|length > 1 %}
-              <span class="muted" style="font-size:12px;">
-                {{ versions|length }} versions —
-                {% for v in versions %}<a href="{{ v.preview_url }}" target="_blank" rel="noopener">v{{ v.version_n }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
-              </span>
-            {% endif %}
+            <form method="POST" action="/site-generator/select-version" class="site-gen-version-picker">
+              <input type="hidden" name="org_id" value="{{ org.org_id }}">
+              <input type="hidden" name="theme" value="{{ theme }}">
+              <span class="muted">Text link:</span>
+              {% for v in versions %}
+                <label class="site-gen-version-choice {% if v.selected_for_sms %}is-selected{% endif %}">
+                  <input type="radio" name="version_n" value="{{ v.version_n }}" {% if v.selected_for_sms %}checked{% endif %}>
+                  <span>v{{ v.version_n }}</span>
+                </label>
+                <a href="{{ v.preview_url }}" target="_blank" rel="noopener" class="site-gen-version-view">view</a>
+              {% endfor %}
+              <button type="submit" class="btn-secondary site-gen-version-submit">Save</button>
+            </form>
             <form method="POST" action="/site-generator/regenerate" class="site-gen-regen-form" enctype="multipart/form-data">
               <input type="hidden" name="org_id" value="{{ org.org_id }}">
               <input type="hidden" name="theme" value="{{ theme }}">
@@ -237,7 +254,9 @@
 I put together a few website concepts for {{ org.name }} so you can get a feel for what we could create for you:
 
 {% for theme, versions in org.themes.items() -%}
-Option {{ loop.index }}: {{ versions[-1].short_url }}
+{% set selected_versions = versions | selectattr("selected_for_sms") | list -%}
+{% set sms_version = selected_versions[-1] if selected_versions else versions[-1] -%}
+Option {{ loop.index }}: {{ sms_version.short_url }}
 {% endfor %}
 Take a look when you get a chance! If you like elements from different concepts, or have a completely different direction in mind, I’d be happy to explore that too.</textarea>
           <button type="button" class="sms-copy-btn" data-target="sms-message-{{ org.org_id }}">Copy message</button>

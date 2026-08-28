@@ -352,12 +352,31 @@ def generate_full_site(
             name=name, raw_review_text=" ".join(review_raw_texts), client=anthropic_client,
         )
 
+    # An explicit hero choice still needs a quality floor — a small,
+    # heavily-compressed source (e.g. a scraped Yelp thumbnail) looks bad as
+    # a full-bleed hero no matter how it's fit into the frame. Falling
+    # through to automatic selection (rather than hard-failing the whole
+    # generation) means a genuinely bad photo gets swapped for the next-best
+    # real photo, or bundled stock — not silently kept, but also not a
+    # blanket ban on ever honoring a hero override for this business.
+    if hero_photo and not photo_quality.hero_is_acceptable(hero_photo):
+        logger.warning(
+            "Hero photo override %s is below the quality floor, falling back to automatic selection",
+            hero_photo.get("url", ""),
+        )
+        hero_photo = None
+
     google_photos = _persist_photos(place, subject_id, output_dir)
     selected_photos = photo_quality.select_and_rank_photos(
         uploaded_photos or [], google_photos, forced_hero=hero_photo,
     )
     if selected_photos:
-        subject["_website_mock_hero_photo"] = selected_photos[0]["url"]
+        hero = selected_photos[0]
+        subject["_website_mock_hero_photo"] = hero["url"]
+        # Portrait/square photos crop badly under cover in a wide hero —
+        # let contain show the whole photo instead of cutting off the
+        # subject (see photo_quality.hero_fit_mode).
+        subject["_website_mock_hero_photo_fit"] = photo_quality.hero_fit_mode(hero)
         subject["_website_mock_photos"] = [p["url"] for p in selected_photos]
 
     rendered = mocks.render_mock_concepts(

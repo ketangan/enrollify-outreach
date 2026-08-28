@@ -1,5 +1,7 @@
 import re
 
+from PIL import Image
+
 from scripts import generate_website_mocks
 from src import website_mocks
 
@@ -433,9 +435,17 @@ def test_mock_headlines_read_like_public_site_copy_not_mail_merge():
         _variant("preschool", "structured"),
     )
 
-    assert "<h1>Private lessons that fit real schedules.</h1>" in music
-    assert "<h1>Lessons with a stage to grow toward.</h1>" in performance
-    assert "<h1>A first visit that feels clear before day one.</h1>" in structured_preschool
+    # H1 is always the business's own name now — a prospect's first
+    # question is "is this my school?", not a marketing line. The old
+    # per-variant marketing copy still exists, just demoted to a supporting
+    # tagline underneath the name rather than being the headline itself.
+    escaped_name = "Mark Fitchett&#x27;s Guitar School"
+    assert f"<h1>{escaped_name}</h1>" in music
+    assert f"<h1>{escaped_name}</h1>" in performance
+    assert f"<h1>{escaped_name}</h1>" in structured_preschool
+    assert '<p class="hero-tagline">Private lessons that fit real schedules.</p>' in music
+    assert '<p class="hero-tagline">Lessons with a stage to grow toward.</p>' in performance
+    assert '<p class="hero-tagline">A first visit that feels clear before day one.</p>' in structured_preschool
     assert "paperwork chase" not in structured_preschool
     assert "Mark Fitchett's Guitar School, with lesson paths" not in music
     assert "Show families what students at Mark Fitchett's Guitar School are working toward." not in performance
@@ -469,6 +479,24 @@ def test_all_curated_stock_photo_assets_exist():
     ]
 
     assert missing == []
+
+
+def test_preschool_explorer_stock_photos_are_landscape_for_masthead_crops():
+    """Explorer uses two stock photos in short masthead slots; portrait
+    assets crop into vague texture there instead of readable preschool scenes.
+    It also needs a fourth asset so the post-hero spotlight does not borrow
+    a random sibling template photo when no real hero override is present."""
+    explorer_paths = [
+        generate_website_mocks.STOCK_PHOTO_SOURCE_DIR / rel_path
+        for rel_path in generate_website_mocks.STOCK_PHOTO_ASSETS.values()
+        if rel_path.startswith("preschool/explorer-")
+    ]
+
+    assert len(explorer_paths) >= 4
+    for path in explorer_paths:
+        with Image.open(path) as img:
+            width, height = img.size
+        assert width >= height, f"{path} is portrait and will crop poorly"
 
 
 def test_write_mock_files_copies_referenced_stock_assets(tmp_path):
@@ -954,11 +982,13 @@ def test_structured_preschool_admissions_path_is_a_real_sequence():
     )
 
     # Numbering here is legitimate: admissions steps are a real sequence,
-    # unlike the generic 4-up feature grids elsewhere.
+    # unlike the generic 4-up feature grids elsewhere. Every step gets its
+    # own photo now — a prior version only put photos on steps 2 and 4,
+    # which read as unfinished (a real user complaint: "what about the others?").
     assert '<ol class="admissions-path__steps">' in rendered
     assert "<span>01</span>" in rendered
     assert "<span>04</span>" in rendered
-    assert rendered.count("<figure") == 2
+    assert rendered.count("<figure") == 4
 
 
 def test_every_variant_has_an_identity_style_entry():
