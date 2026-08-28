@@ -2171,6 +2171,13 @@ def _flow_config(ctx: dict) -> dict:
                 ),
                 "fields": [
                     ("Child age", "2 years"),
+                    # Short value (<=14 chars) so this sits next to "Child
+                    # age" in the 2-column grid instead of leaving that cell
+                    # empty — "Best next step" right after it is long enough
+                    # to force its own full-width row either way, so this is
+                    # also just genuinely useful intake info nothing else on
+                    # this form asks for.
+                    ("Schedule", "Full-time"),
                     ("Best next step", "Schedule a tour"),
                     ("Timeline", "Exploring now"),
                 ],
