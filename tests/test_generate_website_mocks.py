@@ -2,7 +2,7 @@ import re
 
 from PIL import Image
 
-from scripts import generate_website_mocks
+from scripts import generate_website_mocks, mock_templates_music
 from src import website_mocks
 
 
@@ -1129,32 +1129,32 @@ def test_on_accent_text_clears_aa_contrast_for_every_palette():
 
 def test_detect_instruments_finds_named_instruments_in_business_name():
     ctx = {"name": "Riverside Piano and Violin Studio", "site_quote": "", "site_anchor_labels": []}
-    assert generate_website_mocks._detect_instruments(ctx) == ["piano", "violin"]
+    assert mock_templates_music._detect_instruments(ctx) == ["piano", "violin"]
 
 
 def test_detect_instruments_finds_instruments_in_quote_and_labels():
     ctx = {"name": "Test School", "site_quote": "My daughter loves her guitar lessons here.", "site_anchor_labels": ["Drum circle"]}
-    found = generate_website_mocks._detect_instruments(ctx)
+    found = mock_templates_music._detect_instruments(ctx)
     assert "guitar" in found
     assert "drums" in found
 
 
 def test_detect_instruments_matches_singing_and_vocal_as_voice():
     ctx = {"name": "Test", "site_quote": "", "site_anchor_labels": ["Singing lessons for kids"]}
-    assert generate_website_mocks._detect_instruments(ctx) == ["voice"]
+    assert mock_templates_music._detect_instruments(ctx) == ["voice"]
 
     ctx2 = {"name": "Test", "site_quote": "Great vocal coach.", "site_anchor_labels": []}
-    assert generate_website_mocks._detect_instruments(ctx2) == ["voice"]
+    assert mock_templates_music._detect_instruments(ctx2) == ["voice"]
 
 
 def test_detect_instruments_returns_empty_when_nothing_named():
     ctx = {"name": "Riverside Music Collective", "site_quote": "Great school, we love it here.", "site_anchor_labels": ["Trial lessons"]}
-    assert generate_website_mocks._detect_instruments(ctx) == []
+    assert mock_templates_music._detect_instruments(ctx) == []
 
 
 def test_detect_instruments_does_not_duplicate_repeated_mentions():
     ctx = {"name": "Piano Piano Piano Academy", "site_quote": "", "site_anchor_labels": []}
-    assert generate_website_mocks._detect_instruments(ctx) == ["piano"]
+    assert mock_templates_music._detect_instruments(ctx) == ["piano"]
 
 
 def _collective_lineup_html(rendered: str) -> str:
@@ -1172,7 +1172,7 @@ def test_collective_lineup_uses_instrument_photo_when_named(monkeypatch):
 
     # & is HTML-escaped to &amp; in an inline style attribute, so check the
     # unambiguous photo-id portion of the URL rather than the raw string.
-    photo_id = generate_website_mocks.INSTRUMENT_STOCK_PHOTOS["violin"].split("?")[0]
+    photo_id = mock_templates_music.INSTRUMENT_STOCK_PHOTOS["violin"].split("?")[0]
     assert photo_id in _collective_lineup_html(rendered)
 
 
@@ -1184,7 +1184,7 @@ def test_collective_lineup_falls_back_to_non_hero_stock_when_no_instrument_named
 
     for url in generate_website_mocks.PHOTO_SETS["music"]["collective"]:
         assert url.split("?")[0] not in lineup_html
-    for url in generate_website_mocks.INSTRUMENT_STOCK_PHOTOS.values():
+    for url in mock_templates_music.INSTRUMENT_STOCK_PHOTOS.values():
         assert url.split("?")[0] not in lineup_html
 
 
