@@ -3208,6 +3208,12 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       padding: clamp(28px, 5vw, 72px);
       padding-top: var(--hero-top);
       background: var(--secondary);
+      /* Grid items default to min-width:auto, so without this the panel
+         won't shrink below its content's natural width — at mobile widths
+         (where .hero-split collapses to one column) that pushed the panel
+         wider than the viewport, silently clipped by .page's
+         overflow:hidden instead of wrapping. */
+      min-width: 0;
     }}
     .hero-split__panel .primary.light {{ align-self: flex-start; }}
     .hero-split__photo {{
@@ -3262,6 +3268,9 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       padding: clamp(28px, 5vw, 72px);
       padding-top: var(--hero-top);
       background: var(--secondary);
+      /* Same overflow fix as .hero-split__panel above — grid items don't
+         shrink below their content's natural width without this. */
+      min-width: 0;
     }}
     .hero-collage__panel .primary.light {{ align-self: flex-start; }}
     .hero-collage__photos {{
