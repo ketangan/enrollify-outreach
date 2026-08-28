@@ -19,6 +19,7 @@ import html
 import json
 import logging
 import re
+import shutil
 import sys
 import time
 from datetime import datetime
@@ -41,6 +42,7 @@ logging.basicConfig(
 logger = logging.getLogger("website_mocks")
 
 SHEET_WRITE_THROTTLE_SEC = 1.2
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _clean(value) -> str:
@@ -779,6 +781,61 @@ PHOTO_SETS = {
 }
 
 
+STOCK_PHOTO_SOURCE_DIR = PROJECT_ROOT / "assets" / "site-stock"
+STOCK_PHOTO_PUBLIC_PREFIX = "../assets/site-stock"
+STOCK_PHOTO_ASSETS = {
+    url: f"{category}/{version_id}-{idx}.jpg"
+    for category, variants in PHOTO_SETS.items()
+    for version_id, urls in variants.items()
+    for idx, url in enumerate(urls, start=1)
+}
+STOCK_PHOTO_REF_RE = re.compile(r"\.\./assets/site-stock/([a-z0-9_/-]+\.jpg)")
+
+
+def _photo_display_url(photo_url: str) -> str:
+    """Render curated stock photos from bundled files, not remote URLs.
+
+    Real hero photos and uploaded/Google photos stay as absolute URLs. Only
+    URLs from PHOTO_SETS are rewritten; write_mock_files() and
+    generate_full_site._persist_rendered() then copy/upload the matching
+    files next to the generated site.
+    """
+    clean_url = _clean(photo_url)
+    stock_path = STOCK_PHOTO_ASSETS.get(clean_url)
+    if stock_path:
+        return f"{STOCK_PHOTO_PUBLIC_PREFIX}/{stock_path}"
+    return clean_url
+
+
+def stock_assets_for_html(html_text: str) -> list[tuple[str, Path]]:
+    """Return bundled stock assets referenced by a rendered page.
+
+    The relative path is under `assets/site-stock/` in generated output; the
+    Path points at the checked-in source file.
+    """
+    found: list[tuple[str, Path]] = []
+    seen: set[str] = set()
+    for match in STOCK_PHOTO_REF_RE.finditer(html_text):
+        rel_path = match.group(1)
+        if rel_path in seen:
+            continue
+        seen.add(rel_path)
+        found.append((rel_path, STOCK_PHOTO_SOURCE_DIR / rel_path))
+    return found
+
+
+def stock_assets_for_rendered(rendered: list[dict]) -> list[tuple[str, Path]]:
+    found: list[tuple[str, Path]] = []
+    seen: set[str] = set()
+    for item in rendered:
+        for rel_path, source_path in stock_assets_for_html(item.get("html", "")):
+            if rel_path in seen:
+                continue
+            seen.add(rel_path)
+            found.append((rel_path, source_path))
+    return found
+
+
 def _photo_urls(mock_type: str, version_id: str, category: str = "") -> list[str]:
     category_key = _clean(category).lower()
     if mock_type == "sports" and category_key in PHOTO_SETS:
@@ -888,11 +945,11 @@ def _hero_photo_gallery(ctx: dict, photos: list[str], count: int) -> list[str]:
 
 
 def _photo_style(photo_url: str) -> str:
-    return f"style=\"--photo: url('{html.escape(photo_url, quote=True)}')\""
+    return f"style=\"--photo: url('{html.escape(_photo_display_url(photo_url), quote=True)}')\""
 
 
 def _hero_photo_style(photo_url: str) -> str:
-    return f"style=\"--hero-photo: url('{html.escape(photo_url, quote=True)}')\""
+    return f"style=\"--hero-photo: url('{html.escape(_photo_display_url(photo_url), quote=True)}')\""
 
 
 COMMON_SITE_ANCHOR_PATTERNS = [
@@ -2574,8 +2631,8 @@ def _render_hero_collage(ctx: dict, cta_label: str, photo_a: str, photo_b: str) 
     # real photography for variants whose signature section has none.
     quote_html, anchors_html = _hero_quote_or_anchors(ctx)
     photo_style = (
-        f"style=\"--photo-a: url('{html.escape(photo_a, quote=True)}'); "
-        f"--photo-b: url('{html.escape(photo_b, quote=True)}')\""
+        f"style=\"--photo-a: url('{html.escape(_photo_display_url(photo_a), quote=True)}'); "
+        f"--photo-b: url('{html.escape(_photo_display_url(photo_b), quote=True)}')\""
     )
     return f"""
       <section class="hero-collage">
@@ -4648,6 +4705,15 @@ def write_mock_files(output_dir: Path, subject_id: str, rendered: list[dict]) ->
         page_dir = output_dir / "mocks" / slug / f"{item['type']}-{item['version']}"
         page_dir.mkdir(parents=True, exist_ok=True)
         (page_dir / "index.html").write_text(item["html"], encoding="utf-8")
+
+    asset_root = output_dir / "mocks" / slug / "assets" / "site-stock"
+    for rel_path, source_path in stock_assets_for_rendered(rendered):
+        if not source_path.exists():
+            logger.warning("Missing bundled stock photo: %s", source_path)
+            continue
+        dest = asset_root / rel_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, dest)
 
 
 def _render_candidate(lead: dict, output_dir: Path, base_url: str) -> list[dict]:

@@ -219,8 +219,11 @@ def variants_for(mock_type: str, raw_versions: str = "") -> list[MockVariant]:
     if not wanted:
         return variants[:4]
     by_id = {v.version_id: v for v in variants}
-    selected = [by_id[v] for v in wanted if v in by_id]
-    return selected or variants[:4]
+    normalized_wanted = [
+        v.removeprefix(f"{normalized}-")
+        for v in wanted
+    ]
+    return [by_id[v] for v in normalized_wanted if v in by_id]
 
 
 def is_mock_candidate(lead: dict) -> bool:

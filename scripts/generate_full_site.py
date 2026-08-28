@@ -177,6 +177,15 @@ def _persist_rendered(rendered: list[dict], subject_id: str, output_dir: Path, s
     if r2_storage.is_configured():
         persisted = []
         shell_html = _preview_shell_html(site_name)
+        for rel_path, source_path in mocks.stock_assets_for_rendered(rendered):
+            if not source_path.exists():
+                logger.warning("Missing bundled stock photo: %s", source_path)
+                continue
+            r2_storage.upload_bytes(
+                f"sites/{subject_id}/assets/site-stock/{rel_path}",
+                source_path.read_bytes(),
+                "image/jpeg",
+            )
         for item in rendered:
             base_key = f"sites/{subject_id}/{item['type']}-{item['version']}"
             r2_storage.upload_bytes(f"{base_key}/site.html", item["html"].encode("utf-8"), "text/html; charset=utf-8")

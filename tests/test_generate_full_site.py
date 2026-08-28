@@ -510,6 +510,9 @@ def test_generate_full_site_uploads_to_r2_when_configured(monkeypatch, tmp_path)
     # public URL (index.html) is what a prospect actually lands on.
     site_keys = [k for k in uploaded if k.endswith("site.html")]
     assert len(site_keys) == 4
+    stock_keys = [k for k in uploaded if "/assets/site-stock/" in k]
+    assert stock_keys
+    assert all(content_type == "image/jpeg" for _data, content_type in (uploaded[k] for k in stock_keys))
     for key in html_keys:
         shell_html, content_type = uploaded[key]
         shell_html = shell_html.decode("utf-8")
@@ -521,6 +524,7 @@ def test_generate_full_site_uploads_to_r2_when_configured(monkeypatch, tmp_path)
         assert ".src = 'site.html' + window.location.search" in shell_html
         assert '>Desktop<' in shell_html and '>Tablet<' in shell_html and '>Phone<' in shell_html
         assert 'aria-pressed="true"' in shell_html  # Desktop selected by default
+    assert any(b"../assets/site-stock/" in uploaded[key][0] for key in site_keys)
     for key in site_keys:
         site_html, _content_type = uploaded[key]
         # The real rendered page content, not the shell.

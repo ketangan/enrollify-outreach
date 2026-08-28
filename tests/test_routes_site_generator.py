@@ -333,9 +333,71 @@ def test_regenerate_known_org_scopes_job_to_one_theme_and_versions_subject_id(mo
 
     assert resp.status_code == 303
     assert captured["versions"] == "studio"
-    assert captured["subject_id"] == "riverside-music-abc123-v2"
+    assert captured["subject_id"] == "riverside-music-abc123-studio-v2"
     assert captured["revision_notes"] == "Focus on trial lessons"
     assert captured["is_regeneration"] is True
+    assert captured["skip_website_check"] is True
+
+
+def test_regenerate_unknown_theme_returns_404(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    _fake_sheet(monkeypatch)
+    site_generator_state.record_initial_generation(
+        org_id="riverside-music-abc123", name="Riverside Music Collective", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio concept", "url": "u1", "preview_url": "p1"}],
+        job_id="job-0",
+    )
+
+    resp = client.post(
+        "/site-generator/regenerate",
+        params={"key": "secret123"},
+        data={"org_id": "riverside-music-abc123", "theme": "music-not-real"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 404
+
+
+def test_blocked_regeneration_retry_form_stays_on_regenerate_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(jobs_runner, "JOBS_DIR", tmp_path / "jobs")
+    jobs_runner.JOBS_DIR.mkdir()
+    output_dir = tmp_path / "generated"
+    subject_id = "green-garden-preschool-1224e2-structured-v2"
+    result_dir = output_dir / "mocks" / subject_id
+    result_dir.mkdir(parents=True)
+    (result_dir / "result.json").write_text(json.dumps({
+        "subject_id": subject_id,
+        "name": "Green Garden Preschool",
+        "category": "preschool",
+        "blocked": True,
+        "blocked_reason": "existing_website_found",
+        "existing_website_url": "https://www.greengardenpreschool.com/",
+        "existing_website_confidence": "high",
+        "existing_website_reasoning": "Found real site.",
+    }))
+    (jobs_runner.JOBS_DIR / "job-regen.json").write_text(json.dumps({
+        "id": "job-regen",
+        "kind": "generate_full_site",
+        "status": "failed",
+        "params": {
+            "name": "Green Garden Preschool",
+            "category": "preschool",
+            "subject_id": subject_id,
+            "output_dir": str(output_dir),
+            "is_regeneration": True,
+            "org_id": "green-garden-preschool-1224e2",
+            "theme": "preschool-structured",
+            "revision_notes": "make the headline warmer",
+        },
+    }))
+
+    resp = client.get("/site-generator/jobs/job-regen", params={"key": "secret123"})
+
+    assert resp.status_code == 200
+    assert 'action="/site-generator/regenerate"' in resp.text
+    assert 'name="theme" value="preschool-structured"' in resp.text
+    assert 'action="/site-generator/generate"' not in resp.text
 
 
 def test_regenerate_passes_orgs_known_phone_through(monkeypatch, tmp_path):

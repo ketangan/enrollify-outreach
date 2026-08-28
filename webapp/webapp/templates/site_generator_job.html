@@ -61,22 +61,31 @@ Take a look when you get a chance! If you like elements from different concepts,
     </p>
     <p class="muted">{{ result.existing_website_reasoning }}</p>
   </div>
-  <form method="POST" action="/site-generator/generate" class="add-lead-form">
-    <input type="hidden" name="name" value="{{ job.params.name }}">
-    <input type="hidden" name="category" value="{{ job.params.category }}">
-    <input type="hidden" name="city" value="{{ job.params.city }}">
-    <input type="hidden" name="state" value="{{ job.params.state }}">
-    <input type="hidden" name="address" value="{{ job.params.address }}">
-    <input type="hidden" name="phone" value="{{ job.params.phone }}">
-    <input type="hidden" name="website" value="{{ job.params.website }}">
-    <input type="hidden" name="info_pages" value="{{ job.params.info_pages }}">
-    <input type="hidden" name="yelp_text" value="{{ job.params.yelp_text }}">
-    <input type="hidden" name="revision_notes" value="{{ job.params.revision_notes }}">
-    {% if job.params.use_google %}<input type="hidden" name="use_google" value="true">{% endif %}
-    <input type="hidden" name="skip_website_check" value="true">
-    <input type="hidden" name="no_website_schools_id" value="{{ job.params.no_website_schools_id }}">
-    <button type="submit">I checked — generate anyway</button>
-  </form>
+  {% if job.params.is_regeneration and job.params.org_id and job.params.theme %}
+    <form method="POST" action="/site-generator/regenerate" class="add-lead-form">
+      <input type="hidden" name="org_id" value="{{ job.params.org_id }}">
+      <input type="hidden" name="theme" value="{{ job.params.theme }}">
+      <input type="hidden" name="revision_notes" value="{{ job.params.revision_notes }}">
+      <button type="submit">I checked — regenerate this concept anyway</button>
+    </form>
+  {% else %}
+    <form method="POST" action="/site-generator/generate" class="add-lead-form">
+      <input type="hidden" name="name" value="{{ job.params.name }}">
+      <input type="hidden" name="category" value="{{ job.params.category }}">
+      <input type="hidden" name="city" value="{{ job.params.city }}">
+      <input type="hidden" name="state" value="{{ job.params.state }}">
+      <input type="hidden" name="address" value="{{ job.params.address }}">
+      <input type="hidden" name="phone" value="{{ job.params.phone }}">
+      <input type="hidden" name="website" value="{{ job.params.website }}">
+      <input type="hidden" name="info_pages" value="{{ job.params.info_pages }}">
+      <input type="hidden" name="yelp_text" value="{{ job.params.yelp_text }}">
+      <input type="hidden" name="revision_notes" value="{{ job.params.revision_notes }}">
+      {% if job.params.use_google %}<input type="hidden" name="use_google" value="true">{% endif %}
+      <input type="hidden" name="skip_website_check" value="true">
+      <input type="hidden" name="no_website_schools_id" value="{{ job.params.no_website_schools_id }}">
+      <button type="submit">I checked — generate anyway</button>
+    </form>
+  {% endif %}
   {% if job.params.no_website_schools_id %}
     <form method="POST" action="/site-generator/archive-no-website" class="add-lead-form" style="margin-top:8px;">
       <input type="hidden" name="no_website_schools_id" value="{{ job.params.no_website_schools_id }}">

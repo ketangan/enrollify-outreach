@@ -30,7 +30,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts import generate_website_mocks as mocks
-from src import config, no_website_schools, photo_quality, r2_storage, sheets, site_generator_state, website_existence_check
+from src import config, no_website_schools, photo_quality, r2_storage, sheets, site_generator_state, website_existence_check, website_mocks
 from webapp.webapp import jobs_runner
 from webapp.webapp.routes_leads import (
     ENROLLMENT_METHOD_OPTIONS,
@@ -302,9 +302,15 @@ def site_generator_regenerate(
         raise HTTPException(404, f"Unknown org: {org_id}")
 
     history = org["themes"].get(theme, [])
+    if not history:
+        raise HTTPException(404, f"Unknown theme for org: {theme}")
     next_version_n = (max((v["version_n"] for v in history), default=0)) + 1
     theme_version_id = theme.split("-", 1)[1] if "-" in theme else theme
-    subject_id = f"{org_id}-v{next_version_n}"
+    mock_type = website_mocks.normalize_mock_type("", category=org["category"])
+    valid_versions = {variant.version_id for variant in website_mocks.MOCK_VARIANTS[mock_type]}
+    if theme_version_id not in valid_versions:
+        raise HTTPException(400, f"Unknown template version: {theme}")
+    subject_id = f"{org_id}-{theme_version_id}-v{next_version_n}"
     persisted_uploads = _persist_uploaded_photos(uploaded_photos, subject_id)
     persisted_hero = _persist_uploaded_photos(
         [hero_photo] if hero_photo and hero_photo.filename else [], subject_id, prefix="hero",
@@ -322,6 +328,7 @@ def site_generator_regenerate(
         "uploaded_photos_json": json.dumps(persisted_uploads) if persisted_uploads else "",
         "hero_photo_json": json.dumps(persisted_hero[0]) if persisted_hero else "",
         "subject_id": subject_id,
+        "skip_website_check": True,
         "base_url": "/generated-sites",
         "output_dir": str(OUTPUT_DIR),
         "is_regeneration": True,

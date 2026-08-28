@@ -447,8 +447,50 @@ def test_preschool_explorer_featured_photo_matches_theme_copy():
     rendered = generate_website_mocks._render_mock_html(lead, _variant("preschool", "explorer"))
 
     assert "Messy art &amp; color mixing" in rendered
-    assert "photo-1503454537195-1dcabb73ffb9" in rendered
+    assert "../assets/site-stock/preschool/explorer-3.jpg" in rendered
     assert "photo-1690748747428-d5226f2af24d" not in rendered
+
+
+def test_curated_stock_photos_render_from_bundled_assets():
+    rendered = generate_website_mocks._render_mock_html(
+        _lead(category="preschool"),
+        _variant("preschool", "warm"),
+    )
+
+    assert "../assets/site-stock/preschool/warm-1.jpg" in rendered
+    assert "images.unsplash.com/photo-1761208663763-c4d30657c910" not in rendered
+
+
+def test_all_curated_stock_photo_assets_exist():
+    missing = [
+        str(generate_website_mocks.STOCK_PHOTO_SOURCE_DIR / rel_path)
+        for rel_path in generate_website_mocks.STOCK_PHOTO_ASSETS.values()
+        if not (generate_website_mocks.STOCK_PHOTO_SOURCE_DIR / rel_path).exists()
+    ]
+
+    assert missing == []
+
+
+def test_write_mock_files_copies_referenced_stock_assets(tmp_path):
+    rendered = generate_website_mocks.render_mock_concepts(
+        _lead(category="preschool"),
+        base_url="https://example.com",
+        mock_type="preschool",
+        versions="warm",
+        content_signal={"labels": [], "quote": ""},
+    )
+
+    generate_website_mocks.write_mock_files(tmp_path, "green-garden-preschool-test", rendered)
+
+    assert (
+        tmp_path
+        / "mocks"
+        / "green-garden-preschool-test"
+        / "assets"
+        / "site-stock"
+        / "preschool"
+        / "warm-1.jpg"
+    ).exists()
 
 
 def test_mock_versions_use_distinct_visual_palettes():
@@ -486,6 +528,31 @@ def test_sibling_variants_never_share_stock_photos():
                 assert not (photo_sets[a] & photo_sets[b]), (
                     f"{category}: {a} and {b} share stock photos"
                 )
+
+
+def test_explicit_unknown_mock_version_does_not_expand_to_all_variants():
+    rendered = generate_website_mocks.render_mock_concepts(
+        _lead(category="preschool"),
+        base_url="https://example.com",
+        mock_type="preschool",
+        versions="preschool-not-real",
+        content_signal={"labels": [], "quote": ""},
+    )
+
+    assert rendered == []
+
+
+def test_full_theme_version_name_still_selects_one_variant():
+    rendered = generate_website_mocks.render_mock_concepts(
+        _lead(category="preschool"),
+        base_url="https://example.com",
+        mock_type="preschool",
+        versions="preschool-structured",
+        content_signal={"labels": [], "quote": ""},
+    )
+
+    assert len(rendered) == 1
+    assert rendered[0]["version"] == "structured"
 
 
 def test_site_anchor_labels_extract_factual_program_details():
@@ -639,7 +706,10 @@ def test_hero_photo_override_keeps_middle_sections_on_stock_photos():
     assert "real-photo-1.jpg" not in rendered
     assert "real-photo-2.jpg" not in rendered
     assert "real-photo-3.jpg" not in rendered
-    assert generate_website_mocks.PHOTO_SETS["music"]["studio"][0].split("?")[0] in rendered
+    stock_rel_path = generate_website_mocks.STOCK_PHOTO_ASSETS[
+        generate_website_mocks.PHOTO_SETS["music"]["studio"][0]
+    ]
+    assert f"../assets/site-stock/{stock_rel_path}" in rendered
 
 
 def test_music_collective_lineup_avoids_masthead_gallery_photos():
@@ -647,7 +717,8 @@ def test_music_collective_lineup_avoids_masthead_gallery_photos():
     collective_set = generate_website_mocks.PHOTO_SETS["music"]["collective"]
 
     for hero_photo in collective_set:
-        assert rendered.count(hero_photo.split("?")[0]) == 1
+        stock_rel_path = generate_website_mocks.STOCK_PHOTO_ASSETS[hero_photo]
+        assert rendered.count(f"../assets/site-stock/{stock_rel_path}") == 1
 
 
 def test_mock_type_does_not_scale_from_viewport_width():
