@@ -1,6 +1,6 @@
 """
-Decides which real photos (uploaded by hand, or fetched from Google Places)
-get used, and in what order, for the full-site generator.
+Ranks real photos (uploaded by hand, or fetched from Google Places) for the
+full-site generator.
 
 Three decisions, in priority order:
   - EXPLICIT CHOICE (forced_hero): if you tell us which photo is the hero,
@@ -8,13 +8,13 @@ Three decisions, in priority order:
     decision. This exists because quality_rank is only a proxy (pixel
     dimensions) and has no idea whether a photo actually *looks* good as a
     hero — two same-sized photos can look wildly different in practice.
-  - SELECTION (which photos make the cut, absent an explicit choice):
+  - SELECTION (which photos make the candidate pool, absent an explicit choice):
     uploaded photos always win a slot over Google's, since a human chose
     them on purpose. Google photos only fill slots the upload doesn't cover.
-  - PLACEMENT (which slot a selected photo lands in, absent an explicit
-    choice): decided by image quality. A blurry/small upload still gets
-    used (selection honored it), but it won't be blown up as the hero
-    background just because you uploaded it.
+  - HERO PICK (which selected photo becomes the real hero, absent an explicit
+    choice): decided by image quality. The renderer keeps the remaining
+    sections on bundled stock photos, so extra real photos are retained in
+    metadata but do not fill the rest of the page.
 """
 
 from __future__ import annotations
@@ -33,11 +33,10 @@ logger = logging.getLogger(__name__)
 # images like an old logo scan or a cropped screenshot).
 MIN_HERO_DIMENSION_PX = 800
 
-# The renderer treats fewer than 3 real photos as "not enough to bother
-# with" and falls back to full stock (see generate_website_mocks._resolve_
-# photos) — so 3 is the minimum worth padding up to by repeating. There's
-# no matching upper bound: more distinct real photos means more variety
-# across the page's several photo-grid sections, never a downside.
+# Legacy render paths still treat fewer than 3 real photos as "not enough to
+# bother with" and fall back to full stock (see
+# generate_website_mocks._resolve_photos). New full-site renders set a
+# hero-only override, so this padding is mostly for backward compatibility.
 MIN_REAL_PHOTOS = 3
 
 

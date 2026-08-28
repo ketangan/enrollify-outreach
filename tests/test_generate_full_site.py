@@ -87,7 +87,7 @@ def test_generate_full_site_uses_google_reviews_and_photos(monkeypatch, tmp_path
     assert len(saved_photos) == 3  # one write per stubbed photo name
 
 
-def test_generate_full_site_uploaded_photos_come_before_google_and_google_still_adds_variety(monkeypatch, tmp_path):
+def test_generate_full_site_records_uploads_before_google_but_uses_one_real_hero(monkeypatch, tmp_path):
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
     monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
     monkeypatch.setattr(
@@ -100,7 +100,9 @@ def test_generate_full_site_uploaded_photos_come_before_google_and_google_still_
 
     def _capture_render(subject, **kwargs):
         captured["subject"] = dict(subject)
-        return original_render(subject, **kwargs)
+        rendered = original_render(subject, **kwargs)
+        captured["rendered"] = rendered
+        return rendered
 
     monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _capture_render)
 
@@ -114,12 +116,17 @@ def test_generate_full_site_uploaded_photos_come_before_google_and_google_still_
         base_url="https://example.com", output_dir=tmp_path,
     )
 
-    # All 3 uploads make it in, and — since the pool isn't capped at 3
-    # anymore — _stub_place()'s 3 Google photos fill in as extra variety
-    # for the page's other photo-grid sections rather than being dropped.
+    # All 3 uploads make the selected metadata pool, and _stub_place()'s 3
+    # Google photos are retained after them. The renderer uses only the best
+    # selected real photo as the hero; middle sections stay on bundled stock.
     photos = captured["subject"]["_website_mock_photos"]
     assert photos[:3] == ["upload-0", "upload-1", "upload-2"]
     assert len(photos) == 6
+    html_blob = "\n".join(item["html"] for item in captured["rendered"])
+    assert "upload-0" in html_blob
+    assert "upload-1" not in html_blob
+    assert "upload-2" not in html_blob
+    assert "../assets/site-stock/" in html_blob
 
 
 def test_generate_full_site_fills_gaps_from_google_when_uploads_are_short(monkeypatch, tmp_path):
@@ -210,6 +217,27 @@ def test_generate_full_site_forced_hero_photo_wins_index_0(monkeypatch, tmp_path
     assert photos[0] == "explicit-hero-choice"
     assert "big-upload" in photos[1:]
     assert captured["subject"]["_website_mock_hero_photo"] == "explicit-hero-choice"
+
+
+def test_generate_full_site_explicit_hero_keeps_middle_sections_on_bundled_stock(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        use_google_places=False,
+        versions="studio",
+        subject_id="hero-stock-test",
+        hero_photo={"url": "explicit-hero-choice", "width": 300, "height": 300},
+        uploaded_photos=[{"url": "extra-upload", "width": 3000, "height": 3000}],
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert len(rendered) == 1
+    html = (tmp_path / "mocks" / "hero-stock-test" / "music-studio" / "index.html").read_text(encoding="utf-8")
+    assert "explicit-hero-choice" in html
+    assert "extra-upload" not in html
+    assert "../assets/site-stock/music/studio-2.jpg" in html
 
 
 def test_generate_full_site_never_overwrites_caller_supplied_phone(monkeypatch, tmp_path):
