@@ -216,6 +216,7 @@ def generate_full_site(
     skip_existing_website_check: bool = False,
     uploaded_photos: list[dict] | None = None,
     hero_photo: dict | None = None,
+    use_stock_photos_only: bool = False,
     base_url: str,
     output_dir: Path,
     anthropic_client: Anthropic | None = None,
@@ -240,6 +241,13 @@ def generate_full_site(
     persisted by the caller — see webapp/webapp/routes_site_generator.py)
     are still accepted as legacy hero candidates, but no longer become the
     page-wide photo pool in new renders.
+
+    `use_stock_photos_only`, when True, skips real-photo selection
+    entirely (no Google Places photos, no uploads, no forced hero) so even
+    the hero falls back to the template's curated stock set — useful for
+    reviewing a design on its own terms, decoupled from whatever photos a
+    business happens to have, and for businesses whose only real content
+    is review text (no usable photos at all).
 
     Pass `versions` scoped to one theme (e.g. "warm") and reuse the same
     `subject_id` from a prior call to regenerate a single existing concept
@@ -366,10 +374,12 @@ def generate_full_site(
         )
         hero_photo = None
 
-    google_photos = _persist_photos(place, subject_id, output_dir)
-    selected_photos = photo_quality.select_and_rank_photos(
-        uploaded_photos or [], google_photos, forced_hero=hero_photo,
-    )
+    selected_photos = []
+    if not use_stock_photos_only:
+        google_photos = _persist_photos(place, subject_id, output_dir)
+        selected_photos = photo_quality.select_and_rank_photos(
+            uploaded_photos or [], google_photos, forced_hero=hero_photo,
+        )
     if selected_photos:
         hero = selected_photos[0]
         subject["_website_mock_hero_photo"] = hero["url"]
@@ -461,6 +471,9 @@ def main() -> None:
     parser.add_argument("--hero-photo", default="",
                          help='JSON {"url","width","height"} dict for a single explicitly-chosen hero photo — '
                               "always becomes photos[0], overriding the automatic quality-based placement")
+    parser.add_argument("--stock-photos-only", action="store_true",
+                         help="Ignore Google/upload photos entirely, hero included — review text (Google/Yelp "
+                              "reviews) still comes through normally")
     args = parser.parse_args()
 
     yelp_text = args.yelp_text
@@ -499,6 +512,7 @@ def main() -> None:
             skip_existing_website_check=args.skip_website_check,
             uploaded_photos=uploaded_photos,
             hero_photo=hero_photo,
+            use_stock_photos_only=args.stock_photos_only,
             base_url=args.base_url,
             output_dir=Path(args.output_dir),
         )

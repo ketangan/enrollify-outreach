@@ -254,6 +254,40 @@ def test_generate_full_site_hero_override_below_quality_floor_falls_back(monkeyp
     assert photos[0] == "big-upload"
 
 
+def test_generate_full_site_stock_photos_only_ignores_real_photos_entirely(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+    fetch_calls = []
+    monkeypatch.setattr(
+        generate_full_site.places, "fetch_photo_bytes",
+        lambda photo_name, max_width_px=1200: fetch_calls.append(photo_name) or (_real_jpeg_bytes(3000, 3000), "image/jpeg"),
+    )
+
+    captured = {}
+    original_render = generate_full_site.mocks.render_mock_concepts
+
+    def _capture_render(subject, **kwargs):
+        captured["subject"] = dict(subject)
+        return original_render(subject, **kwargs)
+
+    monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _capture_render)
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        hero_photo={"url": "explicit-hero", "width": 3000, "height": 3000},
+        uploaded_photos=[{"url": "an-upload", "width": 3000, "height": 3000}],
+        use_stock_photos_only=True,
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    # Neither Google's own photos nor an explicit hero/upload override
+    # should ever be fetched or referenced — the whole page, hero
+    # included, falls back to the template's curated stock set.
+    assert fetch_calls == []
+    assert "_website_mock_hero_photo" not in captured["subject"]
+    assert "_website_mock_photos" not in captured["subject"]
+
+
 def test_generate_full_site_explicit_hero_keeps_middle_sections_on_bundled_stock(monkeypatch, tmp_path):
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
     monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)

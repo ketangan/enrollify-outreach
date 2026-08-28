@@ -378,6 +378,10 @@ def test_sibling_variants_never_share_hero_and_enrollment_shape_together():
         # The invariant this test enforces is unchanged - only the set of
         # shapes it knows how to name has grown.
         "inline": '<section class="enrollment-inline"',
+        # Fifth close shape: bordered text inputs + a native <select>
+        # dropdown. Added so preschool-structured's admissions ask no
+        # longer renders identically to preschool-community's pill panel.
+        "form": '<section class="enrollment-form-section"',
     }
     lead_by_type = {
         "preschool": _lead(category="preschool"),
@@ -663,7 +667,7 @@ def test_music_performance_uses_review_proof_points_beyond_the_hero():
             "label": "Private piano lessons",
             "text": "The private piano lessons helped my daughter build confidence quickly.",
             "source": "google_review",
-            "author": "Ben Kim",
+            "author": "Dana Ruiz",
         },
         {
             "label": "Recitals",
@@ -677,8 +681,39 @@ def test_music_performance_uses_review_proof_points_beyond_the_hero():
 
     assert "What families already say about the work." in rendered
     assert "The private piano lessons helped my daughter build confidence quickly." in rendered
-    assert "Ben Kim, Google review" in rendered
+    assert "Dana Ruiz, Google review" in rendered
     assert "Yelp review" in rendered
+
+
+def test_display_proof_points_skips_quotes_from_the_hero_quote_author():
+    # A page shouldn't credit the same person twice just because they wrote
+    # the longest review — this was a real bug (surfaced live: one
+    # reviewer's words appeared as both the hero quote and a detail-section
+    # "parent trust" quote on the same page).
+    lead = _lead()
+    lead["_website_mock_site_anchors"] = ["private piano lessons", "recitals", "trial lessons"]
+    lead["_website_mock_site_quote"] = "My daughter loves her private lessons here."
+    lead["_website_mock_site_quote_source"] = "google_review"
+    lead["_website_mock_site_quote_author"] = "Ben Kim"
+    lead["_website_mock_proof_points"] = [
+        {
+            "label": "Private piano lessons",
+            "text": "The private piano lessons helped my daughter build confidence quickly.",
+            "source": "google_review",
+            "author": "Ben Kim",
+        },
+        {
+            "label": "Recitals",
+            "text": "The recital gave our shy kid something exciting to work toward.",
+            "source": "yelp_review",
+            "author": "",
+        },
+    ]
+
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "performance"))
+
+    assert "The recital gave our shy kid something exciting to work toward." in rendered
+    assert "The private piano lessons helped my daughter build confidence quickly." not in rendered
 
 
 def test_real_uploaded_photos_do_not_create_contain_letterboxing():

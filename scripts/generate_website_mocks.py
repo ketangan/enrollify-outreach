@@ -1548,17 +1548,38 @@ def _proof_citation(point: dict[str, str]) -> str:
 
 
 def _display_proof_points(ctx: dict, limit: int = 3) -> list[dict[str, str]]:
+    """Picks up to `limit` quotes, skipping the exact quote already used in
+    the hero AND anyone else on the page already credited by name — a page
+    with several real reviews to draw from should not feature the same
+    person twice just because they wrote the longest review. A shorter list
+    of distinct people is fine; the author constraint is only dropped
+    (never the hero-quote exclusion) when it would otherwise leave the
+    section with zero quotes at all."""
     quote_key = _anchor_key(ctx.get("site_quote"))
-    points = []
-    for point in ctx.get("proof_points", []):
-        text = _clean(point.get("text"))
-        if not text:
-            continue
-        if quote_key and _anchor_key(text) == quote_key:
-            continue
-        points.append(point)
-        if len(points) >= limit:
-            break
+    hero_author_key = _anchor_key(ctx.get("site_quote_author"))
+
+    def _pick(enforce_author_diversity: bool) -> list[dict[str, str]]:
+        picked = []
+        used_authors: set[str] = {hero_author_key} if hero_author_key else set()
+        for point in ctx.get("proof_points", []):
+            text = _clean(point.get("text"))
+            if not text:
+                continue
+            if quote_key and _anchor_key(text) == quote_key:
+                continue
+            author_key = _anchor_key(point.get("author"))
+            if enforce_author_diversity and author_key and author_key in used_authors:
+                continue
+            if author_key:
+                used_authors.add(author_key)
+            picked.append(point)
+            if len(picked) >= limit:
+                break
+        return picked
+
+    points = _pick(enforce_author_diversity=True)
+    if not points:
+        points = _pick(enforce_author_diversity=False)
     if not points:
         points = [p for p in ctx.get("proof_points", []) if _clean(p.get("text"))][:limit]
     return points
@@ -2006,10 +2027,28 @@ BAND_STRIP_CAPTIONS = {
     "sports": ["Training", "Coaching", "Competition"],
 }
 
+# A 1:1 photo per caption, verified by eye to actually depict that caption
+# (an "Outside every day" cell needs a real outdoor photo, not whatever's
+# next in the generic pool). _photo_sequence has no idea what a photo
+# depicts and also excludes anything already used as a hero photo, which
+# for preschool/community left this section pulling from OTHER variants'
+# stock sets entirely — an indoor circle-time photo captioned "Outside
+# every day", a classroom lesson photo captioned "Pickup". Only preschool
+# is curated so far; music/sports still fall back to the generic pool
+# below and carry the same mismatch risk.
+BAND_STRIP_PHOTOS = {
+    "preschool": [
+        "https://images.unsplash.com/photo-1616089804390-b2daa80dbf02?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1615489548573-8165c2c35e1b?auto=format&fit=crop&w=1400&q=80",
+        "https://images.unsplash.com/photo-1644941002474-6ee8ab0ee8cb?auto=format&fit=crop&w=1400&q=80",
+    ],
+}
+
 
 def _render_band_photo_strip(ctx: dict, items: list[tuple[str, str]]) -> str:
-    captions = BAND_STRIP_CAPTIONS.get(ctx["type_id"], BAND_STRIP_CAPTIONS["preschool"])
-    photos = _photo_sequence(ctx, len(captions))
+    type_id = ctx["type_id"]
+    captions = BAND_STRIP_CAPTIONS.get(type_id, BAND_STRIP_CAPTIONS["preschool"])
+    photos = BAND_STRIP_PHOTOS.get(type_id) or _photo_sequence(ctx, len(captions))
     cells = "".join(
         f'<div class="band-strip__cell" {_photo_style(photos[idx])}>'
         f"<span>{html.escape(caption)}</span></div>"
@@ -2453,6 +2492,46 @@ def _render_enrollment_panel(ctx: dict, items: list[tuple[str, str]]) -> str:
               <button type="button">{html.escape(flow["button"])}</button>
               <p class="form-assurance">{html.escape(flow["assurance"])}</p>
             </div>
+          </div>
+        </div>
+      </section>
+"""
+
+
+def _render_enrollment_form(ctx: dict, items: list[tuple[str, str]]) -> str:
+    """A single-column card of real bordered text inputs plus an actual
+    <select> dropdown for program interest, instead of the two-column
+    grid + pill-row look every other enrollment-panel variant shares —
+    built so structured reads as its own admissions flow rather than a
+    reskin of community's form (same _render_enrollment_panel, same
+    pills, same layout)."""
+    flow = _flow_config(ctx)
+    choices = _choice_labels(ctx.get("site_anchor_labels", []), items)
+    if not choices:
+        choices = ["Program fit", "Schedule", "Availability"]
+    options_html = "".join(f"<option>{html.escape(choice)}</option>" for choice in choices)
+    text_rows = "\n".join(
+        f'<label class="form-input"><span>{html.escape(label)}</span>'
+        f'<input type="text" value="{html.escape(value)}" readonly></label>'
+        for label, value in flow["fields"] + flow["contact_fields"]
+    )
+    return f"""
+      <section class="enrollment-form-section" id="next-step">
+        <div class="enrollment-form">
+          <div class="enrollment-form__copy">
+            <p class="section-kicker">{html.escape(flow["kicker"])}</p>
+            <h2>{html.escape(flow["headline"])}</h2>
+            <p>{html.escape(flow["intro"])}</p>
+            <div class="next-step-note"><b>What happens next</b><span>{html.escape(flow["next_step"])}</span></div>
+          </div>
+          <div class="form-card" aria-label="Sample inquiry flow">
+            <label class="form-select"><span>Program interest</span>
+              <select>{options_html}</select>
+            </label>
+            {text_rows}
+            <button type="button">{html.escape(flow["button"])}</button>
+            <p class="form-assurance">{html.escape(flow["assurance"])}</p>
+            <p class="contact-line">Prefer to call? {ctx["contact"]}</p>
           </div>
         </div>
       </section>
@@ -3110,7 +3189,9 @@ def _render_variant_body(ctx: dict, items: list[tuple[str, str]]) -> str:
         hero = _render_hero_split(ctx, "See enrollment steps", hero_photo)
         signature = _render_admissions_path(ctx)
         detail = _render_preschool_detail_section(ctx)
-        enrollment = _render_enrollment_panel(ctx, items)
+        # Real text inputs + a <select> dropdown, not the pill-row panel
+        # community also uses — the two read as the same form otherwise.
+        enrollment = _render_enrollment_form(ctx, items)
         layout_class = "mock-layout-preschool-structured"
     elif type_id == "preschool" and version_id == "explorer":
         hero_photos = _hero_photo_gallery(ctx, photos, 3)
@@ -4461,6 +4542,84 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       cursor: default;
     }}
 
+    /* Enrollment: single-column form with real bordered inputs and a native
+       <select> dropdown — deliberately not the two-column pill panel above,
+       so structured's admissions ask doesn't look like community's form
+       wearing different copy. */
+    .enrollment-form-section {{
+      padding-top: var(--section-y);
+      padding-bottom: var(--section-y);
+      background: linear-gradient(180deg, var(--paper), var(--soft));
+      border-top: 1px solid var(--line);
+    }}
+    .enrollment-form {{
+      display: grid;
+      grid-template-columns: minmax(0, .82fr) minmax(320px, .62fr);
+      gap: clamp(24px, 5vw, 58px);
+      align-items: start;
+      max-width: 1080px;
+      margin: 0 auto;
+    }}
+    .enrollment-form__copy h2 {{ font-size: 2.5rem; }}
+    .form-card {{
+      display: grid;
+      gap: 14px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: clamp(20px, 2.6vw, 28px);
+      box-shadow: 0 24px 70px rgba(15, 40, 80, .1);
+    }}
+    .form-select, .form-input {{ display: grid; gap: 7px; min-width: 0; }}
+    .form-select span, .form-input span {{
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .11em;
+    }}
+    .form-select select {{
+      appearance: none;
+      -webkit-appearance: none;
+      min-height: 44px;
+      padding: 11px 36px 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: calc(var(--radius) - 1px);
+      background:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position: right 18px center, right 13px center;
+      background-size: 6px 6px, 6px 6px;
+      background-repeat: no-repeat;
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+    }}
+    .form-input input {{
+      min-height: 44px;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: calc(var(--radius) - 1px);
+      background: #fff;
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+    }}
+    .form-card button {{
+      min-height: 48px;
+      border: 0;
+      border-radius: calc(var(--radius) - 1px);
+      background: var(--secondary);
+      color: white;
+      font-weight: 800;
+      font-size: 15px;
+      cursor: default;
+      margin-top: 4px;
+    }}
+    .enrollment-form .contact-line {{ text-align: center; margin-top: 0; }}
+
     /* Enrollment: inline lead form - centred, card-less, underlined fields.
        Same content as the panel, quieter, for pages whose signature section
        is already heavy and does not need a second bordered slab. */
@@ -4748,6 +4907,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       .band-note {{ grid-template-columns: 1fr; }}
       .admissions-path__steps::before {{ display: none; }}
       .enrollment-panel {{ grid-template-columns: 1fr; }}
+      .enrollment-form {{ grid-template-columns: 1fr; }}
       .stat-block__row div, .showcase-marquee__row article {{ border: 0; border-top: 1px solid rgba(255,255,255,.16); }}
       .stat-block__row div:first-child, .showcase-marquee__row article:first-child {{ border-top: 0; }}
       .team-roster__row div {{ border-top: 1px solid rgba(255,255,255,.14); }}
