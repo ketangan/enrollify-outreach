@@ -200,6 +200,30 @@ def test_content_signal_from_pasted_yelp_text_strips_review_attribution_prefix()
     assert "says:" not in signal["proof_points"][0]["text"].lower()
 
 
+def test_content_signal_from_pasted_yelp_text_skips_rating_filter_widget_chrome():
+    # Real bug: pasting raw copied text from a Yelp business page (not just
+    # the review body) picks up the star-rating filter sidebar. It has no
+    # sentence-ending punctuation until the very end, so it got swallowed
+    # whole as a single "quote" and displayed as if it were a real review —
+    # attributed to a "Parent trust" fallback label since it obviously
+    # doesn't match any real content pattern either.
+    yelp_page_text = (
+        "Overall rating 10 reviews 5 stars 4 stars 3 stars 2 stars 1 star "
+        "Yelp Sort Filter by rating Search reviews Ria R. "
+        "Our daughter has thrived here since she started last fall and the teachers know her by name."
+    )
+    signal = generate_website_mocks.content_signal_from_reviews(
+        yelp_page_text, mock_type="preschool", category="preschool", school_name="Test School",
+    )
+
+    assert "Overall rating" not in signal["quote"]
+    assert "stars" not in signal["quote"]
+    assert all("Overall rating" not in p["text"] for p in signal["proof_points"])
+    assert all("stars" not in p["text"] for p in signal["proof_points"])
+    # The real sentence buried after the chrome should still get through.
+    assert "thrived here" in signal["quote"] or any("thrived here" in p["text"] for p in signal["proof_points"])
+
+
 def test_derive_palette_from_colors_uses_given_accent_and_secondary():
     palette = generate_website_mocks._derive_palette_from_colors("#ff3b30", "#101010", radius="10px")
 

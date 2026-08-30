@@ -1080,9 +1080,17 @@ def _site_anchor_labels_from_text(
 _QUOTE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _QUOTE_SKIP_RE = re.compile(
     r"cookie|copyright|all rights reserved|©|privacy policy|terms of (service|use)|"
-    r"javascript|browser",
+    r"javascript|browser|"
+    # Yelp/Google review-page furniture — shows up when someone pastes raw
+    # copied text from a review page instead of just the review itself
+    # (see the "Overall rating 10 reviews 5 stars 4 stars..." bug: this
+    # text had no sentence-ending punctuation until the very end, so it
+    # got swallowed whole as one "quote" instead of being split up).
+    r"overall rating|filter by rating|search reviews|sort by|write a review|"
+    r"was this review|useful\s+funny\s+cool",
     re.IGNORECASE,
 )
+_STAR_WORD_RE = re.compile(r"\bstars?\b", re.IGNORECASE)
 _REVIEW_ATTRIBUTION_RE = re.compile(
     r"^(?:(?:[A-Z][\w'.-]*|[A-Z]\.)\s+){0,5}"
     r"(?:says|said|writes|wrote|shared|shares|recommends):\s*",
@@ -1094,6 +1102,23 @@ def _clean_quote_sentence(sentence: str) -> str:
     sentence = sentence.strip(" -|•\t")
     sentence = _REVIEW_ATTRIBUTION_RE.sub("", sentence).strip(" -|•\t")
     return sentence
+
+
+def _looks_like_scraped_ui_chrome(sentence: str) -> bool:
+    """True for page furniture (nav/footer/cookie-banner/star-rating-filter
+    widget) rather than actual written prose. Beyond _QUOTE_SKIP_RE's
+    keyword list: a star-rating filter widget ("5 stars 4 stars 3 stars...")
+    repeats the word "star(s)" far more than any real sentence would, and
+    heavy capitalization is a signal of a nav bar or button row, not a
+    written sentence. Shared by both quote-extraction paths (the single
+    hero quote and the multi-point proof list) so a fix here covers every
+    template at once instead of needing to be applied twice."""
+    if _QUOTE_SKIP_RE.search(sentence):
+        return True
+    if len(_STAR_WORD_RE.findall(sentence)) >= 2:
+        return True
+    upper_ratio = sum(1 for c in sentence if c.isupper()) / max(len(sentence), 1)
+    return upper_ratio > 0.4
 
 
 def _site_quote_from_text(text: str) -> str:
@@ -1108,11 +1133,8 @@ def _site_quote_from_text(text: str) -> str:
             continue
         if len(sentence.split()) < 6:
             continue
-        if _QUOTE_SKIP_RE.search(sentence):
+        if _looks_like_scraped_ui_chrome(sentence):
             continue
-        upper_ratio = sum(1 for c in sentence if c.isupper()) / max(len(sentence), 1)
-        if upper_ratio > 0.4:
-            continue  # likely a nav/banner fragment, not real sentence copy
         return sentence
     return ""
 
@@ -1156,7 +1178,7 @@ def _proof_points_from_text(
             continue
         if len(sentence.split()) < 6:
             continue
-        if _QUOTE_SKIP_RE.search(sentence):
+        if _looks_like_scraped_ui_chrome(sentence):
             continue
         key = _anchor_key(sentence)
         if not key or key in seen:
