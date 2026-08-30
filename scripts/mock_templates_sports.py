@@ -105,6 +105,42 @@ def _render_team_roster(ctx: dict) -> str:
 """
 
 
+# Copy for the "detail" slot that _render_offerings_section fills — kept
+# distinct per variant (like PRESCHOOL_DETAIL_SECTIONS) so a category's 4
+# sibling concepts don't read identically in this section. The actual
+# sport/activity list is AI-inferred per business (see generate_full_site.py's
+# infer_category_offerings call) and passed in via ctx["category_offerings"].
+SPORTS_OFFERINGS_COPY = {
+    "action": {
+        "kicker": "What we offer",
+        "headline": "Real sports, real sessions to try.",
+        "intro": "Pick a sport below and the trial-spot flow starts from there.",
+    },
+    "trust": {
+        "kicker": "Sports we coach",
+        "headline": "Every sport below gets the same careful first class.",
+        "intro": "Whichever one your child picks, the same safety-first approach applies.",
+    },
+    "camp": {
+        "kicker": "This season",
+        "headline": "Real sports, real sessions this season.",
+        "intro": "Each camp session below runs the same arc — skills, scrimmage, showcase.",
+    },
+    "team": {
+        "kicker": "The competitive path",
+        "headline": "Every sport below has a team to work toward.",
+        "intro": "From developmental to elite, each sport follows the same tiered path up.",
+    },
+}
+
+
+def _render_offerings(ctx: dict) -> str:
+    copy = SPORTS_OFFERINGS_COPY.get(ctx["version_id"], SPORTS_OFFERINGS_COPY["action"])
+    return core._render_offerings_section(
+        ctx, offerings=ctx.get("category_offerings", []), **copy,
+    )
+
+
 def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str, str, str, str]:
     """Returns (ctx, hero, signature, detail, enrollment, layout_class) for
     whichever sports version_id ctx names — "action" is the fallback for
@@ -125,7 +161,7 @@ def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str,
         ctx = core._with_hero_photos(ctx, [hero_photo])
         hero = core._render_hero_split(ctx, "Ask us anything", hero_photo)
         signature = _render_parent_qa(ctx)
-        detail = ""
+        detail = _render_offerings(ctx)
         enrollment = core._render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-sports-trust"
     elif version_id == "camp":
@@ -133,7 +169,7 @@ def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str,
         ctx = core._with_hero_photos(ctx, hero_photos)
         hero = core._render_hero_masthead(ctx, "Reserve a spot")
         signature = _render_camp_calendar(ctx)
-        detail = ""
+        detail = _render_offerings(ctx)
         enrollment = core._render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-sports-camp"
     elif version_id == "team":
@@ -141,7 +177,7 @@ def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str,
         ctx = core._with_hero_photos(ctx, hero_photos)
         hero = core._render_hero_collage(ctx, "Ask about tryouts", hero_photos[0], hero_photos[1])
         signature = _render_team_roster(ctx)
-        detail = ""
+        detail = _render_offerings(ctx)
         enrollment = core._render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-sports-team"
     else:
@@ -149,7 +185,7 @@ def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str,
         ctx = core._with_hero_photos(ctx, [hero_photo])
         hero = core._render_hero(ctx, "Claim a trial spot", hero_photo)
         signature = _render_stat_block(ctx)
-        detail = ""
+        detail = _render_offerings(ctx)
         enrollment = core._render_enrollment_cta(ctx, items)
         layout_class = "mock-layout-sports-action"
 

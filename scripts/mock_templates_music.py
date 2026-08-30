@@ -195,6 +195,42 @@ def _render_academy_path(ctx: dict) -> str:
 """
 
 
+# Copy for the "detail" slot that _render_offerings_section fills — kept
+# distinct per variant (like PRESCHOOL_DETAIL_SECTIONS) so a category's 4
+# sibling concepts don't read identically in this section. The actual
+# instrument list is AI-inferred per business (see generate_full_site.py's
+# infer_category_offerings call) and passed in via ctx["category_offerings"].
+MUSIC_OFFERINGS_COPY = {
+    "studio": {
+        "kicker": "What we teach",
+        "headline": "Real instruments, taught one student at a time.",
+        "intro": "Every lesson path starts with picking an instrument — here's what's actually offered.",
+    },
+    "performance": {
+        "kicker": "Instruments on stage",
+        "headline": "Whatever they play, there's a place to perform it.",
+        "intro": "Every instrument taught here eventually leads to a real audience, not just a practice room.",
+    },
+    "collective": {
+        "kicker": "Play together",
+        "headline": "Group classes exist for every instrument below.",
+        "intro": "No one learns alone here — every instrument has an ensemble slot to grow into.",
+    },
+    "academy": {
+        "kicker": "The full curriculum",
+        "headline": "Structured lessons, instrument by instrument.",
+        "intro": "Each instrument below follows the same track: foundations, technique, then real repertoire.",
+    },
+}
+
+
+def _render_offerings(ctx: dict) -> str:
+    copy = MUSIC_OFFERINGS_COPY.get(ctx["version_id"], MUSIC_OFFERINGS_COPY["studio"])
+    return core._render_offerings_section(
+        ctx, offerings=ctx.get("category_offerings", []), **copy,
+    )
+
+
 def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str, str, str, str]:
     """Returns (ctx, hero, signature, detail, enrollment, layout_class) for
     whichever music version_id ctx names — studio is the fallback for any
@@ -214,7 +250,7 @@ def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str,
         ctx = core._with_hero_photos(ctx, [hero_photo])
         hero = core._render_hero_split(ctx, "Book a trial lesson", hero_photo)
         signature = _render_showcase_marquee(ctx, items)
-        detail = ""
+        detail = _render_offerings(ctx)
         enrollment = core._render_enrollment_panel(ctx, items)
         layout_class = "mock-layout-music-performance"
     elif version_id == "collective":
@@ -222,7 +258,7 @@ def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str,
         ctx = core._with_hero_photos(ctx, hero_photos)
         hero = core._render_hero_masthead(ctx, "Join a group class")
         signature = _render_collective_lineup(ctx)
-        detail = ""
+        detail = _render_offerings(ctx)
         enrollment = core._render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-music-collective"
     elif version_id == "academy":
@@ -230,7 +266,7 @@ def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str,
         ctx = core._with_hero_photos(ctx, hero_photos)
         hero = core._render_hero_collage(ctx, "See the curriculum", hero_photos[0], hero_photos[1])
         signature = _render_academy_path(ctx)
-        detail = ""
+        detail = _render_offerings(ctx)
         enrollment = core._render_enrollment_steps(ctx, items)
         layout_class = "mock-layout-music-academy"
     else:
@@ -238,7 +274,7 @@ def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str,
         ctx = core._with_hero_photos(ctx, [hero_photo])
         hero = core._render_hero(ctx, "Find the right lesson", hero_photo)
         signature = _render_lesson_scroll(ctx, items)
-        detail = ""
+        detail = _render_offerings(ctx)
         enrollment = core._render_enrollment_inline(ctx, items)
         layout_class = "mock-layout-music-studio"
 

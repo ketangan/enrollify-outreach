@@ -1079,6 +1079,52 @@ def test_generate_full_site_owner_name_empty_when_no_review_text(monkeypatch, tm
     assert all(item["owner_name"] == "" for item in rendered)
 
 
+def test_generate_full_site_attaches_category_offerings_when_reviews_have_them(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    captured = {}
+
+    def _fake_infer_offerings(**kwargs):
+        captured["offerings_kwargs"] = kwargs
+        return ["Piano", "Guitar", "Violin"]
+
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_category_offerings", _fake_infer_offerings)
+
+    original_render = generate_full_site.mocks.render_mock_concepts
+
+    def _capture_render(subject, **kwargs):
+        captured["subject"] = dict(subject)
+        return original_render(subject, **kwargs)
+
+    monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _capture_render)
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert captured["offerings_kwargs"]["name"] == "Riverside Music Collective"
+    assert captured["offerings_kwargs"]["mock_type"] == "music"
+    assert "Group lessons" in captured["offerings_kwargs"]["raw_signal_text"]
+    assert captured["subject"]["_website_mock_category_offerings"] == ["Piano", "Guitar", "Violin"]
+
+
+def test_generate_full_site_skips_category_offerings_call_with_no_review_text(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
+
+    def _should_not_be_called(**kwargs):
+        raise AssertionError("infer_category_offerings should not be called with no review text at all")
+
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_category_offerings", _should_not_be_called)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music", use_google_places=False,
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert len(rendered) == 4  # generation still succeeds normally
+
+
 def test_main_includes_no_website_schools_id_in_blocked_result_json(monkeypatch, tmp_path):
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: None)
     monkeypatch.setattr(

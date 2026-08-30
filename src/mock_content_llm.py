@@ -261,3 +261,96 @@ def infer_owner_name(
             return ""
 
     return str(parsed.get("owner_name", "")).strip()
+
+
+OFFERINGS_SYSTEM_PROMPT = """You name short, concrete things a small local
+business specifically offers, grounded in whatever real text about the
+business you're given (reviews, site copy, anything else).
+
+What counts as "concrete" depends on the category given to you:
+- music/dance/art: specific instruments or disciplines taught (e.g. "Piano",
+  "Guitar", "Violin", "Drums", "Voice", "Ballet", "Watercolor")
+- sports/martial_arts/gymnastics/swim: specific sports or activities offered
+  (e.g. "Soccer", "Basketball", "Karate", "Swimming", "Gymnastics")
+- any other category: the specific programs/classes/services offered
+
+NOT concrete, never output these even to pad the list: schedule/format/age
+descriptors like "Kids Classes", "Group Lessons", "Weekend Programs",
+"Beginner Level" — those describe how something is offered, not what is
+offered. If the text only names 2 real instruments/sports, output 2 (plus
+typical-for-category padding per the rule below) rather than inventing a
+3rd item that isn't actually a distinct instrument/sport/program.
+
+Rules:
+- Base items on the provided text wherever it names something concrete.
+- Where the text names nothing concrete (or fewer than 3 concrete items),
+  you may pad with additional items that are typical/plausible for the
+  stated business category — but these are general suggestions, not a
+  specific claim about this business, and must still be genuine named
+  instruments/sports/programs, never a schedule/format descriptor. Never
+  invent a specific fact (a price, a schedule, a credential, a named
+  person) and present it as true.
+- Each item is a short name (1-3 words) — an instrument, a sport, a class
+  type — never a full sentence and never something that reads like a
+  review quote.
+- Output ONLY JSON: {"offerings": ["...", "...", "...", "..."]}
+  2 to 6 items, no trailing punctuation, no duplicates.
+"""
+
+
+def infer_category_offerings(
+    *,
+    name: str,
+    mock_type: str,
+    category: str,
+    raw_signal_text: str,
+    client: Anthropic | None = None,
+) -> list[str]:
+    """Ask Claude for 4-6 short, concrete offerings (instruments for music,
+    activities for sports, etc.) grounded in raw_signal_text — falls back to
+    plausible category-typical suggestions when the text names nothing
+    specific (same behavior as infer_program_labels), never presenting a
+    guess as a verified fact about this particular business. Returns an
+    empty list on any failure or empty input — callers should treat that as
+    "nothing to show", not retry with different input."""
+    signal_text = (raw_signal_text or "").strip()[:MAX_SIGNAL_TEXT_CHARS]
+    if not signal_text:
+        return []
+
+    user_content = (
+        f"Business name: {name}\n"
+        f"Category: {category or mock_type}\n\n"
+        f"Real text about the business:\n{signal_text}"
+    )
+
+    try:
+        client = client or Anthropic()
+        resp = _call_with_retry(client, user_content, system_prompt=OFFERINGS_SYSTEM_PROMPT)
+    except Exception as e:
+        logger.warning("infer_category_offerings call failed, falling back: %s", e)
+        return []
+
+    raw = resp.content[0].text.strip()
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+    try:
+        parsed = json.loads(raw)
+        offerings = parsed.get("offerings", [])
+    except json.JSONDecodeError:
+        logger.warning("infer_category_offerings: failed to parse response: %s", raw[:200])
+        return []
+
+    if not isinstance(offerings, list):
+        return []
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for item in offerings:
+        item = str(item).strip()
+        key = item.lower()
+        if not item or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(item)
+        if len(cleaned) >= 6:
+            break
+    return cleaned

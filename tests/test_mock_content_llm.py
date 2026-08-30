@@ -187,3 +187,61 @@ def test_infer_owner_name_strips_markdown_fences():
     )
 
     assert owner_name == "John Lee"
+
+
+def test_infer_category_offerings_parses_json_response():
+    client = _FakeClient(json.dumps({"offerings": ["Piano", "Guitar", "Violin"]}))
+
+    offerings = mock_content_llm.infer_category_offerings(
+        name="Riverside Music Collective", mock_type="music", category="music",
+        raw_signal_text="My daughter takes piano lessons and my son plays guitar and violin here.",
+        client=client,
+    )
+
+    assert offerings == ["Piano", "Guitar", "Violin"]
+
+
+def test_infer_category_offerings_strips_markdown_fences():
+    client = _FakeClient('```json\n{"offerings": ["Soccer", "Basketball"]}\n```')
+
+    offerings = mock_content_llm.infer_category_offerings(
+        name="Test", mock_type="sports", category="sports",
+        raw_signal_text="They offer soccer and basketball for kids.", client=client,
+    )
+
+    assert offerings == ["Soccer", "Basketball"]
+
+
+def test_infer_category_offerings_returns_empty_on_unparseable_response():
+    client = _FakeClient("not valid json at all")
+
+    offerings = mock_content_llm.infer_category_offerings(
+        name="Test", mock_type="music", category="music",
+        raw_signal_text="Some text.", client=client,
+    )
+
+    assert offerings == []
+
+
+def test_infer_category_offerings_returns_empty_without_signal_text():
+    client = _FakeClient(json.dumps({"offerings": ["Should not be reached"]}))
+
+    offerings = mock_content_llm.infer_category_offerings(
+        name="Test", mock_type="music", category="music", raw_signal_text="   ", client=client,
+    )
+
+    assert offerings == []
+    assert client.messages.last_call_kwargs is None  # never called — nothing to work with
+
+
+def test_infer_category_offerings_caps_at_six_and_dedupes_case_insensitively():
+    client = _FakeClient(json.dumps({
+        "offerings": ["Piano", "piano", "Guitar", "Violin", "Drums", "Voice", "Cello", "Flute"],
+    }))
+
+    offerings = mock_content_llm.infer_category_offerings(
+        name="Test", mock_type="music", category="music",
+        raw_signal_text="Some real text about the business.", client=client,
+    )
+
+    assert offerings == ["Piano", "Guitar", "Violin", "Drums", "Voice", "Cello"]

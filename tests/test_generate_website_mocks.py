@@ -1230,3 +1230,65 @@ def test_on_accent_prefers_white_only_when_white_actually_clears_aa():
     assert generate_website_mocks._on_accent_color("#f2b705", "#1d5c63") != "#ffffff"
     # Garbage input degrades instead of raising.
     assert generate_website_mocks._on_accent_color("not-a-colour", "#111111") == "#ffffff"
+
+
+def test_render_offerings_section_returns_empty_string_for_no_offerings():
+    ctx = {}
+    assert generate_website_mocks._render_offerings_section(
+        ctx, kicker="What we teach", headline="Real instruments.", intro="Some intro.", offerings=[],
+    ) == ""
+
+
+def test_render_offerings_section_renders_a_tag_per_offering():
+    ctx = {}
+    html_out = generate_website_mocks._render_offerings_section(
+        ctx, kicker="What we teach", headline="Real instruments.", intro="Some intro.",
+        offerings=["Piano", "Guitar", "Violin"],
+    )
+
+    assert '<span class="offering-tag">Piano</span>' in html_out
+    assert '<span class="offering-tag">Guitar</span>' in html_out
+    assert '<span class="offering-tag">Violin</span>' in html_out
+    assert "Real instruments." in html_out
+
+
+def test_music_offerings_section_renders_inferred_instruments_and_differs_across_siblings():
+    lead = _lead(category="music")
+    lead["_website_mock_category_offerings"] = ["Piano", "Guitar", "Violin"]
+
+    headlines = set()
+    for version_id in ("studio", "performance", "collective", "academy"):
+        rendered = generate_website_mocks._render_mock_html(lead, _variant("music", version_id))
+        assert '<span class="offering-tag">Piano</span>' in rendered
+        assert '<span class="offering-tag">Guitar</span>' in rendered
+        match = re.search(r'<section class="offerings-section">.*?<h2>(.*?)</h2>', rendered, re.DOTALL)
+        assert match, f"no offerings-section h2 found for music/{version_id}"
+        headlines.add(match.group(1))
+
+    assert len(headlines) == 4  # no two siblings share the same detail-section headline
+
+
+def test_sports_offerings_section_renders_inferred_activities_and_differs_across_siblings():
+    lead = _lead(category="martial_arts")
+    lead["_website_mock_category_offerings"] = ["Karate", "Judo"]
+
+    headlines = set()
+    for version_id in ("action", "trust", "camp", "team"):
+        rendered = generate_website_mocks._render_mock_html(lead, _variant("sports", version_id))
+        assert '<span class="offering-tag">Karate</span>' in rendered
+        assert '<span class="offering-tag">Judo</span>' in rendered
+        match = re.search(r'<section class="offerings-section">.*?<h2>(.*?)</h2>', rendered, re.DOTALL)
+        assert match, f"no offerings-section h2 found for sports/{version_id}"
+        headlines.add(match.group(1))
+
+    assert len(headlines) == 4
+
+
+def test_offerings_section_absent_when_nothing_inferred():
+    lead = _lead(category="music")  # no _website_mock_category_offerings set
+
+    rendered = generate_website_mocks._render_mock_html(lead, _variant("music", "studio"))
+
+    # The CSS rule is always embedded in the shared <style> block regardless
+    # of whether the section is used — check for the actual element instead.
+    assert '<section class="offerings-section">' not in rendered

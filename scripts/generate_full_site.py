@@ -360,6 +360,19 @@ def generate_full_site(
             name=name, raw_review_text=" ".join(review_raw_texts), client=anthropic_client,
         )
 
+    # Concrete offerings (instruments for music, activities for sports) —
+    # feeds the category's "detail" section (see mock_templates_music.py /
+    # mock_templates_sports.py), which otherwise renders nothing at all.
+    # Falls back to plausible category-typical items when nothing specific
+    # is named, same behavior as infer_program_labels above.
+    if review_raw_texts:
+        offerings = mock_content_llm.infer_category_offerings(
+            name=name, mock_type=mock_type, category=category,
+            raw_signal_text=" ".join(review_raw_texts), client=anthropic_client,
+        )
+        if offerings:
+            subject["_website_mock_category_offerings"] = offerings
+
     # An explicit hero choice still needs a quality floor — a small,
     # heavily-compressed source (e.g. a scraped Yelp thumbnail) looks bad as
     # a full-bleed hero no matter how it's fit into the frame. Falling

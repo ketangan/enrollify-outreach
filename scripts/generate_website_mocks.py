@@ -1515,6 +1515,29 @@ def _render_option_pills(labels: list[str]) -> str:
     )
 
 
+def _render_offerings_section(
+    ctx: dict, *, kicker: str, headline: str, intro: str, offerings: list[str],
+) -> str:
+    """Fills a category's otherwise-empty "detail" slot with concrete
+    things the business actually offers (instruments for music, activities
+    for sports — see mock_content_llm.infer_category_offerings). Returns ""
+    when there's nothing to show, so a category module can call this
+    unconditionally rather than guarding every call site itself."""
+    if not offerings:
+        return ""
+    tags = "".join(f'<span class="offering-tag">{html.escape(item)}</span>' for item in offerings)
+    return f"""
+      <section class="offerings-section">
+        <div class="offerings-section__head">
+          <p class="section-kicker">{html.escape(kicker)}</p>
+          <h2>{html.escape(headline)}</h2>
+          <p>{html.escape(intro)}</p>
+        </div>
+        <div class="offerings-section__row">{tags}</div>
+      </section>
+"""
+
+
 def _proof_citation(point: dict[str, str]) -> str:
     source = _clean(point.get("source"))
     author = _clean(point.get("author"))
@@ -2867,6 +2890,9 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     escaped_intro = html.escape(intro)
     contact = _render_contact_link(phone, website)
     site_anchor_labels = _precomputed_site_anchors(lead)
+    category_offerings = lead.get("_website_mock_category_offerings") or []
+    if not isinstance(category_offerings, list):
+        category_offerings = []
     site_quote = _clean(lead.get("_website_mock_site_quote"))
     site_quote_source = _clean(lead.get("_website_mock_site_quote_source"))
     site_quote_author = _clean(lead.get("_website_mock_site_quote_author"))
@@ -2894,6 +2920,7 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
         "contact": contact,
         "site_anchors_html": site_anchors_html,
         "site_anchor_labels": site_anchor_labels,
+        "category_offerings": [_clean(o) for o in category_offerings if _clean(o)],
         "site_quote": site_quote,
         "site_quote_source": site_quote_source,
         "site_quote_author": site_quote_author,
@@ -3505,6 +3532,29 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background: var(--secondary);
     }}
     .preschool-detail__proof .proof-line {{ margin: 0; padding-top: 0; border-top: 0; }}
+
+    /* Detail: offerings section (music/sports) — AI-inferred instruments or
+       activities shown as a row of short tags, not a card grid, since these
+       are names not sentences. */
+    .offerings-section {{
+      padding-top: var(--section-y);
+      padding-bottom: var(--section-y);
+      background: var(--paper);
+      border-top: 1px solid var(--line);
+    }}
+    .offerings-section__head {{ max-width: 640px; margin-bottom: 26px; }}
+    .offerings-section__row {{ display: flex; flex-wrap: wrap; gap: 10px; }}
+    .offering-tag {{
+      display: inline-flex;
+      align-items: center;
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--ink);
+      font-size: 14.5px;
+      font-weight: 650;
+    }}
 
     /* Signature: music-studio — an overlapping, hand-arranged lesson scroll */
     .lesson-scroll {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--soft); }}
