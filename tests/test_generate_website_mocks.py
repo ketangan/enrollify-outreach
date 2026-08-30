@@ -1292,3 +1292,25 @@ def test_offerings_section_absent_when_nothing_inferred():
     # The CSS rule is always embedded in the shared <style> block regardless
     # of whether the section is used — check for the actual element instead.
     assert '<section class="offerings-section">' not in rendered
+
+
+def test_no_variant_repeats_a_section_kicker_on_the_same_page():
+    # Real bug: the offerings section's copy (MUSIC_OFFERINGS_COPY /
+    # SPORTS_OFFERINGS_COPY) was written without checking what kicker the
+    # signature section directly above it already uses — sports/camp and
+    # sports/team both duplicated their signature section's exact kicker
+    # text word-for-word, reading as a copy-paste mistake on the live page.
+    lead_by_type = {
+        "preschool": _lead(category="preschool"),
+        "music": _lead(category="music"),
+        "sports": _lead(category="martial_arts"),
+    }
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        lead = dict(lead_by_type[mock_type])
+        lead["_website_mock_category_offerings"] = ["Piano", "Guitar", "Violin"]
+        for variant in variants:
+            rendered = generate_website_mocks._render_mock_html(lead, variant)
+            kickers = re.findall(r'<p class="section-kicker">(.*?)</p>', rendered)
+            assert len(kickers) == len(set(kickers)), (
+                f"{mock_type}/{variant.version_id} repeats a section-kicker: {kickers}"
+            )

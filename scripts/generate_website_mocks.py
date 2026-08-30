@@ -3217,18 +3217,42 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       padding: var(--gutter);
       padding-top: var(--hero-top);
       background-color: var(--secondary);
+      color: white;
+      position: relative;
+      overflow: hidden;
+    }}
+    /* A full-bleed hero has no bounded side panel the way hero-split/
+       hero-collage do, so a portrait photo in contain mode used to leave
+       flat dead-color bars on both sides — looked broken, not deliberate.
+       Fix: a blurred, always-cover copy of the same photo sits behind the
+       sharp one, so contain's letterboxed edges reveal a soft continuation
+       of the photo instead of empty color. */
+    .hero-bleed::before {{
+      content: "";
+      position: absolute;
+      inset: -30px;
+      z-index: 0;
+      background-image: var(--hero-photo);
+      background-size: cover;
+      background-position: center top;
+      filter: blur(40px) brightness(.6);
+    }}
+    .hero-bleed::after {{
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 1;
       background-image:
         linear-gradient(180deg, var(--hero-overlay-a) 0%, transparent 30%, var(--hero-overlay-b) 100%),
         var(--hero-photo);
       background-repeat: no-repeat, no-repeat;
       /* The gradient overlay covers the full box; the photo should too.
-         Contain preserves every pixel, but it creates dead color bars in
-         mismatched frames and makes the mock look unfinished. */
+         Contain preserves every pixel — any letterboxed edge now shows the
+         blurred ::before layer instead of a dead color bar. */
       background-size: cover, var(--photo-fit);
       background-position: center, center top;
-      color: white;
     }}
-    .hero-bleed__content {{ max-width: 760px; }}
+    .hero-bleed__content {{ position: relative; z-index: 2; max-width: 760px; }}
     .hero-split__panel h1,
     .hero-collage__panel h1 {{
       font-size: min(var(--h1-size), 4.75rem);
@@ -3623,6 +3647,9 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
 
     /* Signature: sports-action — a scoreboard, information not decoration */
     .stat-block {{ padding-top: var(--section-y); padding-bottom: var(--section-y); background: var(--ink); }}
+    .stat-block__head {{ max-width: 620px; margin: 0 auto 34px; text-align: center; }}
+    .stat-block__head h2 {{ color: white; font-size: 2.625rem; }}
+    .stat-block__head p {{ color: rgba(255,255,255,.72); }}
     .stat-block__row {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; text-align: center; }}
     .stat-block__row div {{ padding: 22px 12px; border-left: 1px solid rgba(255,255,255,.16); }}
     .stat-block__row div:first-child {{ border-left: 0; }}

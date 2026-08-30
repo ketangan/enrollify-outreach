@@ -212,12 +212,17 @@ MUSIC_OFFERINGS_COPY = {
         "intro": "Every instrument taught here eventually leads to a real audience, not just a practice room.",
     },
     "collective": {
-        "kicker": "Play together",
+        # Was "Play together" — reads as a near-repeat of
+        # _render_collective_lineup's own "Who plays together" kicker one
+        # section up.
+        "kicker": "The full lineup",
         "headline": "Group classes exist for every instrument below.",
         "intro": "No one learns alone here — every instrument has an ensemble slot to grow into.",
     },
     "academy": {
-        "kicker": "The full curriculum",
+        # Was "The full curriculum" — reads as a near-repeat of
+        # _render_academy_path's own "The curriculum" kicker one section up.
+        "kicker": "On the syllabus",
         "headline": "Structured lessons, instrument by instrument.",
         "intro": "Each instrument below follows the same track: foundations, technique, then real repertoire.",
     },

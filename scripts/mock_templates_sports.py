@@ -26,6 +26,11 @@ def _render_stat_block(ctx: dict) -> str:
     )
     return f"""
       <section class="stat-block" id="programs">
+        <div class="stat-block__head">
+          <p class="section-kicker">Why families choose us</p>
+          <h2>The numbers a parent actually wants to know.</h2>
+          <p>No fluff — just what matters before you show up for a first class.</p>
+        </div>
         <div class="stat-block__row">{cells}</div>
       </section>
 """
@@ -122,12 +127,16 @@ SPORTS_OFFERINGS_COPY = {
         "intro": "Whichever one your child picks, the same safety-first approach applies.",
     },
     "camp": {
-        "kicker": "This season",
+        # Was "This season" — identical to _render_camp_calendar's own
+        # kicker two sections up, reading as a copy-paste mistake.
+        "kicker": "What we coach",
         "headline": "Real sports, real sessions this season.",
         "intro": "Each camp session below runs the same arc — skills, scrimmage, showcase.",
     },
     "team": {
-        "kicker": "The competitive path",
+        # Was "The competitive path" — identical to _render_team_roster's
+        # own kicker one section up, same collision as camp above.
+        "kicker": "Every sport we train",
         "headline": "Every sport below has a team to work toward.",
         "intro": "From developmental to elite, each sport follows the same tiered path up.",
     },
