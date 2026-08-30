@@ -26,7 +26,7 @@ HEADERS = [
     "org_id", "name", "category", "city", "state", "address",
     "theme", "version_n", "subject_id", "label", "url", "preview_url",
     "revision_notes", "job_id", "created_at", "short_url", "owner_name",
-    "no_website_schools_id", "phone", "selected_for_sms",
+    "no_website_schools_id", "phone", "selected_for_sms", "qa_warnings",
 ]
 
 _SPACE_RE = re.compile(r"\s+")
@@ -120,6 +120,7 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
             "job_id": row.get("job_id", ""),
             "created_at": row.get("created_at", ""),
             "selected_for_sms": _truthy(row.get("selected_for_sms", "")),
+            "qa_warnings": [w for w in str(row.get("qa_warnings", "")).split(" | ") if w],
         })
 
     for org in orgs.values():
@@ -312,6 +313,7 @@ def record_initial_generation(
             no_website_schools_id,
             item.get("phone", ""),
             "yes",
+            " | ".join(item.get("qa_warnings") or []),
         ])
     ws.append_rows(rows, value_input_option="USER_ENTERED")
 
@@ -344,6 +346,7 @@ def record_regeneration(
         "",  # no_website_schools_id is an org-level fact set once at creation, not re-passed here
         item.get("phone") or org.get("phone", ""),
         "yes",
+        " | ".join(item.get("qa_warnings") or []),
     ], value_input_option="USER_ENTERED")
     select_sms_version(org_id, theme, next_version_n)
 

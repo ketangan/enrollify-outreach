@@ -219,6 +219,9 @@
             <a href="{{ selected.preview_url }}" target="_blank" rel="noopener" class="btn-primary">
               {{ selected.label }}{% if versions|length > 1 %} (v{{ selected.version_n }}){% endif %} ↗
             </a>
+            {% if selected.qa_warnings %}
+              <span class="site-gen-qa-warning" title="{{ selected.qa_warnings | join('&#10;') }}">QA: {{ selected.qa_warnings | length }} issue{{ "s" if selected.qa_warnings | length != 1 }} — hover to view</span>
+            {% endif %}
             <form method="POST" action="/site-generator/select-version" class="site-gen-version-picker">
               <input type="hidden" name="org_id" value="{{ org.org_id }}">
               <input type="hidden" name="theme" value="{{ theme }}">
@@ -229,6 +232,9 @@
                   <span>v{{ v.version_n }}</span>
                 </label>
                 <a href="{{ v.preview_url }}" target="_blank" rel="noopener" class="site-gen-version-view">view</a>
+                {% if v.qa_warnings %}
+                  <span class="site-gen-qa-warning" title="{{ v.qa_warnings | join('&#10;') }}">QA: {{ v.qa_warnings | length }}</span>
+                {% endif %}
               {% endfor %}
               <button type="submit" class="btn-secondary site-gen-version-submit">Save</button>
             </form>

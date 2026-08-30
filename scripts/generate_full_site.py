@@ -53,7 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from anthropic import Anthropic
 
 from scripts import generate_website_mocks as mocks
-from src import config, mock_content_llm, no_website_schools, photo_quality, places, r2_storage, shortlinks, site_generator_state, website_existence_check, website_mocks
+from src import config, mock_content_llm, no_website_schools, photo_quality, places, r2_storage, shortlinks, site_generator_state, site_qa, website_existence_check, website_mocks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -394,6 +394,22 @@ def generate_full_site(
     )
     if not rendered:
         return []
+
+    # Soft-fail sanity check, not a gate: generation and publishing proceed
+    # regardless of what this finds (see src/site_qa.py) — a business
+    # getting a real text with a broken page was worse than a business
+    # getting a page with an unnoticed rough edge, so this only logs and
+    # records the warnings for a human to check, rather than blocking.
+    for item in rendered:
+        warnings = site_qa.check_rendered_site(
+            item["html"], business_name=name, stock_assets=mocks.stock_assets_for_html(item["html"]),
+        )
+        item["qa_warnings"] = warnings
+        if warnings:
+            logger.warning(
+                "QA check flagged %s-%s for %r: %s", item["type"], item["version"], name, "; ".join(warnings),
+            )
+
     persisted = _persist_rendered(rendered, subject_id, output_dir, site_name=name)
     persisted = _add_short_links(persisted, subject_id=subject_id)
     return [

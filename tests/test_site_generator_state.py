@@ -213,6 +213,28 @@ def test_record_regeneration_persists_short_url(fake_sheet):
     assert history[1]["short_url"] == "s2"
 
 
+def test_qa_warnings_persist_through_initial_generation_and_regeneration(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-qa-1", name="Test School", category="preschool",
+        rendered=[{
+            "type": "preschool", "version": "warm", "label": "L", "url": "u1", "preview_url": "p1",
+            "qa_warnings": ["No <h1> found on the page.", 'Business name "Test School" does not appear anywhere in the page.'],
+        }],
+        job_id="job-1",
+    )
+    state.record_regeneration(
+        org_id="org-qa-1", theme="preschool-warm",
+        item={"subject_id": "org-qa-1-v2", "label": "L", "url": "u2", "preview_url": "p2", "qa_warnings": []},
+        job_id="job-2",
+    )
+
+    history = state.get_org("org-qa-1")["themes"]["preschool-warm"]
+    assert history[0]["qa_warnings"] == [
+        "No <h1> found on the page.", 'Business name "Test School" does not appear anywhere in the page.',
+    ]
+    assert history[1]["qa_warnings"] == []
+
+
 def test_find_existing_org_matches_same_no_website_source_id(fake_sheet):
     state.record_initial_generation(
         org_id="org-existing-1", name="Green Garden Preschool", category="preschool",

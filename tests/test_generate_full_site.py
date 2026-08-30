@@ -254,6 +254,52 @@ def test_generate_full_site_hero_override_below_quality_floor_falls_back(monkeyp
     assert photos[0] == "big-upload"
 
 
+def test_generate_full_site_attaches_empty_qa_warnings_for_a_clean_render(monkeypatch, tmp_path):
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert len(rendered) == 4
+    for item in rendered:
+        assert item["qa_warnings"] == []
+
+
+def test_generate_full_site_records_qa_warnings_without_blocking_generation(monkeypatch, tmp_path, caplog):
+    # A soft-fail check: even a badly broken render (wrong h1 entirely, as
+    # if the template regressed) must still generate and publish normally —
+    # the warning is recorded for a human to check, not used to stop
+    # anything. See the QA gate discussion: hard-blocking a real generation
+    # over a false positive was judged worse than occasionally shipping a
+    # page with an unnoticed rough edge.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+
+    original_render = generate_full_site.mocks.render_mock_concepts
+
+    def _break_first_item(subject, **kwargs):
+        rendered = original_render(subject, **kwargs)
+        rendered[0]["html"] = rendered[0]["html"].replace(
+            "<h1>Riverside Music Collective</h1>", "<h1>A generic tagline, not the name</h1>",
+        )
+        return rendered
+
+    monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _break_first_item)
+
+    with caplog.at_level("WARNING", logger="generate_full_site"):
+        rendered = generate_full_site.generate_full_site(
+            name="Riverside Music Collective", category="music",
+            base_url="https://example.com", output_dir=tmp_path,
+        )
+
+    assert len(rendered) == 4  # generation was not blocked
+    assert any(item["qa_warnings"] for item in rendered)
+    assert any("QA check flagged" in record.message for record in caplog.records)
+
+
 def test_generate_full_site_stock_photos_only_ignores_real_photos_entirely(monkeypatch, tmp_path):
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
     monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)

@@ -590,6 +590,42 @@ def test_home_uses_selected_version_in_text_message(monkeypatch):
     assert 'id="org-org-1"' in resp.text
 
 
+def test_home_shows_qa_warning_badge_for_flagged_version(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        site_generator_state,
+        "list_orgs",
+        lambda: [{
+            "org_id": "org-1",
+            "name": "Riverside Music",
+            "category": "music",
+            "city": "Austin",
+            "state": "TX",
+            "phone": "",
+            "themes": {
+                "music-studio": [
+                    {
+                        "version_n": 1, "label": "Studio concept", "preview_url": "p1",
+                        "short_url": "https://short/v1", "selected_for_sms": True,
+                        "qa_warnings": ["No <h1> found on the page."],
+                    },
+                    {
+                        "version_n": 2, "label": "Studio concept", "preview_url": "p2",
+                        "short_url": "https://short/v2", "selected_for_sms": False,
+                        "qa_warnings": [],
+                    },
+                ],
+            },
+        }],
+    )
+
+    resp = client.get("/site-generator", params={"key": "secret123"})
+
+    assert resp.status_code == 200
+    assert "site-gen-qa-warning" in resp.text
+    assert "No &lt;h1&gt; found on the page." in resp.text
+
+
 def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     calls = []
