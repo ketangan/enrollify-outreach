@@ -201,14 +201,28 @@
 
 <h2 style="margin-top:36px;">Generated businesses</h2>
 
+{% if orgs %}
+  <label class="site-gen-hide-texted-toggle">
+    <input type="checkbox" id="hide-texted-toggle">
+    Hide businesses I've already texted
+  </label>
+{% endif %}
+
 {% if not orgs %}
   <p class="muted">Nothing generated yet.</p>
 {% else %}
   {% for org in orgs %}
-    <details class="site-gen-org" id="org-{{ org.org_id }}" {% if duplicate_org and duplicate_org.org_id == org.org_id %}open{% endif %}>
+    <details class="site-gen-org" id="org-{{ org.org_id }}" data-texted="{{ 'true' if org.texted else 'false' }}" {% if duplicate_org and duplicate_org.org_id == org.org_id %}open{% endif %}>
       <summary>
         <span class="site-gen-org-name">{{ org.name }}</span>
         <span class="lead-meta">{{ org.category }}{% if org.city %} · {{ org.city }}{{ ", " + org.state if org.state }}{% endif %} · {{ org.themes|length }} concept{{ "s" if org.themes|length != 1 }}{% if org.phone %} · {{ org.phone }}{% endif %}</span>
+        <form method="POST" action="/site-generator/mark-texted" class="site-gen-texted-form" onclick="event.stopPropagation()">
+          <input type="hidden" name="org_id" value="{{ org.org_id }}">
+          <label class="site-gen-texted-label">
+            <input type="checkbox" name="texted" value="true" {% if org.texted %}checked{% endif %} onchange="this.form.submit()">
+            Text sent
+          </label>
+        </form>
       </summary>
       <div class="site-gen-org-body">
         {% for theme, versions in org.themes.items() %}
@@ -288,5 +302,17 @@ Take a look when you get a chance! If you like elements from different concepts,
       });
     });
   });
+
+  // Pure display filter, no page reload — the "texted" state itself is
+  // already persisted server-side via the checkbox's own form submit above.
+  var hideTextedToggle = document.getElementById('hide-texted-toggle');
+  if (hideTextedToggle) {
+    hideTextedToggle.addEventListener('change', function () {
+      document.querySelectorAll('.site-gen-org').forEach(function (org) {
+        var isTexted = org.dataset.texted === 'true';
+        org.classList.toggle('is-hidden', hideTextedToggle.checked && isTexted);
+      });
+    });
+  }
 </script>
 {% endblock %}

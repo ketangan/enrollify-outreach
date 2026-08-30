@@ -197,6 +197,58 @@ def test_select_sms_version_rejects_unknown_version(fake_sheet):
     assert state.select_sms_version("org-sms-3", "music-studio", 9) is False
 
 
+def test_mark_org_texted_sets_texted_on_every_row_for_the_org(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-texted-1", name="Test School", category="music",
+        rendered=[
+            {"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"},
+            {"type": "music", "version": "performance", "label": "Performance", "url": "u2", "preview_url": "p2"},
+        ],
+        job_id="job-1",
+    )
+
+    assert state.mark_org_texted("org-texted-1", True) is True
+
+    assert state.get_org("org-texted-1")["texted"] is True
+    assert all(row["texted"] == "yes" for row in fake_sheet)
+
+
+def test_mark_org_texted_can_unmark(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-texted-2", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+    state.mark_org_texted("org-texted-2", True)
+
+    assert state.mark_org_texted("org-texted-2", False) is True
+
+    assert state.get_org("org-texted-2")["texted"] is False
+    assert fake_sheet[0]["texted"] == ""
+
+
+def test_mark_org_texted_does_not_affect_other_orgs(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-texted-3", name="School A", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+    state.record_initial_generation(
+        org_id="org-texted-4", name="School B", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+
+    state.mark_org_texted("org-texted-3", True)
+
+    assert state.get_org("org-texted-3")["texted"] is True
+    assert state.get_org("org-texted-4")["texted"] is False
+
+
+def test_mark_org_texted_returns_false_for_unknown_org(fake_sheet):
+    assert state.mark_org_texted("does-not-exist", True) is False
+
+
 def test_record_regeneration_persists_short_url(fake_sheet):
     state.record_initial_generation(
         org_id="org-4", name="Test School", category="preschool",

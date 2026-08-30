@@ -27,6 +27,7 @@ HEADERS = [
     "theme", "version_n", "subject_id", "label", "url", "preview_url",
     "revision_notes", "job_id", "created_at", "short_url", "owner_name",
     "no_website_schools_id", "phone", "selected_for_sms", "qa_warnings",
+    "texted",
 ]
 
 _SPACE_RE = re.compile(r"\s+")
@@ -81,6 +82,7 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
             "owner_name": "",
             "no_website_schools_id": "",
             "phone": "",
+            "texted": False,
             "themes": {},
         })
         # Earliest row's created_at represents when the org was first
@@ -101,6 +103,12 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
         # first non-empty wins the same way owner_name does.
         if not org["phone"] and str(row.get("phone", "")).strip():
             org["phone"] = str(row["phone"]).strip()
+        # Mutable, but mark_org_texted() writes it to every row for the org
+        # at once, so any single row having it is enough to trust — this
+        # only needs the "one row got missed somehow" fallback, not a
+        # first-wins-vs-last-wins decision.
+        if _truthy(row.get("texted", "")):
+            org["texted"] = True
 
         try:
             version_n = int(row.get("version_n") or 1)
@@ -224,6 +232,39 @@ def select_sms_version(org_id: str, theme: str, version_n: int) -> bool:
 
     for row_idx, _row_version in matching_rows:
         ws.update_cell(row_idx, selected_col + 1, "yes" if row_idx == target_row_idx else "")
+    return True
+
+
+def mark_org_texted(org_id: str, texted: bool) -> bool:
+    """Marks (or unmarks) a whole org as "text already sent" — written to
+    every row for the org, not just one, so the org-level read in
+    _rows_to_orgs sees a consistent state regardless of which row it
+    happens to look at first. Returns False if the org has no rows at all."""
+    org_id = _clean(org_id)
+    if not org_id:
+        return False
+
+    _ensure_tab()
+    ws = sheets.get_tab(GENERATED_SITES_TAB)
+    all_values = ws.get_all_values()
+    if not all_values:
+        return False
+    header = all_values[0]
+    if not {"org_id", "texted"}.issubset(set(header)):
+        return False
+
+    org_col = header.index("org_id")
+    texted_col = header.index("texted")
+
+    matching_row_idxs = [
+        idx + 1 for idx in range(1, len(all_values))
+        if _cell(all_values[idx], org_col) == org_id
+    ]
+    if not matching_row_idxs:
+        return False
+
+    for row_idx in matching_row_idxs:
+        ws.update_cell(row_idx, texted_col + 1, "yes" if texted else "")
     return True
 
 

@@ -561,6 +561,93 @@ def test_select_version_calls_state_and_redirects(monkeypatch):
     assert calls == [("org-1", "music-studio", 1)]
 
 
+def test_mark_texted_calls_state_and_redirects(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    calls = []
+    monkeypatch.setattr(
+        site_generator_state,
+        "mark_org_texted",
+        lambda org_id, texted: calls.append((org_id, texted)) or True,
+    )
+
+    resp = client.post(
+        "/site-generator/mark-texted",
+        params={"key": "secret123"},
+        data={"org_id": "org-1", "texted": "true"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/site-generator#org-org-1"
+    assert calls == [("org-1", True)]
+
+
+def test_mark_texted_unchecked_sends_false(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    calls = []
+    monkeypatch.setattr(
+        site_generator_state,
+        "mark_org_texted",
+        lambda org_id, texted: calls.append((org_id, texted)) or True,
+    )
+
+    # An unchecked HTML checkbox submits no "texted" field at all.
+    resp = client.post(
+        "/site-generator/mark-texted",
+        params={"key": "secret123"},
+        data={"org_id": "org-1"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert calls == [("org-1", False)]
+
+
+def test_mark_texted_unknown_org_returns_404(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(site_generator_state, "mark_org_texted", lambda org_id, texted: False)
+
+    resp = client.post(
+        "/site-generator/mark-texted",
+        params={"key": "secret123"},
+        data={"org_id": "does-not-exist", "texted": "true"},
+    )
+
+    assert resp.status_code == 404
+
+
+def test_home_shows_texted_checkbox_state_and_hide_toggle(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        site_generator_state,
+        "list_orgs",
+        lambda: [
+            {
+                "org_id": "org-texted", "name": "Already Texted School", "category": "music",
+                "city": "", "state": "", "phone": "", "texted": True,
+                "themes": {"music-studio": [{"version_n": 1, "label": "L", "preview_url": "p1", "short_url": "s1", "selected_for_sms": True}]},
+            },
+            {
+                "org_id": "org-not-texted", "name": "Not Texted School", "category": "music",
+                "city": "", "state": "", "phone": "", "texted": False,
+                "themes": {"music-studio": [{"version_n": 1, "label": "L", "preview_url": "p2", "short_url": "s2", "selected_for_sms": True}]},
+            },
+        ],
+    )
+
+    resp = client.get("/site-generator", params={"key": "secret123"})
+
+    assert resp.status_code == 200
+    assert 'id="hide-texted-toggle"' in resp.text
+    assert 'data-texted="true"' in resp.text
+    assert 'data-texted="false"' in resp.text
+    # The checked box belongs to the texted org, not the other one.
+    texted_org_html = resp.text.split('id="org-org-texted"')[1].split('id="org-org-not-texted"')[0]
+    not_texted_org_html = resp.text.split('id="org-org-not-texted"')[1]
+    assert 'name="texted" value="true" checked' in texted_org_html
+    assert 'name="texted" value="true" checked' not in not_texted_org_html
+
+
 def test_home_uses_selected_version_in_text_message(monkeypatch):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     monkeypatch.setattr(

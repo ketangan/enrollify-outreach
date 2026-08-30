@@ -1421,6 +1421,33 @@ form.filters button:hover { background: #2d4229; }
   font-size: 15px;
 }
 
+.site-gen-org.is-hidden { display: none; }
+
+.site-gen-hide-texted-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #5a5442;
+  margin: 8px 0 14px;
+  cursor: pointer;
+}
+
+.site-gen-texted-form {
+  margin-left: auto;
+}
+
+.site-gen-texted-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #5a5442;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .site-gen-org-body {
   padding: 0 20px 14px;
   border-top: 1px solid #eee7d8;

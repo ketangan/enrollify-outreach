@@ -323,6 +323,24 @@ def site_generator_select_version(
     )
 
 
+@router.post("/site-generator/mark-texted", dependencies=[Depends(require_access)])
+def site_generator_mark_texted(
+    request: Request,
+    org_id: str = Form(...),
+    # Checkbox convention: present at all (any value) means checked, same
+    # pattern as use_google/skip_website_check above — an unchecked
+    # checkbox submits no field, not "false".
+    texted: str = Form(""),
+):
+    ok = site_generator_state.mark_org_texted(org_id, bool(texted))
+    if not ok:
+        raise HTTPException(404, f"Unknown org: {org_id}")
+    return _remember_key_cookie(
+        request,
+        RedirectResponse(f"/site-generator#org-{org_id}", status_code=303),
+    )
+
+
 @router.post("/site-generator/regenerate", dependencies=[Depends(require_access)])
 def site_generator_regenerate(
     request: Request,
