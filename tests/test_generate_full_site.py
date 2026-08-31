@@ -254,6 +254,32 @@ def test_generate_full_site_hero_override_below_quality_floor_falls_back(monkeyp
     assert photos[0] == "big-upload"
 
 
+def test_generate_full_site_records_qa_warning_when_hero_override_rejected(monkeypatch, tmp_path):
+    # Real bug: this used to be logger.warning() only — invisible outside a
+    # server log, so an uploaded hero photo could silently get swapped for
+    # an automatically-selected one with no way for whoever generated the
+    # site to ever find out why. Must show up in qa_warnings, on every
+    # concept (it's a site-wide fact, not per-template), so it's visible on
+    # the site generator page instead of requiring someone to go dig for it.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(
+        generate_full_site.places, "fetch_photo_bytes",
+        lambda photo_name, max_width_px=1200: (_real_jpeg_bytes(3000, 3000), "image/jpeg"),
+    )
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        hero_photo={"url": "too-small-to-use", "width": 300, "height": 300},
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert len(rendered) == 4
+    for item in rendered:
+        assert any("too small" in w for w in item["qa_warnings"])
+        assert any("300x300" in w for w in item["qa_warnings"])
+
+
 def test_generate_full_site_attaches_empty_qa_warnings_for_a_clean_render(monkeypatch, tmp_path):
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
     monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)

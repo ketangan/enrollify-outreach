@@ -380,11 +380,21 @@ def generate_full_site(
     # generation) means a genuinely bad photo gets swapped for the next-best
     # real photo, or bundled stock — not silently kept, but also not a
     # blanket ban on ever honoring a hero override for this business.
+    #
+    # This used to be a logger.warning() only — invisible outside a server
+    # log, so an uploaded hero photo could silently get swapped for a
+    # Google photo with no way for whoever generated the site to know why.
+    # Recorded as a qa_warning instead (see below) so it shows up right on
+    # the site generator page.
+    hero_override_rejected_msg = ""
     if hero_photo and not photo_quality.hero_is_acceptable(hero_photo):
-        logger.warning(
-            "Hero photo override %s is below the quality floor, falling back to automatic selection",
-            hero_photo.get("url", ""),
+        width, height = hero_photo.get("width"), hero_photo.get("height")
+        hero_override_rejected_msg = (
+            f"Uploaded hero photo was too small ({width}x{height}px, need at least "
+            f"{photo_quality.MIN_HERO_DIMENSION_PX}px on the short side) — fell back to an "
+            f"automatically-selected photo instead."
         )
+        logger.warning("%s (%s)", hero_override_rejected_msg, hero_photo.get("url", ""))
         hero_photo = None
 
     selected_photos = []
@@ -417,6 +427,13 @@ def generate_full_site(
         warnings = site_qa.check_rendered_site(
             item["html"], business_name=name, stock_assets=mocks.stock_assets_for_html(item["html"]),
         )
+        # Applies to every concept alike — the hero override is a site-wide
+        # choice, not per-template — so it's appended here rather than
+        # being something check_rendered_site could ever detect on its own
+        # (by the time a page is rendered, there's no trace left of what
+        # photo was originally requested and rejected).
+        if hero_override_rejected_msg:
+            warnings = warnings + [hero_override_rejected_msg]
         item["qa_warnings"] = warnings
         if warnings:
             logger.warning(
