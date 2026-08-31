@@ -254,6 +254,35 @@ def test_generate_full_site_hero_override_below_quality_floor_falls_back(monkeyp
     assert photos[0] == "big-upload"
 
 
+def test_generate_full_site_force_hero_photo_skips_the_quality_floor(monkeypatch, tmp_path):
+    # A human who actually looked at the photo gets to override the
+    # default heuristic — e.g. a real business photo at 755x1000, just
+    # under the 800px floor, isn't the same failure mode as a scraped
+    # thumbnail and shouldn't be silently swapped out against the
+    # uploader's explicit choice.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.r2_storage, "is_configured", lambda: False)
+
+    captured = {}
+    original_render = generate_full_site.mocks.render_mock_concepts
+
+    def _capture_render(subject, **kwargs):
+        captured["subject"] = dict(subject)
+        return original_render(subject, **kwargs)
+
+    monkeypatch.setattr(generate_full_site.mocks, "render_mock_concepts", _capture_render)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        hero_photo={"url": "just-under-floor", "width": 755, "height": 1000},
+        force_hero_photo=True,
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert captured["subject"]["_website_mock_hero_photo"] == "just-under-floor"
+    assert all(item["qa_warnings"] == [] for item in rendered)
+
+
 def test_generate_full_site_records_qa_warning_when_hero_override_rejected(monkeypatch, tmp_path):
     # Real bug: this used to be logger.warning() only — invisible outside a
     # server log, so an uploaded hero photo could silently get swapped for

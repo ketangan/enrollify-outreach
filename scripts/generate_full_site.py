@@ -216,6 +216,7 @@ def generate_full_site(
     skip_existing_website_check: bool = False,
     uploaded_photos: list[dict] | None = None,
     hero_photo: dict | None = None,
+    force_hero_photo: bool = False,
     use_stock_photos_only: bool = False,
     base_url: str,
     output_dir: Path,
@@ -241,6 +242,13 @@ def generate_full_site(
     persisted by the caller — see webapp/webapp/routes_site_generator.py)
     are still accepted as legacy hero candidates, but no longer become the
     page-wide photo pool in new renders.
+
+    `force_hero_photo`, when True, skips the quality-floor check on
+    `hero_photo` entirely — the floor is a default heuristic against
+    genuinely bad sources (a scraped thumbnail), not a hard business rule,
+    and the person who actually uploaded a photo of their own business has
+    already made the call that it looks fine even if it's a little under
+    the usual minimum. Has no effect without `hero_photo` set.
 
     `use_stock_photos_only`, when True, skips real-photo selection
     entirely (no Google Places photos, no uploads, no forced hero) so even
@@ -387,7 +395,7 @@ def generate_full_site(
     # Recorded as a qa_warning instead (see below) so it shows up right on
     # the site generator page.
     hero_override_rejected_msg = ""
-    if hero_photo and not photo_quality.hero_is_acceptable(hero_photo):
+    if hero_photo and not force_hero_photo and not photo_quality.hero_is_acceptable(hero_photo):
         width, height = hero_photo.get("width"), hero_photo.get("height")
         hero_override_rejected_msg = (
             f"Uploaded hero photo was too small ({width}x{height}px, need at least "
@@ -517,6 +525,9 @@ def main() -> None:
     parser.add_argument("--hero-photo", default="",
                          help='JSON {"url","width","height"} dict for a single explicitly-chosen hero photo — '
                               "always becomes photos[0], overriding the automatic quality-based placement")
+    parser.add_argument("--force-hero-photo", action="store_true",
+                         help="Skip the quality-floor check on --hero-photo — use when a human has already "
+                              "looked at the photo and judged it fine despite being under the usual minimum")
     parser.add_argument("--stock-photos-only", action="store_true",
                          help="Ignore Google/upload photos entirely, hero included — review text (Google/Yelp "
                               "reviews) still comes through normally")
@@ -558,6 +569,7 @@ def main() -> None:
             skip_existing_website_check=args.skip_website_check,
             uploaded_photos=uploaded_photos,
             hero_photo=hero_photo,
+            force_hero_photo=args.force_hero_photo,
             use_stock_photos_only=args.stock_photos_only,
             base_url=args.base_url,
             output_dir=Path(args.output_dir),
