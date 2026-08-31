@@ -4251,12 +4251,36 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       padding-bottom: clamp(28px, 4vw, 56px);
     }}
     .hero-masthead__shot {{
+      position: relative;
       aspect-ratio: 5 / 3;
       border-radius: var(--radius);
       background-color: rgba(255,255,255,.09);
+      overflow: hidden;
+    }}
+    /* Gallery cells have no per-photo width/height by the time they render
+       (unlike the single hero photo, whose fit mode is computed once from
+       real dimensions upstream — see photo_quality.hero_fit_mode), so
+       there's no reliable aspect-ratio signal to switch cover vs. contain
+       per photo. Always-contain + blurred backdrop sidesteps needing that
+       signal at all: a landscape photo already fills the 5:3 box closely
+       either way, and a portrait one shows in full instead of getting
+       cropped down to whatever happens to be dead-center. */
+    .hero-masthead__shot::before {{
+      content: "";
+      position: absolute;
+      inset: -20px;
+      background-image: var(--photo);
+      background-size: cover;
+      background-position: center top;
+      filter: blur(24px) brightness(.65);
+    }}
+    .hero-masthead__shot::after {{
+      content: "";
+      position: absolute;
+      inset: 0;
       background-image: var(--photo);
       background-repeat: no-repeat;
-      background-size: var(--photo-fit);
+      background-size: contain;
       background-position: center top;
     }}
 
