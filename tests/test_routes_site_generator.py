@@ -713,6 +713,72 @@ def test_home_shows_qa_warning_badge_for_flagged_version(monkeypatch):
     assert "No &lt;h1&gt; found on the page." in resp.text
 
 
+def test_home_shows_email_badge_with_source_tooltip_when_present(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        site_generator_state,
+        "list_orgs",
+        lambda: [{
+            "org_id": "org-1",
+            "name": "Riverside Music",
+            "category": "music",
+            "city": "Austin",
+            "state": "TX",
+            "phone": "(512) 555-0100",
+            "email": "maria@riversidemusic.com",
+            "email_source": "https://www.riversidemusic.com/contact (high confidence)",
+            "themes": {
+                "music-studio": [
+                    {
+                        "version_n": 1, "label": "Studio concept", "preview_url": "p1",
+                        "short_url": "https://short/v1", "selected_for_sms": True,
+                        "qa_warnings": [],
+                    },
+                ],
+            },
+        }],
+    )
+
+    resp = client.get("/site-generator", params={"key": "secret123"})
+
+    assert resp.status_code == 200
+    assert "site-gen-email" in resp.text
+    assert "maria@riversidemusic.com" in resp.text
+    assert "https://www.riversidemusic.com/contact (high confidence)" in resp.text
+
+
+def test_home_shows_no_email_badge_when_absent(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        site_generator_state,
+        "list_orgs",
+        lambda: [{
+            "org_id": "org-1",
+            "name": "Riverside Music",
+            "category": "music",
+            "city": "Austin",
+            "state": "TX",
+            "phone": "(512) 555-0100",
+            "email": "",
+            "email_source": "",
+            "themes": {
+                "music-studio": [
+                    {
+                        "version_n": 1, "label": "Studio concept", "preview_url": "p1",
+                        "short_url": "https://short/v1", "selected_for_sms": True,
+                        "qa_warnings": [],
+                    },
+                ],
+            },
+        }],
+    )
+
+    resp = client.get("/site-generator", params={"key": "secret123"})
+
+    assert resp.status_code == 200
+    assert "site-gen-email" not in resp.text
+
+
 def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     calls = []

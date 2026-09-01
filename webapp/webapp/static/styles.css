@@ -210,6 +210,18 @@ form.filters button:hover { background: #2d4229; }
   cursor: help;
   margin: 0 6px;
 }
+.site-gen-email {
+  display: inline-block;
+  background: #eef6ff;
+  color: #2c4a6e;
+  border: 1px solid #90b8e0;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: help;
+  margin: 0 6px;
+}
 .click-log-table td {
   vertical-align: top;
 }

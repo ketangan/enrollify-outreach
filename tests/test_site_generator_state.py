@@ -547,6 +547,75 @@ def test_record_regeneration_persists_phone_falling_back_to_orgs_known_phone(fak
     assert org["phone"] == "(512) 555-0100"
 
 
+def test_email_is_persisted_and_readable(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-email-1", name="Test School", category="music",
+        rendered=[{
+            "type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1",
+            "email": "maria@testschool.com", "email_source": "https://www.testschool.com/contact (high confidence)",
+        }],
+        job_id="job-1",
+    )
+
+    org = state.get_org("org-email-1")
+    assert org["email"] == "maria@testschool.com"
+    assert org["email_source"] == "https://www.testschool.com/contact (high confidence)"
+
+
+def test_email_defaults_to_empty_when_never_found(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-email-2", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+
+    org = state.get_org("org-email-2")
+    assert org["email"] == ""
+    assert org["email_source"] == ""
+
+
+def test_email_found_on_regeneration_backfills_org(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-email-3", name="Test School", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1"}],
+        job_id="job-1",
+    )
+    state.record_regeneration(
+        org_id="org-email-3", theme="music-studio",
+        item={
+            "subject_id": "org-email-3-v2", "label": "Studio", "url": "u2", "preview_url": "p2",
+            "email": "front-desk@testschool.com", "email_source": "https://www.yelp.com/biz/test-school (medium confidence)",
+        },
+        job_id="job-2",
+    )
+
+    org = state.get_org("org-email-3")
+    assert org["email"] == "front-desk@testschool.com"
+    assert org["email_source"] == "https://www.yelp.com/biz/test-school (medium confidence)"
+
+
+def test_record_regeneration_persists_email_falling_back_to_orgs_known_email(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-email-4", name="Test School", category="music",
+        rendered=[{
+            "type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1",
+            "email": "maria@testschool.com", "email_source": "https://www.testschool.com (high confidence)",
+        }],
+        job_id="job-1",
+    )
+    # A regen run that didn't re-search (email already on file) has nothing
+    # in `item` for email — must not blank out the org's saved email.
+    state.record_regeneration(
+        org_id="org-email-4", theme="music-studio",
+        item={"subject_id": "org-email-4-v2", "label": "Studio", "url": "u2", "preview_url": "p2"},
+        job_id="job-2",
+    )
+
+    org = state.get_org("org-email-4")
+    assert org["email"] == "maria@testschool.com"
+    assert org["email_source"] == "https://www.testschool.com (high confidence)"
+
+
 def test_backfill_missing_phones_reads_no_website_schools_once_for_multiple_orgs(fake_sheet, monkeypatch):
     state.record_initial_generation(
         org_id="org-16", name="Test School A", category="music",

@@ -27,7 +27,7 @@ HEADERS = [
     "theme", "version_n", "subject_id", "label", "url", "preview_url",
     "revision_notes", "job_id", "created_at", "short_url", "owner_name",
     "no_website_schools_id", "phone", "selected_for_sms", "qa_warnings",
-    "texted",
+    "texted", "email", "email_source",
 ]
 
 _SPACE_RE = re.compile(r"\s+")
@@ -82,6 +82,8 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
             "owner_name": "",
             "no_website_schools_id": "",
             "phone": "",
+            "email": "",
+            "email_source": "",
             "texted": False,
             "themes": {},
         })
@@ -103,6 +105,12 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
         # first non-empty wins the same way owner_name does.
         if not org["phone"] and str(row.get("phone", "")).strip():
             org["phone"] = str(row["phone"]).strip()
+        # Email is an org-level fact found once (see generate_full_site's
+        # "search once, save it" gate) and never re-searched on regeneration
+        # — first non-empty wins the same way owner_name/phone do.
+        if not org["email"] and str(row.get("email", "")).strip():
+            org["email"] = str(row["email"]).strip()
+            org["email_source"] = str(row.get("email_source", "")).strip()
         # Mutable, but mark_org_texted() writes it to every row for the org
         # at once, so any single row having it is enough to trust — this
         # only needs the "one row got missed somehow" fallback, not a
@@ -355,6 +363,9 @@ def record_initial_generation(
             item.get("phone", ""),
             "yes",
             " | ".join(item.get("qa_warnings") or []),
+            "",  # texted
+            item.get("email", ""),
+            item.get("email_source", ""),
         ])
     ws.append_rows(rows, value_input_option="USER_ENTERED")
 
@@ -388,6 +399,9 @@ def record_regeneration(
         item.get("phone") or org.get("phone", ""),
         "yes",
         " | ".join(item.get("qa_warnings") or []),
+        "",  # texted — org-level, left blank here same as at initial creation
+        item.get("email") or org.get("email", ""),
+        item.get("email_source") or org.get("email_source", ""),
     ], value_input_option="USER_ENTERED")
     select_sms_version(org_id, theme, next_version_n)
 

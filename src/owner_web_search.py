@@ -73,6 +73,7 @@ class Stage2Result:
     owner_title: str = ""
     owner_source_url: str = ""
     best_email: str = ""
+    email_source_url: str = ""
     email_confidence: str = "unverified"   # high / medium / low / unverified
     reason: str = ""
     used_llm: bool = True
@@ -136,7 +137,7 @@ EMAIL_SEARCH_PROMPT = """You are helping find the best contact email for a small
 Person: {owner_name}
 Title: {owner_title}
 School: {name}
-School domain: {domain}
+School domain: {domain_display}
 Owner source URL: {owner_source_url}
 Location: {city}, {state}
 
@@ -146,7 +147,7 @@ Known profile/review links found on the school's own website:
 Use the web_search tool ONCE to find an email. Useful queries:
 - If known profile/review links are listed above, inspect or search those exact Facebook/Instagram/Yelp/LinkedIn URLs first because the school itself linked them.
 - "{owner_name}" "{name}" email contact
-- "{owner_name}" "{domain}"
+{domain_query_line}
 - "{name}" contact email
 
 Return JSON ONLY:
@@ -170,7 +171,7 @@ Rules:
 - "high": email is on the school's own site or an official profile linked from the school's site.
 - "medium": generic official school email, or owner-specific email in a directory, press release, or third-party listing.
 - "low": you're uncertain the email belongs to this person.
-- Prefer emails at "{domain}" over personal gmail/yahoo/etc.
+{domain_preference_line}
 - If you find no email, set found=false."""
 
 
@@ -252,17 +253,32 @@ def _search_email_for_owner(
     client: Anthropic,
     known_profile_urls: list[str] | None = None,
 ) -> Stage2Result:
+    # No known website is the normal case for the site generator's leads
+    # (they're leads precisely because they have no site) — search anyway.
+    # The prompt's fallback queries ("{name}" contact email, etc.) don't
+    # need a domain, and the confidence math below degrades gracefully
+    # when domain_matches can never be true.
     domain = _domain_from_url(website)
-    if not domain:
-        result.reason = "web_search:owner_found_no_domain"
-        result.email_confidence = "low"
-        return result
+    if domain:
+        domain_display = domain
+        domain_query_line = f'- "{owner_name}" "{domain}"'
+        domain_preference_line = f'- Prefer emails at "{domain}" over personal gmail/yahoo/etc.'
+    else:
+        domain_display = "(none — this school has no known website yet)"
+        domain_query_line = f'- "{owner_name}" "{name}" gmail OR yahoo OR outlook contact'
+        domain_preference_line = (
+            "- There is no known school domain, so a personal gmail/yahoo/outlook "
+            "address is an acceptable and common answer for a small school without "
+            "a website — do not penalize it for that."
+        )
 
     prompt_b = EMAIL_SEARCH_PROMPT.format(
         owner_name=owner_name,
         owner_title=owner_title or "owner",
         name=name,
-        domain=domain,
+        domain_display=domain_display,
+        domain_query_line=domain_query_line,
+        domain_preference_line=domain_preference_line,
         owner_source_url=owner_source_url or "",
         city=city or "",
         state=state or "",
@@ -291,6 +307,7 @@ def _search_email_for_owner(
         return result
 
     result.best_email = found_email
+    result.email_source_url = email_source_url
     result.all_emails_found = [found_email]
 
     # Confidence ladder (no SMTP, so we lean conservatively):

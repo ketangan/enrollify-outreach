@@ -53,7 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from anthropic import Anthropic
 
 from scripts import generate_website_mocks as mocks
-from src import config, mock_content_llm, no_website_schools, photo_quality, places, r2_storage, shortlinks, site_generator_state, site_qa, website_existence_check, website_mocks
+from src import config, mock_content_llm, no_website_schools, owner_web_search, photo_quality, places, r2_storage, shortlinks, site_generator_state, site_qa, website_existence_check, website_mocks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -213,6 +213,7 @@ def generate_full_site(
     versions: str = "auto",
     revision_notes: str = "",
     subject_id: str = "",
+    org_id: str = "",
     skip_existing_website_check: bool = False,
     uploaded_photos: list[dict] | None = None,
     hero_photo: dict | None = None,
@@ -259,7 +260,15 @@ def generate_full_site(
 
     Pass `versions` scoped to one theme (e.g. "warm") and reuse the same
     `subject_id` from a prior call to regenerate a single existing concept
-    rather than generate a fresh business from scratch."""
+    rather than generate a fresh business from scratch.
+
+    `org_id`, when given (regenerations always pass it — see
+    webapp/webapp/routes_site_generator.py's regenerate route), is used to
+    look up whether a sourced email was already found for this business
+    (site_generator_state.get_org) — if so, the web search below is
+    skipped and the saved value is reused rather than searched again. A
+    first-time generation has no org_id yet, so the lookup naturally comes
+    back empty and the search runs once."""
     mock_type = website_mocks.normalize_mock_type("", category=category)
     subject_id = subject_id or f"{mocks._slug(name)}-{uuid.uuid4().hex[:6]}"
     subject = {
@@ -368,6 +377,58 @@ def generate_full_site(
             name=name, raw_review_text=" ".join(review_raw_texts), client=anthropic_client,
         )
 
+    # A sourced email, never a guessed one (see src/owner_web_search.py's
+    # own "don't synthesize firstname@domain" rule). Once an email is found
+    # and saved, every later regeneration reuses it instead of re-searching
+    # — but a regeneration where no email was ever found still retries
+    # (self-healing), since there's no separate "already tried" flag.
+    # `org_id or subject_id` is the same lookup key record_initial_generation/
+    # record_regeneration write under: a first-time generation has no
+    # org_id yet, so this naturally comes back empty and the search below
+    # runs.
+    email = ""
+    email_source = ""
+    existing_org = site_generator_state.get_org(org_id or subject_id)
+    if existing_org and existing_org.get("email"):
+        email = existing_org["email"]
+        email_source = existing_org.get("email_source", "")
+    else:
+        # No saved email yet — either a true first generation, or a past
+        # search that found nothing. Either way, search now: this is
+        # self-healing (a regenerate can succeed where an earlier search
+        # came up empty) and needs no separate "is this a regen" flag,
+        # since a found email always short-circuits this branch on every
+        # later call once it's on file.
+        search_client = anthropic_client or Anthropic()
+        if owner_name:
+            # Cheap path: the owner's name is already known from review
+            # text, so only the email-only search is needed (1 web_search
+            # call instead of 3).
+            email_result = owner_web_search.find_email_via_web(
+                owner_name=owner_name, owner_title="", owner_source_url="",
+                name=name, website=subject["website"], category=category,
+                city=city, state=state, client=search_client,
+            )
+        else:
+            # Fallback: neither owner name nor email is known yet — one
+            # search finds both.
+            email_result = owner_web_search.find_owner_via_web(
+                name, subject["website"], category, city, state, search_client,
+            )
+            if not owner_name and email_result.owner_name:
+                owner_name = email_result.owner_name
+        if email_result.best_email:
+            email = email_result.best_email
+            # A URL the source can actually be checked at is what makes
+            # this trustworthy rather than a guess — fall back to the
+            # internal reason string only on the rare case a source URL
+            # wasn't captured, so the tooltip is never completely empty.
+            # Confidence is folded into this single stored string (rather
+            # than a separate sheet column) since it's an org-level fact
+            # found once and displayed, not something anything else reads.
+            source_url = email_result.email_source_url or email_result.reason
+            email_source = f"{source_url} ({email_result.email_confidence} confidence)"
+
     # Concrete offerings (instruments for music, activities for sports) —
     # feeds the category's "detail" section (see mock_templates_music.py /
     # mock_templates_sports.py), which otherwise renders nothing at all.
@@ -454,6 +515,7 @@ def generate_full_site(
         {
             **{k: v for k, v in item.items() if k != "html"},
             "subject_id": subject_id, "owner_name": owner_name, "phone": subject["phone"],
+            "email": email, "email_source": email_source,
         }
         for item in persisted
     ]
@@ -566,6 +628,7 @@ def main() -> None:
             versions=args.versions,
             revision_notes=args.revision_notes,
             subject_id=args.subject_id,
+            org_id=args.org_id,
             skip_existing_website_check=args.skip_website_check,
             uploaded_photos=uploaded_photos,
             hero_photo=hero_photo,
@@ -635,6 +698,8 @@ def main() -> None:
         "state": args.state,
         "revision_notes": args.revision_notes,
         "owner_name": rendered[0].get("owner_name", ""),
+        "email": rendered[0].get("email", ""),
+        "email_source": rendered[0].get("email_source", ""),
         "rendered": rendered,
     }, indent=2), encoding="utf-8")
 

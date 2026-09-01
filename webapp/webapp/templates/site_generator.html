@@ -216,6 +216,9 @@
       <summary>
         <span class="site-gen-org-name">{{ org.name }}</span>
         <span class="lead-meta">{{ org.category }}{% if org.city %} · {{ org.city }}{{ ", " + org.state if org.state }}{% endif %} · {{ org.themes|length }} concept{{ "s" if org.themes|length != 1 }}{% if org.phone %} · {{ org.phone }}{% endif %}</span>
+        {% if org.email %}
+          <span class="site-gen-email" title="Source: {{ org.email_source }}">✉ {{ org.email }}</span>
+        {% endif %}
         <form method="POST" action="/site-generator/mark-texted" class="site-gen-texted-form" onclick="event.stopPropagation()">
           <input type="hidden" name="org_id" value="{{ org.org_id }}">
           <label class="site-gen-texted-label">

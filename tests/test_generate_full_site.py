@@ -45,6 +45,34 @@ def _stub_infer_owner_name(monkeypatch):
     monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "")
 
 
+@pytest.fixture(autouse=True)
+def _stub_site_generator_state_get_org(monkeypatch):
+    """generate_full_site() now looks up a saved email via
+    site_generator_state.get_org() before searching — without this stub,
+    every test in this file would make a real Google Sheets API call.
+    Returning None (no existing org) matches "first-time generation" and
+    is what most tests here are. Tests exercising the "reuse saved email"
+    path override this within the test itself."""
+    monkeypatch.setattr(generate_full_site.site_generator_state, "get_org", lambda org_id: None)
+
+
+@pytest.fixture(autouse=True)
+def _stub_owner_web_search(monkeypatch):
+    """With no owner name known (the default — see _stub_infer_owner_name)
+    and no saved org (see _stub_site_generator_state_get_org above), every
+    test would otherwise fall into the find_owner_via_web() web-search
+    fallback and trigger a real Anthropic call. Tests that specifically
+    exercise the email-search feature override these within the test."""
+    monkeypatch.setattr(
+        generate_full_site.owner_web_search, "find_owner_via_web",
+        lambda *a, **kw: generate_full_site.owner_web_search.Stage2Result(),
+    )
+    monkeypatch.setattr(
+        generate_full_site.owner_web_search, "find_email_via_web",
+        lambda **kw: generate_full_site.owner_web_search.Stage2Result(),
+    )
+
+
 def _stub_place(**overrides) -> places.DiscoveredPlace:
     # website defaults non-empty: a real Google Place usually has one on
     # file, and (more importantly for tests) a known website skips the new
@@ -1178,6 +1206,127 @@ def test_generate_full_site_skips_category_offerings_call_with_no_review_text(mo
     )
 
     assert len(rendered) == 4  # generation still succeeds normally
+
+
+def test_generate_full_site_cheap_email_search_when_owner_name_known(monkeypatch, tmp_path):
+    # Owner name already known from review text -> only the one-shot
+    # email-only search should run, never the full owner+email search.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "Maria Gomez")
+
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError("find_owner_via_web should not run when owner_name is already known")
+
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_owner_via_web", _should_not_be_called)
+
+    captured = {}
+
+    def _fake_find_email(**kwargs):
+        captured.update(kwargs)
+        return generate_full_site.owner_web_search.Stage2Result(
+            best_email="maria@riversidemusiccollective.com",
+            email_source_url="https://www.riversidemusiccollective.com/contact",
+            email_confidence="high",
+        )
+
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_email_via_web", _fake_find_email)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert captured["owner_name"] == "Maria Gomez"
+    assert all(item["email"] == "maria@riversidemusiccollective.com" for item in rendered)
+    assert all("riversidemusiccollective.com/contact" in item["email_source"] for item in rendered)
+    assert all("high" in item["email_source"] for item in rendered)
+
+
+def test_generate_full_site_fallback_owner_and_email_search_when_no_owner_name(monkeypatch, tmp_path):
+    # No owner name known -> falls back to find_owner_via_web, which finds
+    # owner name and email together in one search.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "")
+
+    def _should_not_be_called(**kw):
+        raise AssertionError("find_email_via_web should not run when owner_name is unknown")
+
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_email_via_web", _should_not_be_called)
+
+    def _fake_find_owner(*a, **kw):
+        return generate_full_site.owner_web_search.Stage2Result(
+            owner_name="Jordan Lee",
+            best_email="jordan@gmail.com",
+            email_source_url="https://www.yelp.com/biz/riverside-music-collective-austin",
+            email_confidence="medium",
+        )
+
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_owner_via_web", _fake_find_owner)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert all(item["owner_name"] == "Jordan Lee" for item in rendered)
+    assert all(item["email"] == "jordan@gmail.com" for item in rendered)
+    assert all("yelp.com/biz/riverside-music-collective-austin" in item["email_source"] for item in rendered)
+
+
+def test_generate_full_site_reuses_saved_email_without_searching(monkeypatch, tmp_path):
+    # An org already on file with a saved email -> no search of any kind,
+    # the saved value is reused as-is.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "")
+    monkeypatch.setattr(
+        generate_full_site.site_generator_state, "get_org",
+        lambda org_id: {"email": "front-desk@riversidemusiccollective.com", "email_source": "https://www.riversidemusiccollective.com (high confidence)", "themes": {"studio": []}},
+    )
+
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError("no web search should run when a saved email already exists")
+
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_owner_via_web", _should_not_be_called)
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_email_via_web", _should_not_be_called)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music", org_id="org-123",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert all(item["email"] == "front-desk@riversidemusiccollective.com" for item in rendered)
+    assert all(item["email_source"] == "https://www.riversidemusiccollective.com (high confidence)" for item in rendered)
+
+
+def test_generate_full_site_retries_email_search_on_regen_when_previously_not_found(monkeypatch, tmp_path):
+    # Self-healing: an existing org with NO saved email (a prior search
+    # found nothing) should still retry the search on a later regenerate,
+    # not skip it forever.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "")
+    monkeypatch.setattr(
+        generate_full_site.site_generator_state, "get_org",
+        lambda org_id: {"email": "", "email_source": "", "themes": {"studio": []}},
+    )
+
+    calls = []
+
+    def _fake_find_owner(*a, **kw):
+        calls.append(1)
+        return generate_full_site.owner_web_search.Stage2Result()
+
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_owner_via_web", _fake_find_owner)
+
+    generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music", org_id="org-123",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert calls == [1]
 
 
 def test_main_includes_no_website_schools_id_in_blocked_result_json(monkeypatch, tmp_path):
