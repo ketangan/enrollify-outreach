@@ -105,11 +105,19 @@ def _rows_to_orgs(rows: list[dict]) -> dict[str, dict]:
         # first non-empty wins the same way owner_name does.
         if not org["phone"] and str(row.get("phone", "")).strip():
             org["phone"] = str(row["phone"]).strip()
-        # Email is an org-level fact found once (see generate_full_site's
-        # "search once, save it" gate) and never re-searched on regeneration
-        # — first non-empty wins the same way owner_name/phone do.
-        if not org["email"] and str(row.get("email", "")).strip():
-            org["email"] = str(row["email"]).strip()
+        # Email is an org-level fact searched at most once (see
+        # generate_full_site's "search once, save it" gate). email_source
+        # is non-empty even when a completed search genuinely found no
+        # email — that's the marker generate_full_site relies on to tell
+        # "searched, nothing there" apart from "never searched" and skip
+        # re-running the search on the next regenerate. So the gate here
+        # must be "either field is non-empty," not "email is non-empty" —
+        # gating on email alone would silently drop the no-email marker on
+        # every read, defeating that skip check every time.
+        if not org["email"] and not org["email_source"] and (
+            str(row.get("email", "")).strip() or str(row.get("email_source", "")).strip()
+        ):
+            org["email"] = str(row.get("email", "")).strip()
             org["email_source"] = str(row.get("email_source", "")).strip()
         # Mutable, but mark_org_texted() writes it to every row for the org
         # at once, so any single row having it is enough to trust — this

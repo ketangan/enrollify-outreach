@@ -18,7 +18,9 @@ class _FakeMessages:
     """Returns queued responses in order (one per `.create()` call), so a
     two-search flow (owner name, then email) can be scripted with distinct
     JSON payloads. The last response repeats if more calls happen than
-    responses were queued."""
+    responses were queued. `error`, when set, is raised on every call —
+    _run_web_search's retry loop swallows it and returns None, which is
+    the "search technically failed" path (see Stage2Result.search_error)."""
 
     def __init__(self, responses: list[str] | None = None, error: Exception | None = None):
         self._responses = list(responses or [])
@@ -107,6 +109,21 @@ def test_search_email_for_owner_returns_low_confidence_when_nothing_found():
     )
     assert result.best_email == ""
     assert result.email_confidence == "low"
+    # A genuine completed search, not a technical failure — callers rely
+    # on this distinction to decide whether it's worth retrying later.
+    assert result.search_error is False
+
+
+def test_search_email_for_owner_sets_search_error_on_technical_failure():
+    client = _FakeClient(error=RuntimeError("network exploded"))
+    result = ows._search_email_for_owner(
+        ows.Stage2Result(),
+        owner_name="Maria Gomez", owner_title="Owner", owner_source_url="",
+        name="Riverbend Music Studio", website="", city="Austin", state="TX",
+        client=client,
+    )
+    assert result.best_email == ""
+    assert result.search_error is True
 
 
 def test_search_email_for_owner_rejects_email_without_source_url():
@@ -158,6 +175,19 @@ def test_find_owner_via_web_stops_after_stage_2a_when_no_owner_found():
     assert result.best_email == ""
     # Stage 2B (email search) should never run without an owner name.
     assert client.messages.calls == 1
+    # A real completed search, not a technical failure.
+    assert result.search_error is False
+
+
+def test_find_owner_via_web_sets_search_error_when_stage_2a_fails_technically():
+    client = _FakeClient(error=RuntimeError("network exploded"))
+    result = ows.find_owner_via_web(
+        "Riverbend Music Studio", "https://www.riverbendmusic.com", "music",
+        "Austin", "TX", client,
+    )
+    assert result.owner_name == ""
+    assert result.best_email == ""
+    assert result.search_error is True
 
 
 def test_find_owner_via_web_searches_even_without_known_website():

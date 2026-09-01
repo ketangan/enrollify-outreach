@@ -264,11 +264,11 @@ def generate_full_site(
 
     `org_id`, when given (regenerations always pass it — see
     webapp/webapp/routes_site_generator.py's regenerate route), is used to
-    look up whether a sourced email was already found for this business
+    look up whether an email search already ran for this business
     (site_generator_state.get_org) — if so, the web search below is
-    skipped and the saved value is reused rather than searched again. A
-    first-time generation has no org_id yet, so the lookup naturally comes
-    back empty and the search runs once."""
+    skipped and the saved outcome (found or genuinely not-found) is reused
+    rather than searched again. A first-time generation has no org_id yet,
+    so the lookup naturally comes back empty and the search runs once."""
     mock_type = website_mocks.normalize_mock_type("", category=category)
     subject_id = subject_id or f"{mocks._slug(name)}-{uuid.uuid4().hex[:6]}"
     subject = {
@@ -378,10 +378,14 @@ def generate_full_site(
         )
 
     # A sourced email, never a guessed one (see src/owner_web_search.py's
-    # own "don't synthesize firstname@domain" rule). Once an email is found
-    # and saved, every later regeneration reuses it instead of re-searching
-    # — but a regeneration where no email was ever found still retries
-    # (self-healing), since there's no separate "already tried" flag.
+    # own "don't synthesize firstname@domain" rule). Searched AT MOST ONCE
+    # per business, ever — a regeneration reuses whatever the first search
+    # concluded, including "searched and found nothing," rather than
+    # re-paying for the same search on every regenerate. The one exception
+    # is a search that technically failed (API error/timeout, see
+    # Stage2Result.search_error) rather than genuinely completing with no
+    # result — that's worth retrying since the outcome wasn't determined
+    # yet, not stable like a real "no email exists" finding.
     # `org_id or subject_id` is the same lookup key record_initial_generation/
     # record_regeneration write under: a first-time generation has no
     # org_id yet, so this naturally comes back empty and the search below
@@ -389,16 +393,14 @@ def generate_full_site(
     email = ""
     email_source = ""
     existing_org = site_generator_state.get_org(org_id or subject_id)
-    if existing_org and existing_org.get("email"):
-        email = existing_org["email"]
+    # email_source is non-empty whenever a search completed, whether or not
+    # it found an email — see below, where a completed-but-empty search
+    # still records a marker here specifically so this check can tell "ran
+    # and found nothing" apart from "never ran" without a search_error.
+    if existing_org and (existing_org.get("email") or existing_org.get("email_source")):
+        email = existing_org.get("email", "")
         email_source = existing_org.get("email_source", "")
     else:
-        # No saved email yet — either a true first generation, or a past
-        # search that found nothing. Either way, search now: this is
-        # self-healing (a regenerate can succeed where an earlier search
-        # came up empty) and needs no separate "is this a regen" flag,
-        # since a found email always short-circuits this branch on every
-        # later call once it's on file.
         search_client = anthropic_client or Anthropic()
         if owner_name:
             # Cheap path: the owner's name is already known from review
@@ -428,6 +430,12 @@ def generate_full_site(
             # found once and displayed, not something anything else reads.
             source_url = email_result.email_source_url or email_result.reason
             email_source = f"{source_url} ({email_result.email_confidence} confidence)"
+        elif not email_result.search_error:
+            # A real, completed search that found no email — record that
+            # fact (even though `email` itself stays "") so the gate above
+            # recognizes this business as already searched and doesn't pay
+            # for the same search again on the next regenerate.
+            email_source = f"searched, no public email found ({email_result.reason})"
 
     # Concrete offerings (instruments for music, activities for sports) —
     # feeds the category's "detail" section (see mock_templates_music.py /

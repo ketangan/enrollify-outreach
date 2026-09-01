@@ -574,6 +574,25 @@ def test_email_defaults_to_empty_when_never_found(fake_sheet):
     assert org["email_source"] == ""
 
 
+def test_email_source_persists_even_when_search_genuinely_found_no_email(fake_sheet):
+    # A completed search that found no email is recorded with email=""
+    # but a non-empty email_source marker (see generate_full_site.py) —
+    # that marker must survive the read path so the next regenerate can
+    # recognize the business as already-searched and skip re-searching.
+    state.record_initial_generation(
+        org_id="org-email-5", name="Test School", category="music",
+        rendered=[{
+            "type": "music", "version": "studio", "label": "Studio", "url": "u1", "preview_url": "p1",
+            "email": "", "email_source": "searched, no public email found (web_search:no_owner_found)",
+        }],
+        job_id="job-1",
+    )
+
+    org = state.get_org("org-email-5")
+    assert org["email"] == ""
+    assert org["email_source"] == "searched, no public email found (web_search:no_owner_found)"
+
+
 def test_email_found_on_regeneration_backfills_org(fake_sheet):
     state.record_initial_generation(
         org_id="org-email-3", name="Test School", category="music",

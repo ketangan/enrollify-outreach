@@ -78,6 +78,13 @@ class Stage2Result:
     reason: str = ""
     used_llm: bool = True
     stage: str = ""
+    # True only when the search itself technically failed (API error,
+    # timeout, unparseable response) — never set for a search that
+    # completed and genuinely found nothing. Callers use this to decide
+    # whether a "no email found" result is worth retrying later: a real
+    # not-found is stable and won't change on retry, but a technical
+    # failure might succeed next time.
+    search_error: bool = False
     all_emails_found: list[str] = field(default_factory=list)
 
 
@@ -286,7 +293,17 @@ def _search_email_for_owner(
     )
     parsed_b = _run_web_search(prompt_b, client)
 
-    if not parsed_b or not parsed_b.get("found"):
+    if parsed_b is None:
+        # The search itself failed (API error, timeout, unparseable
+        # response) — distinct from a search that completed and genuinely
+        # found nothing, so callers know this is worth retrying later.
+        result.reason = "web_search:email_search_failed"
+        result.email_confidence = "low"
+        result.stage += "|2B_error"
+        result.search_error = True
+        return result
+
+    if not parsed_b.get("found"):
         result.reason = "web_search:owner_found_no_email"
         result.email_confidence = "low"
         result.stage += "|2B_no_email"
@@ -436,9 +453,12 @@ def find_owner_via_web(
     parsed = _run_web_search(prompt_a, client, tool=OWNER_WEB_SEARCH_TOOL)
 
     if not parsed:
+        # Technical failure, not a genuine "no owner found" — see
+        # Stage2Result.search_error.
         result.reason = "stage2a_no_json"
         result.email_confidence = "low"
         result.stage = "2A_failed"
+        result.search_error = True
         return result
 
     if not parsed.get("found"):

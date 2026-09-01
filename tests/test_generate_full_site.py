@@ -1301,10 +1301,11 @@ def test_generate_full_site_reuses_saved_email_without_searching(monkeypatch, tm
     assert all(item["email_source"] == "https://www.riversidemusiccollective.com (high confidence)" for item in rendered)
 
 
-def test_generate_full_site_retries_email_search_on_regen_when_previously_not_found(monkeypatch, tmp_path):
-    # Self-healing: an existing org with NO saved email (a prior search
-    # found nothing) should still retry the search on a later regenerate,
-    # not skip it forever.
+def test_generate_full_site_retries_email_search_when_never_actually_completed(monkeypatch, tmp_path):
+    # An org with both email and email_source blank means no search has
+    # ever completed for it (either truly never run, or a prior attempt
+    # technically failed — see search_error) — this should still search,
+    # since there's no recorded outcome yet to reuse.
     monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
     monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
     monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "")
@@ -1327,6 +1328,87 @@ def test_generate_full_site_retries_email_search_on_regen_when_previously_not_fo
     )
 
     assert calls == [1]
+
+
+def test_generate_full_site_does_not_retry_a_genuine_not_found_result(monkeypatch, tmp_path):
+    # A prior search that completed and genuinely found no email (recorded
+    # as a non-empty email_source marker even though email itself is "")
+    # must not be retried on a later regenerate — retrying the same query
+    # would very likely just find nothing again, at real API cost.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "")
+    monkeypatch.setattr(
+        generate_full_site.site_generator_state, "get_org",
+        lambda org_id: {
+            "email": "", "email_source": "searched, no public email found (web_search:no_owner_found)",
+            "themes": {"studio": []},
+        },
+    )
+
+    def _should_not_be_called(*a, **kw):
+        raise AssertionError("a genuinely completed not-found search should never be retried")
+
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_owner_via_web", _should_not_be_called)
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_email_via_web", _should_not_be_called)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music", org_id="org-123",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert all(item["email"] == "" for item in rendered)
+    assert all(item["email_source"] == "searched, no public email found (web_search:no_owner_found)" for item in rendered)
+
+
+def test_generate_full_site_records_a_genuine_not_found_outcome_on_first_search(monkeypatch, tmp_path):
+    # The first time a search completes and finds nothing, that outcome
+    # must be persisted (via email_source, even with email left blank) so
+    # the next regenerate can recognize it as already-searched and skip
+    # re-running it (see the test above).
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "")
+
+    def _fake_find_owner(*a, **kw):
+        return generate_full_site.owner_web_search.Stage2Result(
+            reason="web_search:no_owner_found", search_error=False,
+        )
+
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_owner_via_web", _fake_find_owner)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert all(item["email"] == "" for item in rendered)
+    assert all("no public email found" in item["email_source"] for item in rendered)
+    assert all("web_search:no_owner_found" in item["email_source"] for item in rendered)
+
+
+def test_generate_full_site_does_not_persist_a_technical_search_failure(monkeypatch, tmp_path):
+    # A search that technically failed (API error/timeout) is not the same
+    # as a real "no email" finding — nothing should be persisted, so the
+    # next regenerate retries instead of treating the failure as final.
+    monkeypatch.setattr(generate_full_site.places, "find_business", lambda name, city, state, **kw: _stub_place())
+    monkeypatch.setattr(generate_full_site.places, "fetch_photo_bytes", lambda *a, **k: None)
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_owner_name", lambda **kw: "")
+
+    def _fake_find_owner(*a, **kw):
+        return generate_full_site.owner_web_search.Stage2Result(
+            reason="stage2a_no_json", search_error=True,
+        )
+
+    monkeypatch.setattr(generate_full_site.owner_web_search, "find_owner_via_web", _fake_find_owner)
+
+    rendered = generate_full_site.generate_full_site(
+        name="Riverside Music Collective", category="music",
+        base_url="https://example.com", output_dir=tmp_path,
+    )
+
+    assert all(item["email"] == "" for item in rendered)
+    assert all(item["email_source"] == "" for item in rendered)
 
 
 def test_main_includes_no_website_schools_id_in_blocked_result_json(monkeypatch, tmp_path):
