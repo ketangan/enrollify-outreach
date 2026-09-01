@@ -33,6 +33,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from rapidfuzz import fuzz
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -132,24 +133,92 @@ def _normalize_phone(value: str) -> str:
     return digits
 
 
-def _school_identity_keys(*, name: str = "", city: str = "", state: str = "", address: str = "", phone: str = "") -> set[str]:
-    name_key = _normalize_text(name)
-    if not name_key:
-        return set()
+def _normalize_zip(value: str) -> str:
+    digits = re.sub(r"\D+", "", str(value or ""))
+    return digits[:5]
 
-    keys: set[str] = set()
-    city_key = _normalize_text(city)
-    state_key = _normalize_text(state)
-    address_key = _normalize_text(address)
+
+# Fuzzy name match, rapidfuzz.fuzz.token_set_ratio (0-100) — this already
+# scores on token overlap rather than exact string equality, so it's also
+# naturally a "subset" match for addresses (e.g. a manually-typed "123 Main
+# St" scores high against Places' full "123 Main St, Suite 200, City, CA
+# 90001, USA"), not just typo tolerance for names.
+#
+# Stricter than src/places.py's MIN_MATCH_CONFIDENCE (60) on purpose: that
+# threshold picks the best of several real Places search results (a so-so
+# pick still beats guessing), where a false positive here would silently
+# block a genuinely new, distinct lead from ever being added.
+NAME_DUP_THRESHOLD = 90
+ADDRESS_SUBSET_THRESHOLD = 70
+
+_LEADING_NUMBER_RE = re.compile(r"^\s*(\d+)")
+
+
+def _street_number(address: str) -> str:
+    """Leading digits of an address, e.g. "2650" from "2650 Pacific Ave...".
+
+    token_set_ratio scores a street number as just one token among many, so
+    two addresses on the same street that differ ONLY in street number
+    (e.g. "2650 Pacific Ave" vs "2418 Pacific Ave", two real, different
+    buildings) still land at 90%+ similarity — indistinguishable from a
+    genuine subset/typo match on the fuzzy score alone. This is pulled out
+    separately so that mismatch can veto the fuzzy score explicitly."""
+    m = _LEADING_NUMBER_RE.match(address or "")
+    return m.group(1) if m else ""
+
+
+def _same_school_by_identity(*, name: str, city: str, state: str, address: str, phone: str, zip_code: str,
+                              row: dict) -> bool:
+    """A strong fuzzy name match, corroborated by at least one loose
+    location/contact signal — but a *conflicting* phone or street number
+    vetoes the match outright, even if a coarser signal like zip agrees.
+    This matters most for multi-site organizations that share one brand
+    name across a few campuses in the same zip/city (a real case seen in
+    this pipeline: two distinct "Young Horizons" locations 232 street
+    numbers apart on the same road, same zip) — those must NOT collapse
+    into one lead just because the name and zip line up.
+
+    Exact-string address matching was dropped entirely because the same
+    real address gets typed too many different ways (with/without a unit
+    number, "St" vs "Street", with/without a trailing "USA", ...); zip and
+    city+state survive typing variance far better, and a fuzzy score
+    handles the rest as a subset match rather than requiring exact
+    equality — as long as the street number itself doesn't disagree."""
+    name = name.strip()
+    row_name = str(row.get("name", "")).strip()
+    if not name or not row_name:
+        return False
+    if fuzz.token_set_ratio(name, row_name) < NAME_DUP_THRESHOLD:
+        return False
+
+    address = address.strip()
+    row_address = str(row.get("address", "")).strip()
+    new_num, row_num = _street_number(address), _street_number(row_address)
+    if new_num and row_num and new_num != row_num:
+        return False
+
     phone_key = _normalize_phone(phone)
+    row_phone = _normalize_phone(str(row.get("phone", "")))
+    if phone_key and row_phone and phone_key != row_phone:
+        return False
 
-    if city_key and state_key:
-        keys.add(f"name_city_state:{name_key}|{city_key}|{state_key}")
-    if address_key:
-        keys.add(f"name_address:{name_key}|{address_key}")
-    if phone_key:
-        keys.add(f"name_phone:{name_key}|{phone_key}")
-    return keys
+    if phone_key and row_phone and phone_key == row_phone:
+        return True
+
+    zip_key = _normalize_zip(zip_code)
+    row_zip = _normalize_zip(str(row.get("zip", "")))
+    if zip_key and row_zip and zip_key == row_zip:
+        return True
+
+    city_key, state_key = _normalize_text(city), _normalize_text(state)
+    row_city, row_state = _normalize_text(str(row.get("city", ""))), _normalize_text(str(row.get("state", "")))
+    if city_key and state_key and city_key == row_city and state_key == row_state:
+        return True
+
+    if address and row_address and fuzz.token_set_ratio(address, row_address) >= ADDRESS_SUBSET_THRESHOLD:
+        return True
+
+    return False
 
 
 def _generate_id(website: str) -> str:
@@ -167,14 +236,14 @@ def _is_duplicate(
     state: str = "",
     address: str = "",
     phone: str = "",
+    zip_code: str = "",
 ) -> tuple[bool, str]:
     """Check Leads and Archive for an existing matching school.
 
     Returns (is_dup, where) where `where` is 'leads', 'archive', or ''.
     """
     website_keys = _website_dedupe_keys(website)
-    identity_keys = _school_identity_keys(name=name, city=city, state=state, address=address, phone=phone)
-    if not website_keys and not identity_keys:
+    if not website_keys and not name.strip():
         return False, ""
 
     for tab, where in ((config.TAB_LEADS, "leads"), (config.TAB_ARCHIVE, "archive")):
@@ -185,14 +254,9 @@ def _is_duplicate(
         for r in rows:
             if website_keys and website_keys & _website_dedupe_keys(str(r.get("website", ""))):
                 return True, where
-            row_identity_keys = _school_identity_keys(
-                name=str(r.get("name", "")),
-                city=str(r.get("city", "")),
-                state=str(r.get("state", "")),
-                address=str(r.get("address", "")),
-                phone=str(r.get("phone", "")),
-            )
-            if identity_keys and identity_keys & row_identity_keys:
+            if name.strip() and _same_school_by_identity(
+                name=name, city=city, state=state, address=address, phone=phone, zip_code=zip_code, row=r,
+            ):
                 return True, where
 
     return False, ""
@@ -354,6 +418,7 @@ def leads_add_submit(
         state=state,
         address=address,
         phone=phone,
+        zip_code=zip,
     )
     if is_dup:
         return RedirectResponse(

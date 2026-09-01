@@ -100,6 +100,7 @@ def _append_ready_for_owner_lookup_lead(row: dict, *, website: str, enrollment_m
         state=row.get("state", ""),
         address=row.get("address", ""),
         phone=row.get("phone", ""),
+        zip_code=row.get("zip", ""),
     )
     if is_dup:
         raise HTTPException(409, f"A matching school already exists in {where}.")
