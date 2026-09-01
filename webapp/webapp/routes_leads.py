@@ -10,9 +10,14 @@ Manual add:
   GET  /leads/add — render form
   POST /leads/add — write to sheet, redirect to /leads?q=<name>
 
-  Two submit modes (form-controlled):
-    pipeline  → status=pending_classify, downstream picks it up
-    skip      → status=ready_to_send, next daily run drafts it
+  The starting status is derived from what you fill in, not a mode you pick:
+    no enrollment method given        → pending_classify (Phase 3 classifies it)
+    enrollment method given, no email → ready_for_owner_lookup (Phase 4 finds a contact)
+    enrollment method AND email given → ready_to_send (next daily run drafts it)
+
+  Email is what actually gates "ready to send" — Phase 5 (drafting) hard-requires
+  best_email to render anything; owner_name is optional everywhere and just
+  improves the greeting (falls back to "there" if left blank — see drafter.py).
 """
 
 from __future__ import annotations
@@ -312,13 +317,8 @@ def leads_add_submit(
     best_email: str = Form(""),
     enrollment_method: str = Form(""),
     notes: str = Form(""),
-    mode: str = Form("pipeline"),  # "pipeline" or "skip"
 ):
-    """Write a new lead row.
-
-    mode=pipeline → status=pending_classify (downstream picks it up)
-    mode=skip     → status=ready_to_send (daily run drafts it tomorrow)
-    """
+    """Write a new lead row. See module docstring for the status-derivation rule."""
     name = name.strip()
     website = website.strip()
     category = category.strip().lower()
@@ -334,23 +334,17 @@ def leads_add_submit(
             status_code=303,
         )
 
-    if mode == "skip":
-        # Skip pipeline requires complete info — otherwise the draft will fail
-        missing = []
-        if not best_email:
-            missing.append("best_email")
-        if not enrollment_method:
-            missing.append("enrollment_method")
-        if not owner_name:
-            missing.append("owner_name")
-        if missing:
-            return RedirectResponse(
-                f"/leads/add?error=skip_requires_{'_'.join(missing)}"
-                f"&name={name}&website={website}&category={category}"
-                f"&owner_name={owner_name}&best_email={best_email}"
-                f"&enrollment_method={enrollment_method}",
-                status_code=303,
-            )
+    if best_email and not enrollment_method:
+        # An email with no enrollment method can't be drafted — Phase 5
+        # picks its email template solely off enrollment_method (see
+        # drafter.ENROLLMENT_METHOD_TO_TEMPLATE), so this combination has
+        # no template to render against.
+        return RedirectResponse(
+            f"/leads/add?error=email_requires_enrollment_method"
+            f"&name={name}&website={website}&category={category}"
+            f"&owner_name={owner_name}&best_email={best_email}",
+            status_code=303,
+        )
 
     # ─── Dedupe ─────────────────────────────────────────────────────
     is_dup, where = _is_duplicate(
@@ -378,13 +372,21 @@ def leads_add_submit(
     lead_id = _generate_id(website)
     today = date.today().isoformat()
 
-    if mode == "skip":
+    if best_email:
+        # Enrollment method is guaranteed non-empty here — validated above.
         status = "ready_to_send"
         email_confidence = "manual"
         last_action = "manual_add_skip_pipeline"
+    elif enrollment_method:
+        # Known enrollment method but no contact yet — skip Phase 3's
+        # classification (we already know the answer) and go straight to
+        # Phase 4's owner/email lookup.
+        status = "ready_for_owner_lookup"
+        email_confidence = ""
+        last_action = "manual_add_known_enrollment_method"
     else:
         status = "pending_classify"
-        email_confidence = "manual" if best_email else ""
+        email_confidence = ""
         last_action = "manual_add"
 
     new_row = [
@@ -425,8 +427,7 @@ def leads_add_submit(
             status_code=303,
         )
 
-    logger.info("Added manual lead %s (%s, mode=%s) status=%s",
-                lead_id, name, mode, status)
+    logger.info("Added manual lead %s (%s) status=%s", lead_id, name, status)
 
     # Redirect to /leads, filtered to show the new row
     return RedirectResponse(f"/leads?q={name}", status_code=303)

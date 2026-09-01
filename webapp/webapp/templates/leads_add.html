@@ -3,10 +3,14 @@
 <h2>Add lead</h2>
 
 <p class="muted" style="max-width: 720px;">
-  Add a school manually. Choose whether you want the pipeline to classify and
-  find an owner, or skip straight to drafting (only if you already have a
-  verified email + enrollment method).
+  Add a school manually. Where it starts in the pipeline depends on what you
+  fill in below — no need to pick a mode:
 </p>
+<ul class="muted" style="max-width: 720px; font-size: 13px; margin-top: -8px;">
+  <li><strong>Nothing else filled in</strong> — goes through Phase 3 to get classified.</li>
+  <li><strong>Enrollment method, no email</strong> — skips straight to Phase 4 to find a contact.</li>
+  <li><strong>Enrollment method + email</strong> — skips straight to <code>ready_to_send</code>; the next daily run drafts and sends it.</li>
+</ul>
 
 {% if error %}
 <div class="pipeline-alert pipeline-alert-warning">
@@ -19,9 +23,9 @@
   {% elif error == 'duplicate_in_archive' %}
     A matching school is in the Archive (previously processed).
     Pick a different lead or restore it manually.
-  {% elif error.startswith('skip_requires_') %}
-    "Skip pipeline" needs all of: owner name, email, enrollment method.
-    Missing: <code>{{ error.replace('skip_requires_', '').replace('_', ', ') }}</code>
+  {% elif error == 'email_requires_enrollment_method' %}
+    An email needs an enrollment method too — that's what picks which template gets drafted.
+    Either add an enrollment method, or remove the email to send this to Phase 4 first.
   {% elif error == 'sheet_write_failed' %}
     Sheet write failed — try again in a moment.
   {% else %}
@@ -82,11 +86,12 @@
   </fieldset>
 
   <fieldset>
-    <legend>Owner info (optional for pipeline, required for skip-pipeline)</legend>
+    <legend>Contact info (optional — leave blank for whatever you don't know yet)</legend>
 
     <label>
       Owner name
       <input type="text" name="owner_name" value="{{ form.owner_name }}">
+      <span class="muted" style="font-size: 12px;">Only affects the greeting — falls back to "there" if left blank.</span>
     </label>
 
     <label>
@@ -98,12 +103,13 @@
     <label>
       Best email
       <input type="email" name="best_email" value="{{ form.best_email }}">
+      <span class="muted" style="font-size: 12px;">Filling this in sends it straight to <code>ready_to_send</code> — requires an enrollment method too.</span>
     </label>
 
     <label>
       Enrollment method
       <select name="enrollment_method">
-        <option value="">— leave for Phase 3 —</option>
+        <option value="">— leave for Phase 3 to figure out —</option>
         {% for em in enrollment_methods %}
           <option value="{{ em }}" {% if em == form.enrollment_method %}selected{% endif %}>{{ em }}</option>
         {% endfor %}
@@ -120,21 +126,9 @@
   </fieldset>
 
   <div class="add-lead-actions">
-    <button type="submit" name="mode" value="pipeline" class="btn-primary">
-      Add → run through pipeline
-    </button>
-    <button type="submit" name="mode" value="skip" class="btn-secondary">
-      Add → skip pipeline (send tomorrow)
-    </button>
+    <button type="submit" class="btn-primary">Add lead</button>
     <a href="/leads" class="muted-link" style="margin-left: 16px;">Cancel</a>
   </div>
-
-  <p class="muted" style="font-size: 13px; max-width: 720px; margin-top: 8px;">
-    <strong>Pipeline:</strong> downstream classifies + finds owner if missing.
-    <br>
-    <strong>Skip pipeline:</strong> goes straight to <code>ready_to_send</code>.
-    Requires owner name, email, and enrollment method up front. Daily run will draft it tomorrow.
-  </p>
 </form>
 
 {% endblock %}
