@@ -45,12 +45,22 @@ MIN_HERO_DIMENSION_PX = 600
 # hero-only override, so this padding is mostly for backward compatibility.
 MIN_REAL_PHOTOS = 3
 
-# Below this width:height ratio, a photo is portrait/square enough that
-# background-size:cover in a wide hero crops real content off the top or
-# bottom (confirmed live: an 800x1000 upload lost ~70% of its height this
-# way). Above it, cover's edge-to-edge fill is safe enough to prefer over
-# contain's dead-color letterbox bars.
-MIN_HERO_ASPECT_RATIO = 1.3
+# Below this width:height ratio, cover crops real content off the top or
+# bottom badly enough to be unsafe. This has to be calibrated for
+# .hero-bleed specifically — the widest hero layout, full page width by a
+# min-height of only 32rem (512px), which renders at roughly 2.5:1 to 4:1
+# on an ordinary desktop window. 1.3 was calibrated as if the container
+# were much closer to square; it let an ordinary 1000x750 (1.33) real
+# photo through as "cover" and cropped the actual people out, leaving just
+# a wall, a clock, and the tops of their heads visible (confirmed live —
+# see Carranza Tae Kwondo). Real photos are essentially never as wide as
+# the container renders, so there's no reliable way to guess where the
+# subject sits vertically in the uncropped part; 2.0 routes the ordinary
+# case (portraits, most group photos, typical landscape shots) to contain
+# (full photo, letterboxed, blurred backdrop fills the rest — see
+# .hero-bleed::before in generate_website_mocks.py) and reserves cover for
+# photos wide enough that top-cropping is actually safe.
+MIN_HERO_ASPECT_RATIO = 2.0
 
 
 def hero_is_acceptable(photo: dict) -> bool:

@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gspread.utils import rowcol_to_a1
 
-from src import config, fetcher, sheets, website_mocks
+from src import config, fetcher, photo_quality, sheets, website_mocks
 from src.name_cleaner import clean_school_name
 
 logging.basicConfig(
@@ -981,16 +981,24 @@ def _hero_photo_style(photo_url: str, fit: str = "cover") -> str:
 
 
 def _hero_photo_fit_for(ctx: dict, hero_photo: str) -> str:
-    """Only apply the computed fit mode when the resolved hero photo is
-    actually the real-photo override (see photo_quality.hero_fit_mode,
+    """For the real-photo override (see photo_quality.hero_fit_mode,
     computed once in generate_full_site.py where the photo's real
-    dimensions are known) — bundled stock fallbacks are pre-curated to a
-    safe landscape shape and should always cover, regardless of ctx's
-    stashed fit value (which describes the override photo, not the
-    fallback)."""
+    dimensions are known), use that precomputed value. For a bundled stock
+    fallback, apply the identical aspect-ratio check locally from the
+    known file dimensions — stock photos are NOT guaranteed to be safe for
+    "cover" just because they were curated for hero use. This used to
+    hardcode "cover" for every stock fallback on the assumption they were
+    all "pre-curated to a safe landscape shape"; several sit in the same
+    1.3-1.8 aspect-ratio range that (confirmed live, see
+    photo_quality.MIN_HERO_ASPECT_RATIO's comment) crops badly in
+    .hero-bleed at typical desktop widths — being bundled stock never made
+    that geometry safe, it just hadn't been checked."""
     if hero_photo and hero_photo == _hero_photo_override(ctx):
         return ctx.get("hero_photo_fit") or "cover"
-    return "cover"
+    ratio = _stock_photo_aspect_ratio(hero_photo)
+    if ratio is None:
+        return "cover"
+    return "cover" if ratio >= photo_quality.MIN_HERO_ASPECT_RATIO else "contain"
 
 
 COMMON_SITE_ANCHOR_PATTERNS = [
@@ -2807,7 +2815,9 @@ def _render_hero_collage(ctx: dict, cta_label: str, photo_a: str, photo_b: str) 
     quote_html, anchors_html = _hero_quote_or_anchors(ctx)
     photo_style = (
         f"style=\"--photo-a: url('{html.escape(_photo_display_url(photo_a), quote=True)}'); "
-        f"--photo-b: url('{html.escape(_photo_display_url(photo_b), quote=True)}')\""
+        f"--photo-b: url('{html.escape(_photo_display_url(photo_b), quote=True)}'); "
+        f"--photo-a-fit: {_hero_photo_fit_for(ctx, photo_a)}; "
+        f"--photo-b-fit: {_hero_photo_fit_for(ctx, photo_b)}\""
     )
     return f"""
       <section class="hero-collage">
@@ -3375,7 +3385,14 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: var(--soft);
       background-image: var(--hero-photo);
       background-repeat: no-repeat;
-      background-size: cover;
+      /* Was hardcoded "cover" — _render_hero_split already computed and
+         passed --photo-fit via _hero_photo_fit_for, but this rule ignored
+         it entirely, so a portrait/ordinary-ratio photo always got
+         cropped here regardless of what the fit-mode check decided.
+         Contain's letterbox falls back to the plain --soft panel color
+         (already declared above), same minimal treatment already used for
+         the band-strip/camp-calendar/etc. card slots. */
+      background-size: var(--photo-fit, cover);
       background-position: center top;
       min-height: 260px;
     }}
@@ -3438,7 +3455,6 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-collage__photo {{
       background-color: var(--soft);
       background-repeat: no-repeat;
-      background-size: cover;
       background-position: center top;
       border-radius: var(--radius);
       box-shadow: 0 24px 60px rgba(0,0,0,.18);
@@ -3447,12 +3463,19 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       width: 78%;
       aspect-ratio: 4 / 5;
       background-image: var(--photo-a);
+      /* Was hardcoded "cover" on the shared rule above — same gap as
+         .hero-split__photo (see its comment): an extreme-portrait photo in
+         this narrower/taller box, or an ordinary photo here, had no fit
+         check at all. _render_hero_collage now computes this the same way
+         the single-photo hero types do (_hero_photo_fit_for). */
+      background-size: var(--photo-a-fit, cover);
     }}
     .hero-collage__photo--b {{
       position: absolute;
       width: 46%;
       aspect-ratio: 4 / 5;
       background-image: var(--photo-b);
+      background-size: var(--photo-b-fit, cover);
       right: 20px;
       bottom: 20px;
       border: 4px solid white;
