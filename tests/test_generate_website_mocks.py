@@ -881,6 +881,78 @@ def test_all_photo_backgrounds_crop_from_the_top_not_center():
             )
 
 
+def test_extreme_portrait_stock_photos_never_render_with_cover_fit():
+    # Real incident: a 1400x2100 (0.67 ratio) stock photo, cropped with
+    # background-size: cover into a short/wide .band-strip__cell, rendered
+    # as almost solid black with only a sliver of the subject visible —
+    # "top" cropping has too little vertical room to work with once a tall
+    # portrait image is scaled to cover a short cell. Every extreme-portrait
+    # stock photo must render with --photo-fit: contain instead (shows the
+    # whole photo, letterboxed) wherever _photo_style is used, across every
+    # category's bundled stock set — not just the one that first surfaced
+    # this (martial_arts/action-3.jpg).
+    style_re = re.compile(r"style=\"--photo: url\('([^']+)'\); --photo-fit: (cover|contain)\"")
+    raw_categories = ["martial_arts", "sports", "swim", "music", "preschool"]
+    checked = 0
+    for raw_category in raw_categories:
+        mock_type = website_mocks.normalize_mock_type("", category=raw_category)
+        for variant in website_mocks.MOCK_VARIANTS[mock_type]:
+            rendered = generate_website_mocks._render_mock_html(_lead(category=raw_category), variant)
+            for url, fit in style_re.findall(rendered):
+                checked += 1
+                ratio = generate_website_mocks._stock_photo_aspect_ratio(url)
+                if ratio is None:
+                    continue
+                if ratio < generate_website_mocks.EXTREME_PORTRAIT_ASPECT_RATIO:
+                    assert fit == "contain", (
+                        f"{raw_category}/{variant.version_id}: extreme-portrait stock photo "
+                        f"{url} (ratio={ratio:.2f}) rendered with cover fit"
+                    )
+    assert checked > 30  # sanity: actually exercised a meaningful number of instances
+
+
+def test_stock_photo_aspect_ratio_flags_known_extreme_portrait_photo():
+    portrait_url = next(
+        url for url, path in generate_website_mocks.STOCK_PHOTO_ASSETS.items()
+        if path == "martial_arts/action-3.jpg"
+    )
+    ratio = generate_website_mocks._stock_photo_aspect_ratio(portrait_url)
+    assert ratio is not None
+    assert ratio < generate_website_mocks.EXTREME_PORTRAIT_ASPECT_RATIO
+
+
+def test_stock_photo_aspect_ratio_returns_none_for_non_stock_url():
+    assert generate_website_mocks._stock_photo_aspect_ratio("https://example.com/real-uploaded-photo.jpg") is None
+
+
+def test_photo_sequence_prefers_landscape_stock_photo_when_alternative_exists():
+    portrait_url = next(
+        url for url, path in generate_website_mocks.STOCK_PHOTO_ASSETS.items()
+        if path == "martial_arts/action-3.jpg"
+    )
+    landscape_url = next(
+        url for url, path in generate_website_mocks.STOCK_PHOTO_ASSETS.items()
+        if path == "martial_arts/action-1.jpg"
+    )
+    ctx = {"photos": [portrait_url, landscape_url], "hero_photos": []}
+    result = generate_website_mocks._photo_sequence(ctx, 1)
+    assert result == [landscape_url]
+
+
+def test_hero_split_and_collage_headlines_shrink_at_narrow_viewport():
+    # Real incident: .hero-split__panel h1 / .hero-collage__panel h1's own
+    # (non-media-queried) font-size rule has higher specificity than a bare
+    # `h1 {...}` responsive override, so those two headlines silently never
+    # shrunk at any viewport width — confirmed live to overflow off the
+    # right edge of a 390px phone frame. The narrow-viewport breakpoint
+    # must explicitly re-list both selectors to actually override it.
+    for mock_type, variants in website_mocks.MOCK_VARIANTS.items():
+        rendered = generate_website_mocks._render_mock_html(_lead(category=mock_type), variants[0])
+        assert ".hero-split__panel h1, .hero-collage__panel h1 { font-size: 2.5rem; }" in rendered, (
+            f"{mock_type} is missing the narrow-viewport hero-split/collage h1 override"
+        )
+
+
 def test_collective_lineup_cards_use_aspect_ratio_not_fixed_height():
     # A fixed small pixel height (was 150px) against a card that's ~1/3 of
     # the page width produces an extremely wide, short crop window — nearly

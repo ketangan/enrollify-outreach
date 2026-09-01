@@ -26,12 +26,18 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# The generated pages use photos[0] as a large hero/bleed background in most
-# variants — anything with a shorter side under this looks visibly soft when
-# stretched that large. Chosen as a conservative floor (a typical phone
-# photo is 3000px+ on its short side; this only demotes genuinely small
-# images like an old logo scan or a cropped screenshot).
-MIN_HERO_DIMENSION_PX = 800
+# The generated pages use photos[0] as a large hero/bleed background — every
+# hero container across every layout caps its own rendered height at 512-576px
+# (32-36rem; see .hero-bleed/.hero-split/.hero-collage's min-height in
+# generate_website_mocks.py), so a source photo doesn't need much more than
+# that to render sharp. Was 800px, but that rejected two real, perfectly
+# reasonable user uploads in a row (755x1000 and 1000x750 — ordinary phone
+# photos saved/exported at a modest size, not degraded thumbnails) with no
+# visible quality problem in either. 600px keeps real headroom above the
+# tallest container while no longer flagging normal photos as "too small" —
+# this is meant to catch genuinely degraded sources (an old logo scan, a
+# scraped Yelp thumbnail), not modestly-sized real photos.
+MIN_HERO_DIMENSION_PX = 600
 
 # Legacy render paths still treat fewer than 3 real photos as "not enough to
 # bother with" and fall back to full stock (see

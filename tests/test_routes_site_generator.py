@@ -245,6 +245,43 @@ def test_generate_persists_hero_photo_separately_from_other_uploads(monkeypatch,
     assert hero["url"] != uploaded[0]["url"]
 
 
+def test_generate_force_hero_photo_checkbox_defaults_off(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(routes_site_generator.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(routes_site_generator, "OUTPUT_DIR", tmp_path)
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music"},
+        follow_redirects=False,
+    )
+
+    assert captured["force_hero_photo"] is False
+
+
+def test_generate_force_hero_photo_checkbox_passes_through_when_checked(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(routes_site_generator.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(routes_site_generator, "OUTPUT_DIR", tmp_path)
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/generate",
+        params={"key": "secret123"},
+        data={"name": "Test", "category": "music", "force_hero_photo": "true"},
+        files=[("hero_photo", ("hero.jpg", _real_jpeg_bytes(1000, 750), "image/jpeg"))],
+        follow_redirects=False,
+    )
+
+    assert captured["force_hero_photo"] is True
+
+
 def test_generate_without_hero_photo_sends_empty_string(monkeypatch):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     captured = {}
@@ -516,6 +553,55 @@ def test_regenerate_persists_hero_photo_separately(monkeypatch, tmp_path):
     hero = json.loads(captured["hero_photo_json"])
     assert hero["width"] == 2000
     assert hero["height"] == 1500
+
+
+def test_regenerate_force_hero_photo_passes_through_when_checked(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    _fake_sheet(monkeypatch)
+    site_generator_state.record_initial_generation(
+        org_id="riverside-music-abc123", name="Riverside Music Collective", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio concept", "url": "u1", "preview_url": "p1"}],
+        job_id="job-0",
+    )
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(routes_site_generator.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(routes_site_generator, "OUTPUT_DIR", tmp_path)
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/regenerate",
+        params={"key": "secret123"},
+        data={"org_id": "riverside-music-abc123", "theme": "music-studio", "force_hero_photo": "true"},
+        files=[("hero_photo", ("hero.jpg", _real_jpeg_bytes(1000, 750), "image/jpeg"))],
+        follow_redirects=False,
+    )
+
+    assert captured["force_hero_photo"] is True
+
+
+def test_regenerate_force_hero_photo_defaults_off(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    _fake_sheet(monkeypatch)
+    site_generator_state.record_initial_generation(
+        org_id="riverside-music-def456", name="Riverside Music Collective", category="music",
+        rendered=[{"type": "music", "version": "studio", "label": "Studio concept", "url": "u1", "preview_url": "p1"}],
+        job_id="job-0",
+    )
+    from webapp.webapp import routes_site_generator
+    monkeypatch.setattr(routes_site_generator.r2_storage, "is_configured", lambda: False)
+    monkeypatch.setattr(routes_site_generator, "OUTPUT_DIR", tmp_path)
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "job-1")
+
+    client.post(
+        "/site-generator/regenerate",
+        params={"key": "secret123"},
+        data={"org_id": "riverside-music-def456", "theme": "music-studio"},
+        follow_redirects=False,
+    )
+
+    assert captured["force_hero_photo"] is False
 
 
 def test_regenerate_without_uploaded_photos_sends_empty_string(monkeypatch, tmp_path):

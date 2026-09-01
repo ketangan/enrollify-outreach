@@ -73,6 +73,29 @@ def test_build_generate_full_site_cmd_omits_hero_photo_when_not_given():
     assert "--hero-photo" not in cmd
 
 
+def test_build_generate_full_site_cmd_includes_force_hero_photo_flag_when_true():
+    cmd = jobs_runner._build_generate_full_site_cmd(
+        name="Riverside Music Collective",
+        category="music",
+        force_hero_photo=True,
+        base_url="https://example.com",
+        output_dir="generated/full-sites",
+    )
+
+    assert "--force-hero-photo" in cmd
+
+
+def test_build_generate_full_site_cmd_omits_force_hero_photo_flag_by_default():
+    cmd = jobs_runner._build_generate_full_site_cmd(
+        name="Riverside Music Collective",
+        category="music",
+        base_url="https://example.com",
+        output_dir="generated/full-sites",
+    )
+
+    assert "--force-hero-photo" not in cmd
+
+
 def test_get_job_retries_transient_partial_json(monkeypatch):
     reads = iter(["{", '{"id": "job-1", "status": "running"}'])
 

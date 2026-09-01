@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import functools
 import html
 import json
 import logging
@@ -26,6 +27,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
+
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -856,11 +859,49 @@ def _photo_fallback_pool(mock_type: str, version_id: str, category: str) -> list
     return _dedupe_photos(base + siblings)
 
 
+# Below this width/height ratio, a stock photo crops badly into the
+# short/wide card slots _photo_sequence mostly feeds (band-strip,
+# camp-calendar, day-timeline, lesson-scroll, collective-lineup,
+# admissions-path — all landscape-shaped or close to it). Confirmed live: a
+# 1400x2100 (0.67) stock photo rendered as almost solid black with only a
+# sliver of the subject visible in a .band-strip__cell, because
+# background-position: center top has so little vertical room to work with
+# once a tall portrait image is scaled to cover a short cell. Every stock
+# category has a few photos this extreme (curated for tall slots like
+# hero-split/hero-collage, which is exactly where they look great) — this
+# just keeps them out of slots they were never suited for.
+EXTREME_PORTRAIT_ASPECT_RATIO = 0.85
+
+
+@functools.lru_cache(maxsize=None)
+def _stock_photo_aspect_ratio(photo_url: str) -> float | None:
+    """width/height for a BUNDLED stock photo (a local file we can measure);
+    None for anything else — a real/uploaded/Google photo URL, where there's
+    no local file to read without adding network I/O to every render. Only
+    ever used as a soft ordering preference below, never a hard filter, so
+    "unknown" safely means "leave it wherever it already was"."""
+    stock_path = STOCK_PHOTO_ASSETS.get(_clean(photo_url))
+    if not stock_path:
+        return None
+    try:
+        with Image.open(STOCK_PHOTO_SOURCE_DIR / stock_path) as im:
+            width, height = im.size
+        return (width / height) if height else None
+    except Exception:
+        return None
+
+
 def _photo_sequence(ctx: dict, count: int, *, avoid: list[str] | None = None) -> list[str]:
     """Return up to `count` photos, preferring the business/variant photo pool
     while avoiding hero photos. If there are not enough non-hero real photos,
     use stock fallbacks before repeating anything. Repetition is still allowed
-    as a last resort because an empty image slot is worse than a duplicate."""
+    as a last resort because an empty image slot is worse than a duplicate.
+
+    Among otherwise-equal candidates, known-extreme-portrait stock photos
+    are pushed to the back (see EXTREME_PORTRAIT_ASPECT_RATIO) — a stable
+    sort, so it never changes real-photo-before-stock preference or the
+    relative order within either group, only demotes specific bad-shaped
+    stock photos when a better-shaped one is also available."""
     avoid_set = set(_dedupe_photos(avoid or ctx.get("hero_photos", [])))
     primary = [p for p in _dedupe_photos(ctx.get("photos", [])) if p not in avoid_set]
     fallback = [
@@ -873,6 +914,14 @@ def _photo_sequence(ctx: dict, count: int, *, avoid: list[str] | None = None) ->
         candidates = _dedupe_photos(ctx.get("photos", [])) or _dedupe_photos(ctx.get("photo_fallbacks", []))
     if not candidates:
         return []
+    def _is_extreme_portrait(p: str) -> bool:
+        ratio = _stock_photo_aspect_ratio(p)
+        # `ratio or 999`-style falsy-checks would misfire on a 0.0 ratio —
+        # unreachable with real image files today, but an explicit
+        # `is not None` costs nothing and isn't a landmine for later.
+        return ratio is not None and ratio < EXTREME_PORTRAIT_ASPECT_RATIO
+
+    candidates = sorted(candidates, key=_is_extreme_portrait)
     return [candidates[idx % len(candidates)] for idx in range(count)]
 
 
@@ -904,7 +953,24 @@ def _hero_photo_gallery(ctx: dict, photos: list[str], count: int) -> list[str]:
 
 
 def _photo_style(photo_url: str) -> str:
-    return f"style=\"--photo: url('{html.escape(_photo_display_url(photo_url), quote=True)}')\""
+    """Every consumer of this (band-strip, camp-calendar, day-timeline,
+    lesson-scroll, collective-lineup, admissions-path — all short/wide card
+    slots) reads var(--photo-fit) for the photo layer's background-size,
+    defaulting to "cover" (see the :root block). For a known extreme-
+    portrait stock photo, cover crops nearly the whole subject away in
+    these short cells (see EXTREME_PORTRAIT_ASPECT_RATIO) — switching that
+    one photo to "contain" via this inline override shows it in full,
+    letterboxed against the card's own background color, rather than
+    cropped down to a sliver. _photo_sequence already prefers a
+    better-shaped alternative when one exists; this is the fallback for
+    when it doesn't (e.g. a 3-photo pool feeding a 3-slot component, where
+    every photo gets used regardless of shape)."""
+    ratio = _stock_photo_aspect_ratio(photo_url)
+    fit = "contain" if (ratio is not None and ratio < EXTREME_PORTRAIT_ASPECT_RATIO) else "cover"
+    return (
+        f"style=\"--photo: url('{html.escape(_photo_display_url(photo_url), quote=True)}'); "
+        f"--photo-fit: {fit}\""
+    )
 
 
 def _hero_photo_style(photo_url: str, fit: str = "cover") -> str:
@@ -3255,6 +3321,15 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
     .hero-bleed__content {{ position: relative; z-index: 2; max-width: 760px; }}
     .hero-split__panel h1,
     .hero-collage__panel h1 {{
+      /* This selector's specificity beats a bare `h1 {{...}}` rule
+         regardless of media query, so the generic responsive h1 rules
+         below can't shrink this on their own — confirmed to overflow off
+         the right edge of a real 390px phone width otherwise (headline
+         stuck at up to 4.75rem/76px). The @media (max-width: 580px) block
+         explicitly re-lists this selector for that reason; if you add a
+         new hero type with its own panel h1 rule outside a media query,
+         it needs the same explicit narrow-viewport override or it will
+         silently never shrink either. */
       font-size: min(var(--h1-size), 4.75rem);
     }}
     .hero-bleed h1, .hero-bleed p, .hero-bleed .eyebrow,
@@ -4520,7 +4595,8 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       .hero-bleed {{ min-height: 28rem; }}
       .primary {{ width: 100%; }}
       .enrollment-cta__actions button, .enrollment-steps__cta button {{ width: 100%; }}
-      h1, .hero-masthead__top h1 {{ font-size: 2.5rem; }}
+      h1, .hero-masthead__top h1,
+      .hero-split__panel h1, .hero-collage__panel h1 {{ font-size: 2.5rem; }}
       h2, .enrollment-copy h2, .enrollment-cta h2 {{ font-size: 2rem; }}
     }}
   </style>

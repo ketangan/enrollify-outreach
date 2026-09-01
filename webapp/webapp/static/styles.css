@@ -1511,6 +1511,14 @@ form.filters button:hover { background: #2d4229; }
   font-weight: 500;
 }
 
+.site-gen-force-hero-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .site-gen-results {
   display: flex;
   gap: 32px;

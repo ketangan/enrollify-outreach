@@ -261,6 +261,13 @@ def site_generator_generate(
     # threaded through so a successful generation can mark that row used,
     # and a blocked one can offer the "archive — has a website" action.
     no_website_schools_id: str = Form(""),
+    # Skips the quality-floor check on hero_photo below — same truthy-string
+    # checkbox pattern as use_google/skip_website_check. Off by default so
+    # the floor still catches genuinely degraded sources; on lets someone
+    # who's already looked at their own photo and judged it fine override it,
+    # rather than the site silently falling back to stock with no way to
+    # say "use it anyway" short of asking an engineer to run the CLI flag.
+    force_hero_photo: str = Form(""),
     uploaded_photos: list[UploadFile] = File(default=[]),
     hero_photo: UploadFile | None = File(default=None),
 ):
@@ -299,6 +306,7 @@ def site_generator_generate(
         "no_website_schools_id": no_website_schools_id.strip(),
         "uploaded_photos_json": json.dumps(persisted_uploads) if persisted_uploads else "",
         "hero_photo_json": json.dumps(persisted_hero[0]) if persisted_hero else "",
+        "force_hero_photo": bool(force_hero_photo),
         "subject_id": subject_id,
         "base_url": "/generated-sites",
         "output_dir": str(OUTPUT_DIR),
@@ -348,6 +356,8 @@ def site_generator_regenerate(
     org_id: str = Form(...),
     theme: str = Form(...),  # e.g. "preschool-warm"
     revision_notes: str = Form(""),
+    # Same override as the generate route above — off by default.
+    force_hero_photo: str = Form(""),
     uploaded_photos: list[UploadFile] = File(default=[]),
     hero_photo: UploadFile | None = File(default=None),
 ):
@@ -381,6 +391,7 @@ def site_generator_regenerate(
         "revision_notes": revision_notes.strip(),
         "uploaded_photos_json": json.dumps(persisted_uploads) if persisted_uploads else "",
         "hero_photo_json": json.dumps(persisted_hero[0]) if persisted_hero else "",
+        "force_hero_photo": bool(force_hero_photo),
         "subject_id": subject_id,
         "skip_website_check": True,
         "base_url": "/generated-sites",

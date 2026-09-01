@@ -178,6 +178,14 @@
       stay on the pre-bundled stock photos for that template, so the design
       keeps its intended look and does not depend on random photo selection.
     </p>
+    <label class="site-gen-force-hero-label">
+      <input type="checkbox" name="force_hero_photo" value="true">
+      Use this photo even if it's smaller than usual
+    </label>
+    <p class="muted" style="font-size:12px; margin-top:-8px;">
+      Small/blurry sources normally fall back to a stock photo automatically —
+      check this if you've looked at your photo and it looks fine to you.
+    </p>
   </fieldset>
 
   <fieldset>
@@ -262,6 +270,10 @@
               <label class="site-gen-regen-photo-label" title="This exact photo becomes the hero image; the rest of the page keeps template stock photos">
                 Hero photo
                 <input type="file" name="hero_photo" accept="image/*">
+              </label>
+              <label class="site-gen-regen-photo-label" title="Skips the size floor — use if a photo you uploaded fell back to stock and you want it used anyway">
+                <input type="checkbox" name="force_hero_photo" value="true">
+                Use anyway if too small
               </label>
               <button type="submit" class="btn-secondary">Regenerate</button>
             </form>

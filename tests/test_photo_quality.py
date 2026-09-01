@@ -156,6 +156,15 @@ def test_hero_is_acceptable_rejects_missing_dimensions():
     assert photo_quality.hero_is_acceptable({"url": "x"}) is False
 
 
+def test_hero_is_acceptable_accepts_real_incident_uploads():
+    # Two real user uploads got silently rejected by the old 800px floor —
+    # ordinary phone photos, not degraded thumbnails, with no visible
+    # quality issue once actually used as a hero. The floor was lowered
+    # specifically because of these; both must now pass.
+    assert photo_quality.hero_is_acceptable({"width": 755, "height": 1000}) is True  # Machatz
+    assert photo_quality.hero_is_acceptable({"width": 1000, "height": 750}) is True  # Carranza Tae Kwondo
+
+
 def test_hero_fit_mode_uses_cover_for_landscape_photos():
     assert photo_quality.hero_fit_mode({"width": 2000, "height": 1200}) == "cover"
 

@@ -56,6 +56,7 @@ def _build_generate_full_site_cmd(**kw) -> list[str]:
         *_opt("--no-website-schools-id", kw.get("no_website_schools_id")),
         *_opt("--uploaded-photos", kw.get("uploaded_photos_json")),
         *_opt("--hero-photo", kw.get("hero_photo_json")),
+        *(["--force-hero-photo"] if kw.get("force_hero_photo") else []),
         # The webapp always wants this generation recorded durably (Sheet),
         # unlike ad-hoc CLI testing which defaults to not writing there.
         "--record-to-sheet",
