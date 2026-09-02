@@ -50,6 +50,18 @@ def known_place_ids() -> set[str]:
     return ids
 
 
+def _review_count(row: dict) -> int:
+    """Google + Yelp review counts combined — a blank/non-numeric cell
+    contributes 0 rather than raising, since older rows or a source that
+    never returned a count leave this empty, not "0"."""
+    total = 0
+    for key in ("google_review_count", "yelp_review_count"):
+        raw = _clean(row.get(key))
+        if raw.isdigit():
+            total += int(raw)
+    return total
+
+
 def list_page(
     page: int = 1, page_size: int = 10, *, status: str = STATUS_COLLECTED, q: str = "",
 ) -> tuple[list[dict], int]:
@@ -60,7 +72,14 @@ def list_page(
 
     `q`, when given, filters to rows whose name/city/address contain it
     (case-insensitive substring match) — lets a specific business be found
-    directly instead of paging through hundreds of rows to spot it."""
+    directly instead of paging through hundreds of rows to spot it.
+
+    Businesses with no reviews at all (Google or Yelp) sort to the very
+    end — a lead with zero social proof to pull a quote/review snippet
+    from is a worse pick for the generator's "real reviews, not
+    boilerplate" pitch, so reviewed businesses should surface first. A
+    stable sort, so relative order is otherwise unchanged (whatever order
+    the sheet itself has, e.g. discovery order)."""
     rows = sheets.read_all_rows(config.TAB_NO_WEBSITE)
     matching = [r for r in rows if _clean(r.get("status")) == status] if status else rows
     q = _clean(q).lower()
@@ -71,6 +90,7 @@ def list_page(
             or q in _clean(r.get("city")).lower()
             or q in _clean(r.get("address")).lower()
         ]
+    matching = sorted(matching, key=lambda r: _review_count(r) == 0)
     total = len(matching)
     start = max(page - 1, 0) * page_size
     return matching[start:start + page_size], total

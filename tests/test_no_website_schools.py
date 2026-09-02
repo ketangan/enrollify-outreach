@@ -143,6 +143,44 @@ def test_list_page_empty_query_returns_everything(fake_sheets):
     assert total == 2
 
 
+def test_list_page_sorts_businesses_with_no_reviews_to_the_end(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="no-reviews", name="No Reviews Yet", google_review_count="0", yelp_review_count=""))
+    no_website_rows.append(_row(row_id="has-reviews", name="Has Reviews", google_review_count="8"))
+    no_website_rows.append(_row(row_id="blank-review-count", name="Blank Count", google_review_count=""))
+
+    rows, total = nws.list_page()
+
+    assert total == 3
+    assert [r["id"] for r in rows] == ["has-reviews", "no-reviews", "blank-review-count"]
+
+
+def test_list_page_counts_yelp_reviews_when_google_has_none(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="yelp-only", name="Yelp Only", google_review_count="0", yelp_review_count="5"))
+    no_website_rows.append(_row(row_id="no-reviews", name="No Reviews", google_review_count="", yelp_review_count=""))
+
+    rows, total = nws.list_page()
+
+    assert [r["id"] for r in rows] == ["yelp-only", "no-reviews"]
+
+
+def test_list_page_keeps_relative_order_within_each_review_group(fake_sheets):
+    # Stable sort — no-review businesses keep their original relative
+    # order among themselves, same for reviewed ones.
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="reviewed-first", name="Reviewed First", google_review_count="3"))
+    no_website_rows.append(_row(row_id="unreviewed-first", name="Unreviewed First", google_review_count="0"))
+    no_website_rows.append(_row(row_id="reviewed-second", name="Reviewed Second", google_review_count="1"))
+    no_website_rows.append(_row(row_id="unreviewed-second", name="Unreviewed Second", google_review_count="0"))
+
+    rows, total = nws.list_page()
+
+    assert [r["id"] for r in rows] == [
+        "reviewed-first", "reviewed-second", "unreviewed-first", "unreviewed-second",
+    ]
+
+
 def test_get_by_id_finds_matching_row(fake_sheets):
     no_website_rows, _ = fake_sheets
     no_website_rows.append(_row(row_id="target-id", name="Riverbend Music"))
