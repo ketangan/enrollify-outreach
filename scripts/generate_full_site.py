@@ -483,10 +483,6 @@ def generate_full_site(
     if selected_photos:
         hero = selected_photos[0]
         subject["_website_mock_hero_photo"] = hero["url"]
-        # Portrait/square photos crop badly under cover in a wide hero —
-        # let contain show the whole photo instead of cutting off the
-        # subject (see photo_quality.hero_fit_mode).
-        subject["_website_mock_hero_photo_fit"] = photo_quality.hero_fit_mode(hero)
         subject["_website_mock_photos"] = [p["url"] for p in selected_photos]
 
     rendered = mocks.render_mock_concepts(

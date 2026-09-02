@@ -859,17 +859,18 @@ def _photo_fallback_pool(mock_type: str, version_id: str, category: str) -> list
     return _dedupe_photos(base + siblings)
 
 
-# Below this width/height ratio, a stock photo crops badly into the
-# short/wide card slots _photo_sequence mostly feeds (band-strip,
-# camp-calendar, day-timeline, lesson-scroll, collective-lineup,
-# admissions-path — all landscape-shaped or close to it). Confirmed live: a
-# 1400x2100 (0.67) stock photo rendered as almost solid black with only a
-# sliver of the subject visible in a .band-strip__cell, because
-# background-position: center top has so little vertical room to work with
-# once a tall portrait image is scaled to cover a short cell. Every stock
-# category has a few photos this extreme (curated for tall slots like
-# hero-split/hero-collage, which is exactly where they look great) — this
-# just keeps them out of slots they were never suited for.
+# Below this width/height ratio, a stock photo is portrait/square enough
+# that it shows a lot of letterboxing once forced into the short/wide card
+# slots _photo_sequence mostly feeds (band-strip, camp-calendar,
+# day-timeline, lesson-scroll, collective-lineup, admissions-path — all
+# landscape-shaped or close to it). These slots always render with
+# "contain" now (see _photo_style), so an extreme-portrait photo can no
+# longer crop a subject out the way one used to — but it still fills much
+# less of the box than a landscape photo would. This constant is now
+# purely a cosmetic ordering preference (see _photo_sequence below):
+# demote the letterbox-heavy photos to the back of the candidate list so a
+# better-fitting one gets picked first when there's a choice, not a safety
+# mechanism.
 EXTREME_PORTRAIT_ASPECT_RATIO = 0.85
 
 
@@ -955,21 +956,26 @@ def _hero_photo_gallery(ctx: dict, photos: list[str], count: int) -> list[str]:
 def _photo_style(photo_url: str) -> str:
     """Every consumer of this (band-strip, camp-calendar, day-timeline,
     lesson-scroll, collective-lineup, admissions-path — all short/wide card
-    slots) reads var(--photo-fit) for the photo layer's background-size,
-    defaulting to "cover" (see the :root block). For a known extreme-
-    portrait stock photo, cover crops nearly the whole subject away in
-    these short cells (see EXTREME_PORTRAIT_ASPECT_RATIO) — switching that
-    one photo to "contain" via this inline override shows it in full,
-    letterboxed against the card's own background color, rather than
-    cropped down to a sliver. _photo_sequence already prefers a
-    better-shaped alternative when one exists; this is the fallback for
-    when it doesn't (e.g. a 3-photo pool feeding a 3-slot component, where
-    every photo gets used regardless of shape)."""
-    ratio = _stock_photo_aspect_ratio(photo_url)
-    fit = "contain" if (ratio is not None and ratio < EXTREME_PORTRAIT_ASPECT_RATIO) else "cover"
+    slots) reads var(--photo-fit) for the photo layer's background-size.
+
+    Always "contain", unconditionally. This used to be aspect-ratio-gated
+    (cover by default, contain only for a known extreme-portrait stock
+    photo) — that missed the actual failure mode: a perfectly ordinary
+    LANDSCAPE photo (confirmed live: martial_arts/action-2.jpg, 1.46 ratio)
+    can still have most of its subject sitting in the lower half of the
+    frame with empty sky/canopy above. "cover" + "top" then keeps exactly
+    the empty part and crops the people out — this has nothing to do with
+    aspect ratio, so no aspect-ratio threshold can catch it. There's no
+    way to know where the subject sits in an arbitrary photo (stock or
+    real) without actual image analysis this codebase doesn't have, so
+    "contain" (full photo, always, letterboxed against the card's own
+    background color) is the only fit mode that can't crop a subject out
+    by surprise. _photo_sequence's landscape-preference ordering is still
+    worth keeping — it reduces how much letterboxing shows up — but it's
+    no longer what keeps this safe."""
     return (
         f"style=\"--photo: url('{html.escape(_photo_display_url(photo_url), quote=True)}'); "
-        f"--photo-fit: {fit}\""
+        f"--photo-fit: contain\""
     )
 
 
@@ -981,24 +987,21 @@ def _hero_photo_style(photo_url: str, fit: str = "cover") -> str:
 
 
 def _hero_photo_fit_for(ctx: dict, hero_photo: str) -> str:
-    """For the real-photo override (see photo_quality.hero_fit_mode,
-    computed once in generate_full_site.py where the photo's real
-    dimensions are known), use that precomputed value. For a bundled stock
-    fallback, apply the identical aspect-ratio check locally from the
-    known file dimensions — stock photos are NOT guaranteed to be safe for
-    "cover" just because they were curated for hero use. This used to
-    hardcode "cover" for every stock fallback on the assumption they were
-    all "pre-curated to a safe landscape shape"; several sit in the same
-    1.3-1.8 aspect-ratio range that (confirmed live, see
-    photo_quality.MIN_HERO_ASPECT_RATIO's comment) crops badly in
-    .hero-bleed at typical desktop widths — being bundled stock never made
-    that geometry safe, it just hadn't been checked."""
-    if hero_photo and hero_photo == _hero_photo_override(ctx):
-        return ctx.get("hero_photo_fit") or "cover"
-    ratio = _stock_photo_aspect_ratio(hero_photo)
-    if ratio is None:
-        return "cover"
-    return "cover" if ratio >= photo_quality.MIN_HERO_ASPECT_RATIO else "contain"
+    """Always "contain" now — see _photo_style's comment for the full
+    reasoning (it's identical here): an aspect-ratio threshold can only
+    catch a photo that's the wrong SHAPE, not one that's a normal
+    landscape ratio but has the subject sitting low in the frame with
+    empty space above it, which crops exactly as badly under "cover" and
+    has nothing to do with aspect ratio. This function used to compute a
+    ratio-based cover/contain decision (real photo via
+    photo_quality.hero_fit_mode, stock fallback via a local check against
+    photo_quality.MIN_HERO_ASPECT_RATIO) — both were real improvements
+    over the previous hardcoded "cover", and both still left the same
+    fundamental gap: no aspect-ratio check can verify composition. Contain
+    (full photo, letterboxed, blurred backdrop fills the rest — see
+    .hero-bleed::before) is the only fit mode that can't crop a subject
+    out by surprise, for a real override or a bundled stock photo alike."""
+    return "contain"
 
 
 COMMON_SITE_ANCHOR_PATTERNS = [
@@ -3005,7 +3008,6 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
         "photos": photos,
         "photo_fallbacks": photo_fallbacks,
         "hero_photo_override": _clean(lead.get("_website_mock_hero_photo")),
-        "hero_photo_fit": _clean(lead.get("_website_mock_hero_photo_fit")) or "cover",
         "type_id": variant.type_id,
         "version_id": variant.version_id,
         "raw_category": _clean(lead.get("category")),
@@ -4355,14 +4357,12 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
       background-color: rgba(255,255,255,.09);
       overflow: hidden;
     }}
-    /* Gallery cells have no per-photo width/height by the time they render
-       (unlike the single hero photo, whose fit mode is computed once from
-       real dimensions upstream — see photo_quality.hero_fit_mode), so
-       there's no reliable aspect-ratio signal to switch cover vs. contain
-       per photo. Always-contain + blurred backdrop sidesteps needing that
-       signal at all: a landscape photo already fills the 5:3 box closely
-       either way, and a portrait one shows in full instead of getting
-       cropped down to whatever happens to be dead-center. */
+    /* Always contain + blurred backdrop — same reasoning as every other
+       photo slot in this file now (see _photo_style's comment): a
+       landscape photo already fills the 5:3 box closely either way, and
+       anything else (portrait, or landscape with the subject positioned
+       low in the frame) shows in full instead of risking a crop that cuts
+       the subject out. */
     .hero-masthead__shot::before {{
       content: "";
       position: absolute;

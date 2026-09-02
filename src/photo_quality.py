@@ -45,24 +45,6 @@ MIN_HERO_DIMENSION_PX = 600
 # hero-only override, so this padding is mostly for backward compatibility.
 MIN_REAL_PHOTOS = 3
 
-# Below this width:height ratio, cover crops real content off the top or
-# bottom badly enough to be unsafe. This has to be calibrated for
-# .hero-bleed specifically — the widest hero layout, full page width by a
-# min-height of only 32rem (512px), which renders at roughly 2.5:1 to 4:1
-# on an ordinary desktop window. 1.3 was calibrated as if the container
-# were much closer to square; it let an ordinary 1000x750 (1.33) real
-# photo through as "cover" and cropped the actual people out, leaving just
-# a wall, a clock, and the tops of their heads visible (confirmed live —
-# see Carranza Tae Kwondo). Real photos are essentially never as wide as
-# the container renders, so there's no reliable way to guess where the
-# subject sits vertically in the uncropped part; 2.0 routes the ordinary
-# case (portraits, most group photos, typical landscape shots) to contain
-# (full photo, letterboxed, blurred backdrop fills the rest — see
-# .hero-bleed::before in generate_website_mocks.py) and reserves cover for
-# photos wide enough that top-cropping is actually safe.
-MIN_HERO_ASPECT_RATIO = 2.0
-
-
 def hero_is_acceptable(photo: dict) -> bool:
     """A human's explicit hero choice still needs a quality floor — a small,
     heavily-compressed source image (a scraped Yelp thumbnail, an old logo
@@ -75,17 +57,17 @@ def hero_is_acceptable(photo: dict) -> bool:
     return min(width, height) >= MIN_HERO_DIMENSION_PX
 
 
-def hero_fit_mode(photo: dict) -> str:
-    """"cover" (fill edge-to-edge, cropping overflow) for photos already
-    landscape-shaped enough to survive that; "contain" (show the whole
-    photo, letterboxed) for anything more portrait/square, where cover
-    would cut off the subject. Unknown dimensions default to "contain" —
-    assuming a photo is fine risks cropping something that wasn't."""
-    width = photo.get("width") or 0
-    height = photo.get("height") or 0
-    if not width or not height:
-        return "contain"
-    return "cover" if (width / height) >= MIN_HERO_ASPECT_RATIO else "contain"
+# hero_fit_mode() / MIN_HERO_ASPECT_RATIO used to live here, choosing
+# "cover" vs "contain" from a photo's aspect ratio. Removed: aspect ratio
+# only tells you a photo's SHAPE, not where the subject sits within it — a
+# perfectly ordinary landscape photo (confirmed live: a 1.46-ratio real
+# stock photo with the subjects in the lower half of the frame and empty
+# tree canopy above) still crops the subject out under "cover" no matter
+# how the ratio threshold is tuned, because the failure has nothing to do
+# with shape. generate_website_mocks.py's hero rendering now always uses
+# "contain" (full photo, letterboxed, blurred backdrop fills the rest) —
+# the only fit mode that can't crop a subject out by surprise, for a real
+# upload or a bundled stock photo alike.
 
 
 def read_dimensions(image_bytes: bytes) -> tuple[int, int] | None:

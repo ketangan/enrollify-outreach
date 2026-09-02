@@ -258,9 +258,10 @@ def build_body(ctx: dict, items: list[tuple[str, str]]) -> tuple[dict, str, str,
         # photo, no matter its quality) — that overcorrected for one bad,
         # small, badly-cropped Yelp photo. The real fix is upstream: a
         # quality floor rejects genuinely bad photos before they ever reach
-        # ctx (photo_quality.hero_is_acceptable), and hero_photo_fit
-        # switches a portrait/square photo to "contain" instead of cropping
-        # it. A good uploaded photo should still win here like everywhere else.
+        # ctx (photo_quality.hero_is_acceptable), and every hero photo
+        # renders with "contain" (see _hero_photo_fit_for in
+        # generate_website_mocks.py) so nothing gets cropped regardless of
+        # shape. A good uploaded photo should still win here like everywhere else.
         hero_photo = core._single_hero_photo(ctx, photos[0])
         ctx = core._with_hero_photos(ctx, [hero_photo])
         hero = core._render_hero(ctx, "Ask about openings", hero_photo)

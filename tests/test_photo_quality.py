@@ -165,31 +165,8 @@ def test_hero_is_acceptable_accepts_real_incident_uploads():
     assert photo_quality.hero_is_acceptable({"width": 1000, "height": 750}) is True  # Carranza Tae Kwondo
 
 
-def test_hero_fit_mode_uses_cover_for_genuinely_wide_photos():
-    # .hero-bleed itself renders at roughly 2.5:1-4:1 on an ordinary desktop
-    # window (full page width, 512px min-height) — cover is only safe for a
-    # photo at least in that neighborhood.
-    assert photo_quality.hero_fit_mode({"width": 2400, "height": 1000}) == "cover"
-
-
-def test_hero_fit_mode_uses_contain_for_portrait_or_square_photos():
-    # The real failure mode this session: an 800x1000 portrait upload lost
-    # ~70% of its height under cover in a wide hero.
-    assert photo_quality.hero_fit_mode({"width": 800, "height": 1000}) == "contain"
-    assert photo_quality.hero_fit_mode({"width": 1000, "height": 1000}) == "contain"
-
-
-def test_hero_fit_mode_uses_contain_for_ordinary_landscape_photos():
-    # Real incident: this exact 1000x750 (1.33 ratio) photo — an ordinary
-    # real upload, not portrait or square — got "cover" under the old 1.3
-    # threshold and cropped the actual people out of a hero-bleed at
-    # typical desktop width, leaving just background visible. An ordinary
-    # landscape ratio isn't wide enough to safely guess where the subject
-    # sits within the much wider container.
-    assert photo_quality.hero_fit_mode({"width": 1000, "height": 750}) == "contain"  # Carranza Tae Kwondo
-    assert photo_quality.hero_fit_mode({"width": 2000, "height": 1200}) == "contain"  # 1.67 ratio
-
-
-def test_hero_fit_mode_defaults_to_contain_for_unknown_dimensions():
-    assert photo_quality.hero_fit_mode({}) == "contain"
-    assert photo_quality.hero_fit_mode({"width": 2000, "height": 0}) == "contain"
+# hero_fit_mode() was removed — aspect ratio only tells you a photo's
+# shape, not where the subject sits within it, and couldn't reliably
+# prevent cropping (see generate_website_mocks.py's _hero_photo_fit_for,
+# which now always uses "contain"). See tests/test_generate_website_mocks.py
+# for coverage of the current behavior.

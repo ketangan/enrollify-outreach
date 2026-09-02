@@ -881,34 +881,44 @@ def test_all_photo_backgrounds_crop_from_the_top_not_center():
             )
 
 
-def test_extreme_portrait_stock_photos_never_render_with_cover_fit():
-    # Real incident: a 1400x2100 (0.67 ratio) stock photo, cropped with
-    # background-size: cover into a short/wide .band-strip__cell, rendered
-    # as almost solid black with only a sliver of the subject visible —
-    # "top" cropping has too little vertical room to work with once a tall
-    # portrait image is scaled to cover a short cell. Every extreme-portrait
-    # stock photo must render with --photo-fit: contain instead (shows the
-    # whole photo, letterboxed) wherever _photo_style is used, across every
-    # category's bundled stock set — not just the one that first surfaced
-    # this (martial_arts/action-3.jpg).
-    style_re = re.compile(r"style=\"--photo: url\('([^']+)'\); --photo-fit: (cover|contain)\"")
+def test_no_photo_ever_renders_with_cover_fit():
+    # Real incidents, two rounds: (1) a 1400x2100 (0.67 ratio) portrait
+    # stock photo cropped to almost solid black in a short/wide
+    # .band-strip__cell; (2) AFTER "fixing" that with an aspect-ratio
+    # threshold, a perfectly ordinary 1.46-ratio LANDSCAPE stock photo
+    # (martial_arts/action-2.jpg) still cropped the subjects out of the
+    # exact same kind of cell, because they sit in the lower half of the
+    # frame with empty tree canopy above — a composition problem, which no
+    # aspect-ratio threshold can detect. Every --photo/--hero-photo
+    # instance (card slots via _photo_style, hero slots via
+    # _hero_photo_fit_for) must render with "contain" now, full stop,
+    # regardless of the photo's shape — across every category's bundled
+    # stock set, not just the ones that surfaced each round of this.
+    style_re = re.compile(r"style=\"--(?:photo|hero-photo|photo-a|photo-b): url\('[^']+'\)[^\"]*--photo-(?:fit|a-fit|b-fit): (cover|contain)")
     raw_categories = ["martial_arts", "sports", "swim", "music", "preschool"]
     checked = 0
     for raw_category in raw_categories:
         mock_type = website_mocks.normalize_mock_type("", category=raw_category)
         for variant in website_mocks.MOCK_VARIANTS[mock_type]:
             rendered = generate_website_mocks._render_mock_html(_lead(category=raw_category), variant)
-            for url, fit in style_re.findall(rendered):
-                checked += 1
-                ratio = generate_website_mocks._stock_photo_aspect_ratio(url)
-                if ratio is None:
-                    continue
-                if ratio < generate_website_mocks.EXTREME_PORTRAIT_ASPECT_RATIO:
-                    assert fit == "contain", (
-                        f"{raw_category}/{variant.version_id}: extreme-portrait stock photo "
-                        f"{url} (ratio={ratio:.2f}) rendered with cover fit"
-                    )
+            fits = style_re.findall(rendered)
+            checked += len(fits)
+            for fit in fits:
+                assert fit == "contain", f"{raw_category}/{variant.version_id} rendered a photo with cover fit"
     assert checked > 30  # sanity: actually exercised a meaningful number of instances
+
+
+def test_hero_photo_fit_for_always_returns_contain():
+    # Both the real-photo-override path and the stock-fallback path used to
+    # compute a ratio-based cover/contain decision — neither could verify
+    # composition, so both are gone in favor of an unconditional "contain".
+    ctx = {"hero_photo_override": "https://example.com/real-photo.jpg", "hero_photo_fit": "cover"}
+    assert generate_website_mocks._hero_photo_fit_for(ctx, "https://example.com/real-photo.jpg") == "contain"
+    stock_url = next(
+        url for url, path in generate_website_mocks.STOCK_PHOTO_ASSETS.items()
+        if path == "martial_arts/action-1.jpg"  # a genuinely landscape (1.46) stock photo
+    )
+    assert generate_website_mocks._hero_photo_fit_for({}, stock_url) == "contain"
 
 
 def test_stock_photo_aspect_ratio_flags_known_extreme_portrait_photo():
