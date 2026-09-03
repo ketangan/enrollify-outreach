@@ -17,6 +17,14 @@ def _http_error(status):
     return HttpError(_FakeResp(status), b'{"error": "boom"}')
 
 
+def _rate_limit_error(reason="rateLimitExceeded", status=403):
+    body = (
+        b'{"error": {"message": "Quota exceeded", "errors": [{"message": "Quota exceeded", '
+        b'"domain": "usageLimits", "reason": "' + reason.encode() + b'"}]}}'
+    )
+    return HttpError(_FakeResp(status), body)
+
+
 def test_execute_with_retry_retries_transient_server_error(monkeypatch):
     monkeypatch.setattr(gmail_client.time, "sleep", lambda _seconds: None)
     calls = {"n": 0}
@@ -53,6 +61,57 @@ def test_execute_with_retry_raises_after_exhausting_attempts(monkeypatch):
         def execute(self):
             calls["n"] += 1
             raise _http_error(503)
+
+    with pytest.raises(HttpError):
+        gmail_client._execute_with_retry(Request(), max_attempts=3)
+    assert calls["n"] == 3
+
+
+def test_execute_with_retry_retries_rate_limit_error(monkeypatch):
+    # The bug that broke the 2026-09-03 daily run: a 403 rateLimitExceeded
+    # was treated as a non-retryable client error and raised immediately,
+    # even though it just means "you're going too fast" and would succeed
+    # on retry — unlike a genuine 403 (bad scope, not found).
+    sleeps = []
+    monkeypatch.setattr(gmail_client.time, "sleep", sleeps.append)
+    calls = {"n": 0}
+
+    class Request:
+        def execute(self):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise _rate_limit_error()
+            return {"ok": True}
+
+    assert gmail_client._execute_with_retry(Request(), max_attempts=3) == {"ok": True}
+    assert calls["n"] == 3
+    # Rate-limit backoff is much longer than the transient-5xx backoff since
+    # Gmail enforces this as a per-minute bucket, not a momentary blip.
+    assert sleeps == [20.0, 40.0]
+
+
+def test_execute_with_retry_does_not_retry_non_rate_limit_403(monkeypatch):
+    monkeypatch.setattr(gmail_client.time, "sleep", lambda _seconds: None)
+    calls = {"n": 0}
+
+    class Request:
+        def execute(self):
+            calls["n"] += 1
+            raise _http_error(403)
+
+    with pytest.raises(HttpError):
+        gmail_client._execute_with_retry(Request())
+    assert calls["n"] == 1
+
+
+def test_execute_with_retry_raises_after_exhausting_rate_limit_attempts(monkeypatch):
+    monkeypatch.setattr(gmail_client.time, "sleep", lambda _seconds: None)
+    calls = {"n": 0}
+
+    class Request:
+        def execute(self):
+            calls["n"] += 1
+            raise _rate_limit_error()
 
     with pytest.raises(HttpError):
         gmail_client._execute_with_retry(Request(), max_attempts=3)

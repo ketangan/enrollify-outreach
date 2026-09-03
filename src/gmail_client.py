@@ -33,14 +33,44 @@ logger = logging.getLogger(__name__)
 
 _RETRYABLE_HTTP_STATUSES = {500, 502, 503, 504}
 
+# Gmail's 403 is overloaded: most 403s (bad scope, not found) mean the
+# request itself is invalid and retrying won't help, but these specific
+# reasons mean "you're going too fast" — the request would succeed later.
+_RATE_LIMIT_REASONS = {"rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded"}
+
+# Per-message-fetch pacing for the list-then-get-each-one loops below
+# (fetch_sent_messages, fetch_inbox_replies, fetch_inbox_raw_messages,
+# fetch_drafts). These call messages().get(format="raw") once per message
+# with no gap between calls, which is what actually trips Gmail's
+# per-minute quota as sent/reply volume grows — retrying after the fact
+# isn't enough on its own if every run immediately re-triggers the same
+# burst.
+_INTER_FETCH_DELAY = 0.15
+
+
+def _is_rate_limit_error(err) -> bool:
+    """True for a 403/429 whose reason indicates Gmail's rate limiter
+    specifically, as opposed to a genuine client error. error_details is a
+    list of {"reason": ..., ...} dicts for this shape of error — see
+    googleapiclient.errors.HttpError._get_reason."""
+    if getattr(err.resp, "status", None) not in (403, 429):
+        return False
+    details = err.error_details
+    if isinstance(details, list):
+        return any(isinstance(d, dict) and d.get("reason") in _RATE_LIMIT_REASONS for d in details)
+    return False
+
 
 def _execute_with_retry(request, *, max_attempts: int = 3, base_delay: float = 2.0):
-    """Execute a Gmail API request, retrying transient server errors.
+    """Execute a Gmail API request, retrying transient server errors and
+    rate-limit responses.
 
     Gmail's API occasionally returns a bare 500 "Internal error encountered"
     (backendError) on an otherwise-valid request — retrying the same request
-    typically succeeds. Client errors (4xx) aren't retried since trying again
-    won't fix them.
+    typically succeeds, so a short backoff is enough. A rate-limit response
+    needs a much longer wait: Gmail enforces it as a per-minute bucket, so a
+    short retry just lands in the same still-exhausted window. Other client
+    errors (4xx) aren't retried since trying again won't fix them.
     """
     from googleapiclient.errors import HttpError
 
@@ -49,11 +79,13 @@ def _execute_with_retry(request, *, max_attempts: int = 3, base_delay: float = 2
             return request.execute()
         except HttpError as err:
             status = getattr(err.resp, "status", None)
-            if status not in _RETRYABLE_HTTP_STATUSES or attempt == max_attempts:
+            rate_limited = _is_rate_limit_error(err)
+            if not (status in _RETRYABLE_HTTP_STATUSES or rate_limited) or attempt == max_attempts:
                 raise
-            delay = base_delay * attempt
+            delay = 20.0 * attempt if rate_limited else base_delay * attempt
             logger.warning(
-                "Gmail API transient error %s (attempt %d/%d). Retrying in %.1fs.",
+                "Gmail API %s error %s (attempt %d/%d). Retrying in %.1fs.",
+                "rate-limit" if rate_limited else "transient",
                 status, attempt, max_attempts, delay,
             )
             time.sleep(delay)
@@ -457,6 +489,7 @@ def fetch_drafts(since_days: int = 90) -> list[DraftMessage]:
             id=draft_id,
             format="raw",
         ))
+        time.sleep(_INTER_FETCH_DELAY)
         msg = _message_from_gmail_resource(resource)
         if not msg:
             continue
@@ -484,6 +517,7 @@ def fetch_sent_messages(since_days: int = 30) -> list[SentMessage]:
             id=gmail_id,
             format="raw",
         ))
+        time.sleep(_INTER_FETCH_DELAY)
         msg = _message_from_gmail_resource(resource)
         if not msg:
             continue
@@ -530,6 +564,7 @@ def fetch_inbox_replies(since_days: int = 30, include_all: bool = False) -> list
             id=gmail_id,
             format="raw",
         ))
+        time.sleep(_INTER_FETCH_DELAY)
         msg = _message_from_gmail_resource(resource)
         if not msg:
             continue
@@ -568,6 +603,7 @@ def fetch_inbox_raw_messages(since_days: int = 30) -> list[RawInboxMessage]:
             id=gmail_id,
             format="raw",
         ))
+        time.sleep(_INTER_FETCH_DELAY)
         msg = _message_from_gmail_resource(resource)
         if not msg:
             continue
