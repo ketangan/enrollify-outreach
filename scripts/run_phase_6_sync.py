@@ -390,7 +390,7 @@ def _fetch_unthreaded_bounces(since_days: int) -> list[dict]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--since-days", type=int, default=30)
+    parser.add_argument("--since-days", type=int, default=15)
     args = parser.parse_args()
 
     config.validate()
