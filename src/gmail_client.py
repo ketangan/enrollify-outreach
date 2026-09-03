@@ -45,7 +45,22 @@ _RATE_LIMIT_REASONS = {"rateLimitExceeded", "userRateLimitExceeded", "quotaExcee
 # per-minute quota as sent/reply volume grows — retrying after the fact
 # isn't enough on its own if every run immediately re-triggers the same
 # burst.
-_INTER_FETCH_DELAY = 0.15
+#
+# messages().get(format="raw") costs 20 quota units (Gmail API reference:
+# developers.google.com/workspace/gmail/api/reference/quota). The
+# 2026-09-03 run kept hitting rateLimitExceeded even at 0.15s pacing
+# (~6.7 calls/sec = ~8,000 units/min sustained) — that only makes sense if
+# this project is on Gmail's newer 6,000-units/minute/user tier rather
+# than the older 15,000 default, so size pacing off the lower number.
+# Target ~50% of that ceiling, not 100%: messages().list() pagination and
+# the other fetch loops in the same script run close together in the same
+# rolling window, and this needs headroom for them too, not just itself.
+_GMAIL_GET_QUOTA_UNITS = 20
+_GMAIL_USER_QUOTA_PER_MINUTE = 6000
+_QUOTA_SAFETY_FACTOR = 0.5
+_INTER_FETCH_DELAY = 60.0 / (
+    (_GMAIL_USER_QUOTA_PER_MINUTE * _QUOTA_SAFETY_FACTOR) / _GMAIL_GET_QUOTA_UNITS
+)
 
 
 def _is_rate_limit_error(err) -> bool:
