@@ -28,6 +28,69 @@ def test_places_prefilter_skips_retail_place_types():
     assert place.skip_reason == "non_target_place_type:shoe_store"
 
 
+def test_places_prefilter_skips_hotel_place_types():
+    place = places.DiscoveredPlace(
+        place_id="abc",
+        name="Downtown Ballroom",
+        website="https://example.com",
+        phone="",
+        address="",
+        city="Long Beach",
+        state="CA",
+        zip="90831",
+        latitude=None,
+        longitude=None,
+        category="dance",
+        place_types=["hotel", "lodging", "point_of_interest"],
+    )
+
+    places._apply_pre_filter(place)
+
+    assert place.skip_reason == "non_target_place_type:hotel"
+
+
+def test_places_prefilter_skips_hotel_brand_name_before_fetch():
+    place = places.DiscoveredPlace(
+        place_id="abc",
+        name="Hilton Long Beach",
+        website="https://example.com",
+        phone="",
+        address="",
+        city="Long Beach",
+        state="CA",
+        zip="90831",
+        latitude=None,
+        longitude=None,
+        category="dance",
+        place_types=["point_of_interest"],
+    )
+
+    places._apply_pre_filter(place)
+
+    assert place.skip_reason == "non_target_org:hilton"
+
+
+def test_places_prefilter_skips_hotel_domain_before_fetch():
+    place = places.DiscoveredPlace(
+        place_id="abc",
+        name="Downtown Event Room",
+        website="https://www.hilton.com/en/hotels/lgbchhf-hilton-long-beach/",
+        phone="",
+        address="",
+        city="Long Beach",
+        state="CA",
+        zip="90831",
+        latitude=None,
+        longitude=None,
+        category="dance",
+        place_types=["point_of_interest"],
+    )
+
+    places._apply_pre_filter(place)
+
+    assert place.skip_reason == "excluded_domain:hilton.com"
+
+
 def test_parse_place_cleans_city_suffix_using_address_components():
     raw = {
         "id": "place-1",
