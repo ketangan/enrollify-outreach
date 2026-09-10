@@ -48,7 +48,7 @@ def _build_generate_full_site_cmd(**kw) -> list[str]:
         *_opt("--website", kw.get("website")),
         *_opt("--info-pages", kw.get("info_pages")),
         *_opt("--yelp-text", kw.get("yelp_text")),
-        "--google-reviews" if kw.get("use_google", True) else "--no-google-reviews",
+        "--google-reviews" if kw.get("use_google", False) else "--no-google-reviews",
         "--versions", kw.get("versions") or "auto",
         *_opt("--revision-notes", kw.get("revision_notes")),
         *_opt("--subject-id", kw.get("subject_id")),
@@ -67,16 +67,49 @@ def _build_generate_full_site_cmd(**kw) -> list[str]:
     ]
 
 
+def _build_downstream_steps(limit=None) -> list[tuple[list[str], str]]:
+    """Build the downstream subprocess chain.
+
+    Phase 2 intentionally stays uncapped: it is a cheap sheet-only dedupe pass,
+    and running it first prevents expensive classify/owner work on obvious
+    duplicate rows. The UI limit caps the paid/slow LLM phases.
+    """
+    limit_args = _opt("--limit", limit)
+    return [
+        (
+            [_python(), "scripts/run_phase_2_dedupe.py", "--commit"],
+            "Phase 2: Dedupe",
+        ),
+        (
+            [_python(), "scripts/run_phase_3_classify.py", *limit_args],
+            "Phase 3: Classify",
+        ),
+        (
+            [_python(), "scripts/run_phase_4_owners.py", *limit_args],
+            "Phase 4: Owner lookup",
+        ),
+    ]
+
+
 JOB_KIND_REGISTRY = {
     # Per-region Phase 1 (single zip)
     "phase1_next": lambda region, **kw: [
         _python(), "scripts/run_phase_1_discovery.py",
         "--next", "--region", region,
+        *_opt("--max-api-calls", kw.get("max_api_calls")),
     ],
     # Per-region Phase 1 (auto loop)
     "phase1_auto": lambda region, max_zips=2, **kw: [
         _python(), "scripts/run_phase_1_discovery.py",
         "--auto", "--region", region, "--max-zips", str(max_zips),
+        *_opt("--max-api-calls", kw.get("max_api_calls")),
+    ],
+    "phase1_zip_list": lambda zips, max_zips=2, **kw: [
+        _python(), "scripts/run_phase_1_discovery.py",
+        "--zip-list", zips, "--max-zips", str(max_zips),
+        *_opt("--max-api-calls", kw.get("max_api_calls")),
+        *_opt("--pages-per-category", kw.get("pages_per_category")),
+        *(["--force"] if kw.get("force") else []),
     ],
     # Downstream pipeline: dedupe + classify + owners
     # Implemented as a shell pipeline via subprocess chaining below.
@@ -201,20 +234,7 @@ def _run_job_thread(job_id: str, kind: str, params: dict) -> None:
 
         if kind == "downstream":
             # Pipeline: dedupe (commit) → classify → owners
-            steps = [
-                (
-                    [_python(), "scripts/run_phase_2_dedupe.py", "--commit"],
-                    "Phase 2: Dedupe",
-                ),
-                (
-                    [_python(), "scripts/run_phase_3_classify.py"],
-                    "Phase 3: Classify",
-                ),
-                (
-                    [_python(), "scripts/run_phase_4_owners.py"],
-                    "Phase 4: Owner lookup",
-                ),
-            ]
+            steps = _build_downstream_steps(params.get("limit"))
             for cmd, label in steps:
                 _write_status(job_id, current_step=label)
                 rc = _run_subprocess(cmd, job_id, label)

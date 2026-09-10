@@ -41,13 +41,18 @@ SEARCH_FIELDS = ",".join([
     "nextPageToken",
 ])
 
-DETAILS_FIELDS = ",".join([
+DETAILS_FIELDS_MINIMAL = ",".join([
     "id",
     "displayName",
     "formattedAddress",
     "addressComponents",
     "websiteUri",
     "nationalPhoneNumber",
+    "internationalPhoneNumber",
+])
+
+DETAILS_FIELDS_FULL = ",".join([
+    *DETAILS_FIELDS_MINIMAL.split(","),
     "rating",
     "userRatingCount",
     "reviews",
@@ -55,29 +60,76 @@ DETAILS_FIELDS = ",".join([
     "photos",
 ])
 
+# Backward-compatible name for older tests/imports. New code should choose
+# explicitly via _place_details(..., detail_level="minimal"|"full").
+DETAILS_FIELDS = DETAILS_FIELDS_FULL
+
 MAX_PHOTOS_PER_PLACE = 4
 
 MAX_RESULTS_PER_QUERY = 60
+VALID_DISCOVERY_DETAIL_LEVELS = {"none", "minimal", "full"}
 
 
-# API call counter — bumped on every Places API request (text search or details).
-# Reset via reset_api_call_count(). Read via get_api_call_count().
+# API call counter — bumped on every Places API request. Reset via
+# reset_api_call_count(). Read via get_api_call_count()/get_api_call_breakdown().
 _api_call_count = 0
+_api_call_breakdown: dict[str, int] = {}
  
  
 def get_api_call_count() -> int:
     """Total Places API requests made since process start or last reset."""
     return _api_call_count
  
+
+def get_api_call_breakdown() -> dict[str, int]:
+    """Places API requests by rough call kind since the last reset."""
+    return dict(_api_call_breakdown)
+
  
 def reset_api_call_count() -> None:
-    global _api_call_count
+    global _api_call_count, _api_call_breakdown
     _api_call_count = 0
+    _api_call_breakdown = {}
  
  
-def _bump_api_count() -> None:
+def _bump_api_count(kind: str = "unknown") -> None:
     global _api_call_count
     _api_call_count += 1
+    _api_call_breakdown[kind] = _api_call_breakdown.get(kind, 0) + 1
+
+
+def _has_api_budget(max_api_calls: int | None) -> bool:
+    return max_api_calls is None or _api_call_count < max_api_calls
+
+
+def _ensure_api_budget(max_api_calls: int | None) -> None:
+    if not _has_api_budget(max_api_calls):
+        raise PlacesCallLimitReached(
+            f"Places API call cap reached ({_api_call_count} >= {max_api_calls})"
+        )
+
+
+def _discovery_pages_per_category() -> int:
+    return max(1, min(int(config.GOOGLE_PLACES_DISCOVERY_PAGES_PER_CATEGORY), 3))
+
+
+def discovery_cost_settings() -> dict:
+    """Current knobs that control discovery spend. Used by the web UI."""
+    detail_level = (config.GOOGLE_PLACES_DISCOVERY_DETAIL_LEVEL or "minimal").lower()
+    if detail_level not in VALID_DISCOVERY_DETAIL_LEVELS:
+        detail_level = "minimal"
+    return {
+        "categories": list(config.SCHOOL_CATEGORIES),
+        "pages_per_category": _discovery_pages_per_category(),
+        "detail_level": detail_level,
+        "max_api_calls_per_run": config.GOOGLE_PLACES_MAX_API_CALLS_PER_RUN,
+    }
+
+
+def estimate_discovery_text_search_calls(zip_count: int) -> int:
+    """Worst-case Text Search calls before optional no-website details."""
+    zip_count = max(0, int(zip_count or 0))
+    return zip_count * len(config.SCHOOL_CATEGORIES) * _discovery_pages_per_category()
 
 
 class PlacesAuthError(Exception):
@@ -86,6 +138,10 @@ class PlacesAuthError(Exception):
 
 class PlacesAPIError(Exception):
     """Non-auth API failures (500s, timeouts, etc.)."""
+
+
+class PlacesCallLimitReached(Exception):
+    """Raised internally to stop before making another paid Places call."""
 
 
 @dataclass
@@ -144,12 +200,13 @@ def _check_response(resp: requests.Response, context: str) -> None:
     raise PlacesAPIError(f"Places API {resp.status_code}: {context}")
 
 
-def _text_search(query: str, page_token: str | None = None) -> dict:
+def _text_search(query: str, page_token: str | None = None, *, max_api_calls: int | None = None) -> dict:
     payload = {"textQuery": query, "pageSize": 20}
     if page_token:
         payload["pageToken"] = page_token
 
-    _bump_api_count()
+    _ensure_api_budget(max_api_calls)
+    _bump_api_count("text_search")
     resp = requests.post(
         PLACES_TEXT_SEARCH_URL,
         headers=_headers(),
@@ -160,14 +217,32 @@ def _text_search(query: str, page_token: str | None = None) -> dict:
     return resp.json()
 
 
-def _place_details(place_id: str) -> dict:
+def _normalize_detail_level(detail_level: str | None) -> str:
+    normalized = (detail_level or "full").strip().lower()
+    if normalized not in VALID_DISCOVERY_DETAIL_LEVELS:
+        logger.warning("Unknown Places detail level %r; using minimal", detail_level)
+        return "minimal"
+    return normalized
+
+
+def _place_details(
+    place_id: str,
+    *,
+    detail_level: str = "full",
+    max_api_calls: int | None = None,
+) -> dict:
+    detail_level = _normalize_detail_level(detail_level)
+    if detail_level == "none":
+        return {}
+    fields = DETAILS_FIELDS_FULL if detail_level == "full" else DETAILS_FIELDS_MINIMAL
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": config.GOOGLE_PLACES_API_KEY,
-        "X-Goog-FieldMask": DETAILS_FIELDS,
+        "X-Goog-FieldMask": fields,
     }
     url = PLACES_DETAILS_URL.format(place_id=place_id)
-    _bump_api_count()
+    _ensure_api_budget(max_api_calls)
+    _bump_api_count(f"details_{detail_level}")
     resp = requests.get(url, headers=headers, timeout=30)
     if resp.status_code == 200:
         return resp.json()
@@ -303,7 +378,13 @@ def _apply_pre_filter(place: DiscoveredPlace) -> None:
         place.skip_reason = reason
 
 
-def search_zip_for_category(zip_code: str, category: str) -> tuple[list[dict], bool]:
+def search_zip_for_category(
+    zip_code: str,
+    category: str,
+    *,
+    max_api_calls: int | None = None,
+    max_pages: int | None = None,
+) -> tuple[list[dict], bool]:
     phrase = config.CATEGORY_SEARCH_PHRASES[category]
     city, state = regions.zip_city_state(zip_code)
 
@@ -315,22 +396,37 @@ def search_zip_for_category(zip_code: str, category: str) -> tuple[list[dict], b
     all_results: list[dict] = []
     page_token: str | None = None
     pages = 0
+    max_pages = max(1, min(int(max_pages or _discovery_pages_per_category()), 3))
+    hit_cap = False
 
-    while pages < 3:
-        response = _text_search(query, page_token=page_token)
+    while pages < max_pages:
+        try:
+            response = _text_search(query, page_token=page_token, max_api_calls=max_api_calls)
+        except PlacesCallLimitReached:
+            hit_cap = True
+            break
         results = response.get("places", [])
         all_results.extend(results)
         page_token = response.get("nextPageToken")
         pages += 1
         if not page_token:
             break
+        if pages >= max_pages:
+            hit_cap = True
+            break
         time.sleep(2)
 
-    hit_cap = len(all_results) >= MAX_RESULTS_PER_QUERY
+    hit_cap = hit_cap or len(all_results) >= MAX_RESULTS_PER_QUERY
     return all_results, hit_cap
 
 
-def discover_zip(zip_code: str) -> dict:
+def discover_zip(
+    zip_code: str,
+    *,
+    max_api_calls: int | None = None,
+    detail_level: str | None = None,
+    skip_detail_place_ids: set[str] | None = None,
+) -> dict:
     """
     Run discovery for a single zip across all school categories.
 
@@ -340,11 +436,23 @@ def discover_zip(zip_code: str) -> dict:
     logger.info("Discovering zip %s", zip_code)
     seen_place_ids: dict[str, DiscoveredPlace] = {}
     capped_categories: list[str] = []
+    api_call_cap_reached = False
+    detail_level = _normalize_detail_level(
+        detail_level or config.GOOGLE_PLACES_DISCOVERY_DETAIL_LEVEL
+    )
+    skip_detail_place_ids = skip_detail_place_ids or set()
 
     for category in config.SCHOOL_CATEGORIES:
+        if not _has_api_budget(max_api_calls):
+            api_call_cap_reached = True
+            if "api_call_cap" not in capped_categories:
+                capped_categories.append("api_call_cap")
+            logger.warning("  Places API call cap reached before category %s; stopping zip early", category)
+            break
         logger.info("  Querying category: %s", category)
         try:
-            raw_results, hit_cap = search_zip_for_category(zip_code, category)
+            search_kwargs = {"max_api_calls": max_api_calls} if max_api_calls is not None else {}
+            raw_results, hit_cap = search_zip_for_category(zip_code, category, **search_kwargs)
         except PlacesAuthError:
             # Fatal — bubble up and let the CLI stop everything
             raise
@@ -355,6 +463,8 @@ def discover_zip(zip_code: str) -> dict:
 
         if hit_cap:
             capped_categories.append(category)
+        if not _has_api_budget(max_api_calls):
+            api_call_cap_reached = True
 
         for raw in raw_results:
             place = _parse_place(raw, category, fallback_zip=zip_code)
@@ -367,18 +477,38 @@ def discover_zip(zip_code: str) -> dict:
     for place in seen_place_ids.values():
         _apply_pre_filter(place)
 
-    # Fetch details (reviews) for no-website places
+    # Keep discovery cheap. Phase 1 only needs enough Place Details to
+    # catch "search omitted website but details has it" and improve phone/
+    # address. Reviews/photos are deferred to the site generator path.
     for place in seen_place_ids.values():
-        if place.is_skipped or place.has_website:
+        if place.is_skipped or place.has_website or detail_level == "none":
             continue
+        if place.place_id in skip_detail_place_ids:
+            continue
+        if not _has_api_budget(max_api_calls):
+            api_call_cap_reached = True
+            if "api_call_cap" not in capped_categories:
+                capped_categories.append("api_call_cap")
+            logger.warning("  Places API call cap reached before details for %s; stopping details early", place.name)
+            break
         try:
-            details = _place_details(place.place_id)
+            details = _place_details(
+                place.place_id,
+                detail_level=detail_level,
+                max_api_calls=max_api_calls,
+            )
+        except PlacesCallLimitReached:
+            api_call_cap_reached = True
+            if "api_call_cap" not in capped_categories:
+                capped_categories.append("api_call_cap")
+            break
         except PlacesAuthError:
             raise  # fatal
         except Exception as e:
             logger.warning("Details fetch failed for %s: %s", place.name, e)
             continue
         _apply_details(place, details)
+        _apply_pre_filter(place)
 
     with_web = [p for p in seen_place_ids.values() if not p.is_skipped and p.has_website]
     no_web = [p for p in seen_place_ids.values() if not p.is_skipped and not p.has_website]
@@ -395,6 +525,11 @@ def discover_zip(zip_code: str) -> dict:
         "places_without_website": no_web,
         "places_skipped": skipped,
         "capped_categories": capped_categories,
+        "api_call_cap_reached": api_call_cap_reached,
+        "api_call_count": get_api_call_count(),
+        "api_call_breakdown": get_api_call_breakdown(),
+        "discovery_detail_level": detail_level,
+        "pages_per_category": _discovery_pages_per_category(),
     }
 
 
@@ -468,7 +603,7 @@ def find_business(name: str, city: str = "", state: str = "", address: str = "")
     logger.info("find_business: matched %r to %r (confidence %.0f)", name, place.name, score)
 
     try:
-        details = _place_details(place.place_id)
+        details = _place_details(place.place_id, detail_level="full")
     except PlacesAuthError:
         raise
     except Exception as e:

@@ -32,9 +32,10 @@ def test_process_zip_marks_failed_when_discovery_crashes(monkeypatch):
         lambda zip_code, city, state, admin="": calls.append(("failed", zip_code, city, state, admin)),
     )
 
-    def auth_failure(zip_code):
+    def auth_failure(zip_code, **kwargs):
         raise phase1.places.PlacesAuthError("permission denied")
 
+    monkeypatch.setattr(phase1.no_website_schools, "known_place_ids", lambda: set())
     monkeypatch.setattr(phase1.places, "discover_zip", auth_failure)
 
     with pytest.raises(phase1.places.PlacesAuthError):
@@ -64,7 +65,7 @@ def test_process_zip_skips_places_already_known_to_no_website_schools(monkeypatc
     brand_new = _stub_place("place-new", name="Brand New Studio")
     monkeypatch.setattr(
         phase1.places, "discover_zip",
-        lambda zip_code: {
+        lambda zip_code, **kwargs: {
             "places_with_website": [], "places_without_website": [already_known, brand_new],
             "places_skipped": [], "capped_categories": [],
         },
@@ -92,7 +93,7 @@ def test_process_zip_appends_nothing_when_all_places_already_known(monkeypatch):
 
     monkeypatch.setattr(
         phase1.places, "discover_zip",
-        lambda zip_code: {
+        lambda zip_code, **kwargs: {
             "places_with_website": [], "places_without_website": [_stub_place("place-known")],
             "places_skipped": [], "capped_categories": [],
         },
@@ -111,10 +112,65 @@ def test_run_auto_bubbles_places_auth_errors(monkeypatch):
     monkeypatch.setattr(phase1.places, "get_api_call_count", lambda: 0)
     monkeypatch.setattr(phase1.coverage, "pick_next_zip", lambda region_name: ("90221", "ok"))
 
-    def auth_failure(zip_code, admin=""):
+    def auth_failure(zip_code, admin="", **kwargs):
         raise phase1.places.PlacesAuthError("permission denied")
 
     monkeypatch.setattr(phase1, "process_zip", auth_failure)
 
     with pytest.raises(phase1.places.PlacesAuthError):
         phase1.run_auto("South_Bay", max_zips=2, max_api_calls=500, admin="Ketan")
+
+
+def test_process_zip_if_needed_skips_completed_zip(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        phase1.coverage,
+        "get_row",
+        lambda zip_code: phase1.coverage.CoverageRow(zip=zip_code, status="complete"),
+    )
+    monkeypatch.setattr(phase1, "process_zip", lambda zip_code, admin="", **kwargs: calls.append(zip_code))
+
+    processed = phase1.process_zip_if_needed("90266", admin="Ketan")
+
+    assert processed is False
+    assert calls == []
+
+
+def test_process_zip_if_needed_force_reruns_completed_zip(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        phase1.coverage,
+        "get_row",
+        lambda zip_code: phase1.coverage.CoverageRow(zip=zip_code, status="complete"),
+    )
+    monkeypatch.setattr(phase1, "process_zip", lambda zip_code, admin="", **kwargs: calls.append((zip_code, admin)))
+
+    processed = phase1.process_zip_if_needed("90266", admin="Ketan", force=True)
+
+    assert processed is True
+    assert calls == [("90266", "Ketan")]
+
+
+def test_run_zip_list_limits_to_max_processed_zips(monkeypatch):
+    calls = []
+    monkeypatch.setattr(phase1.places, "get_api_call_count", lambda: 0)
+    monkeypatch.setattr(
+        phase1,
+        "process_zip_if_needed",
+        lambda zip_code, admin="", force=False, **kwargs: calls.append((zip_code, admin, force)) or True,
+    )
+
+    phase1.run_zip_list(["90266", "90505", "92262"], max_zips=2, max_api_calls=500, admin="Ketan")
+
+    assert calls == [
+        ("90266", "Ketan", False),
+        ("90505", "Ketan", False),
+    ]
+
+
+def test_parse_zip_list_dedupes_and_ignores_invalid_tokens():
+    assert phase1._parse_zip_list("90266, 90505 nope 90266 123456 92262") == [
+        "90266",
+        "90505",
+        "92262",
+    ]

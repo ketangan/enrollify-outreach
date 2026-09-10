@@ -40,3 +40,27 @@ def block_live_r2_uploads(monkeypatch, request):
     from src import r2_storage
 
     monkeypatch.setattr(r2_storage, "is_configured", lambda: False)
+
+
+@pytest.fixture(autouse=True)
+def block_live_mock_content_llm_calls(monkeypatch, request):
+    """Prevent broad tests from escaping into Anthropic.
+
+    The dedicated mock_content_llm tests pass fake clients and are allowed to
+    exercise the parser wrappers. All other tests must stub the higher-level
+    inference function they need; otherwise a missing mock can burn real
+    Anthropic credits and sit through SDK retries.
+    """
+    if request.path.name == "test_mock_content_llm.py":
+        return
+
+    from src import mock_content_llm
+
+    def blocked_call(*args, **kwargs):
+        raise AssertionError(
+            "Tests must not call Anthropic through mock_content_llm. "
+            "Monkeypatch infer_program_labels, infer_theme_colors, "
+            "infer_owner_name, or infer_category_offerings in this test."
+        )
+
+    monkeypatch.setattr(mock_content_llm, "_call_with_retry", blocked_call)

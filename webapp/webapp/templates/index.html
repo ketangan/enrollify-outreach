@@ -116,7 +116,7 @@
 
   {# ─── Phase 2-4: Downstream ─────────────────────── #}
   {% set ds = stage_counts.downstream or {"pending": 0, "breakdown": {}} %}
-  <div class="phase-card phase-actionable {% if ds.pending > 0 %}phase-needs-action{% else %}phase-clear{% endif %}">
+  <div id="downstream" class="phase-card phase-actionable {% if ds.pending > 0 %}phase-needs-action{% else %}phase-clear{% endif %}">
     <div class="phase-header">
       <span class="phase-num">2-4</span>
       <span class="phase-title">Downstream</span>
@@ -132,8 +132,10 @@
     <p class="phase-rec rec-{{ rec.level }}">{{ rec.text }}</p>
     <div class="phase-actions">
       <form method="POST" action="/actions/downstream" class="inline-form">
+        <input type="number" name="limit" value="100" min="1" max="1000" title="Max records for classify and owner lookup">
         <button type="submit" {% if ds.pending == 0 %}disabled title="No pending leads"{% endif %}>Run downstream</button>
       </form>
+      <small class="muted">Limit applies to classify and owner lookup; dedupe still scans all pending rows.</small>
     </div>
   </div>
 

@@ -25,6 +25,16 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
+def _clamp_optional_limit(value, *, max_allowed: int = 1000) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return min(parsed, max_allowed)
+
+
 @router.post("/actions/phase1-next")
 def action_phase1_next(region: str = Form(...)):
     job_id = jobs_runner.submit_job("phase1_next", {"region": region})
@@ -38,8 +48,12 @@ def action_phase1_auto(region: str = Form(...), max_zips: int = Form(2)):
 
 
 @router.post("/actions/downstream")
-def action_downstream():
-    job_id = jobs_runner.submit_job("downstream")
+def action_downstream(limit: str = Form("")):
+    params = {}
+    limit_value = _clamp_optional_limit(limit)
+    if limit_value:
+        params["limit"] = limit_value
+    job_id = jobs_runner.submit_job("downstream", params)
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 

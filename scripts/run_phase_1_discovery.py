@@ -26,11 +26,18 @@ USAGE
 COST GUARDRAIL
 ──────────────
 By default a run will halt before processing the next zip if Places API calls
-exceed --max-api-calls (default 500). One zip uses ~80-120 API calls (~$0.40-0.60).
-Override with --max-api-calls.
+exceed --max-api-calls. Discovery also passes that cap into the Places client,
+so a run stops before the next paid request even mid-zip/category instead of
+only checking between zips.
 
-  # Cap at 200 calls (~2 zips):
-  python scripts/run_phase_1_discovery.py --auto --region LA_County --max-zips 5 --max-api-calls 200
+The default cap is GOOGLE_PLACES_MAX_API_CALLS_PER_RUN (or 120). The default
+Text Search page depth is GOOGLE_PLACES_DISCOVERY_PAGES_PER_CATEGORY (or 2).
+
+  # Cap at 80 calls:
+  python scripts/run_phase_1_discovery.py --auto --region LA_County --max-zips 5 --max-api-calls 80
+
+  # Finish a ZIP that was previously partial/capped by allowing all 3 pages:
+  python scripts/run_phase_1_discovery.py --zip 90401 --force --pages-per-category 3
 
 CONCURRENCY
 ───────────
@@ -43,6 +50,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sys
 import uuid
 from datetime import date
@@ -60,7 +68,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("phase1")
 
-DEFAULT_MAX_API_CALLS = 500
+DEFAULT_MAX_API_CALLS = config.GOOGLE_PLACES_MAX_API_CALLS_PER_RUN
+SKIP_ZIP_STATUSES = {"complete", "partial_complete", "in_progress"}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -129,7 +138,7 @@ def _place_to_no_website_row(place: places.DiscoveredPlace) -> dict:
 # Core: process one zip
 # ─────────────────────────────────────────────────────────────
 
-def process_zip(zip_code: str, admin: str = "") -> dict:
+def process_zip(zip_code: str, admin: str = "", *, max_api_calls: int | None = None) -> dict:
     """Run discovery for one zip and write results to the sheet."""
     zip_code = str(zip_code).zfill(5)
     city, state = regions.zip_city_state(zip_code)
@@ -137,7 +146,19 @@ def process_zip(zip_code: str, admin: str = "") -> dict:
     coverage.mark_in_progress(zip_code, city=city, state=state, admin=admin)
 
     try:
-        result = places.discover_zip(zip_code)
+        try:
+            known_no_website_place_ids = no_website_schools.known_place_ids()
+        except Exception as e:
+            logger.warning(
+                "Could not read known no-website place IDs; continuing without detail-skip cache: %s",
+                e,
+            )
+            known_no_website_place_ids = set()
+        result = places.discover_zip(
+            zip_code,
+            max_api_calls=max_api_calls,
+            skip_detail_place_ids=known_no_website_place_ids,
+        )
     except Exception:
         coverage.mark_failed(zip_code, city=city, state=state, admin=admin)
         raise
@@ -184,12 +205,14 @@ def process_zip(zip_code: str, admin: str = "") -> dict:
         if result["capped_categories"] else ""
     )
     logger.info(
-        "  DONE %s: %d leads, %d no-website, %d skipped%s",
+        "  DONE %s: %d leads, %d no-website, %d skipped%s; Places calls=%d %s",
         zip_code,
         len(result["places_with_website"]),
         len(result["places_without_website"]),
         len(result["places_skipped"]),
         capped_note,
+        places.get_api_call_count(),
+        places.get_api_call_breakdown(),
     )
 
     # Auto-dedupe within Leads — catches schools that overlap multiple zips.
@@ -203,15 +226,85 @@ def process_zip(zip_code: str, admin: str = "") -> dict:
             )
     except Exception as e:
         logger.warning("  In-leads dedupe step failed (non-fatal): %s", e)
-        
+
     return result
+
+
+def _parse_zip_list(raw: str) -> list[str]:
+    zips: list[str] = []
+    seen: set[str] = set()
+    for token in re.split(r"[\s,]+", raw or ""):
+        digits = re.sub(r"\D", "", token)
+        if len(digits) != 5:
+            continue
+        if digits in seen:
+            continue
+        seen.add(digits)
+        zips.append(digits)
+    return zips
+
+
+def should_skip_zip(zip_code: str, *, force: bool = False) -> tuple[bool, str]:
+    """Return whether a direct/list run should avoid this zip.
+
+    Region auto-runs already call coverage.pick_next_zip(), but manual and
+    explicit-list runs need their own guard so they do not accidentally spend
+    Places API on a zip that has already been completed.
+    """
+    if force:
+        return False, ""
+    row = coverage.get_row(str(zip_code).zfill(5))
+    if row and row.status in SKIP_ZIP_STATUSES:
+        return True, row.status
+    return False, ""
+
+
+def process_zip_if_needed(
+    zip_code: str,
+    admin: str = "",
+    *,
+    force: bool = False,
+    max_api_calls: int | None = None,
+) -> bool:
+    skip, reason = should_skip_zip(zip_code, force=force)
+    if skip:
+        logger.info("Skipping zip %s: coverage status is %s", str(zip_code).zfill(5), reason)
+        return False
+    process_zip(zip_code, admin=admin, max_api_calls=max_api_calls)
+    return True
+
+
+def run_zip_list(
+    zip_codes: list[str],
+    *,
+    max_zips: int,
+    max_api_calls: int,
+    admin: str = "",
+    force: bool = False,
+) -> None:
+    processed = 0
+    for zip_code in zip_codes:
+        if processed >= max_zips:
+            break
+        if places.get_api_call_count() >= max_api_calls:
+            logger.warning(
+                "API call cap reached (%d >= %d). Stopping explicit zip list after %d processed.",
+                places.get_api_call_count(), max_api_calls, processed,
+            )
+            break
+        if process_zip_if_needed(zip_code, admin=admin, force=force, max_api_calls=max_api_calls):
+            processed += 1
+    logger.info(
+        "Zip-list run complete. Processed: %d zips, used: %d API calls.",
+        processed, places.get_api_call_count(),
+    )
 
 
 # ─────────────────────────────────────────────────────────────
 # Phase 7: auto/next picker
 # ─────────────────────────────────────────────────────────────
 
-def run_next(region_name: str, admin: str = "") -> bool:
+def run_next(region_name: str, admin: str = "", *, max_api_calls: int | None = None) -> bool:
     """
     Pick one closest-uncompleted zip from region, process it.
     Returns True if a zip was processed, False if region exhausted.
@@ -222,7 +315,7 @@ def run_next(region_name: str, admin: str = "") -> bool:
         return False
     logger.info("Auto-picked zip %s for region %s", z, region_name)
     try:
-        process_zip(z, admin=admin)
+        process_zip(z, admin=admin, max_api_calls=max_api_calls)
     except places.PlacesAuthError as e:
         logger.exception("Fatal Places API auth failure while processing zip %s: %s", z, e)
         raise
@@ -261,7 +354,7 @@ def run_auto(
             places.get_api_call_count(), max_api_calls,
         )
         try:
-            process_zip(z, admin=admin)
+            process_zip(z, admin=admin, max_api_calls=max_api_calls)
         except places.PlacesAuthError as e:
             logger.exception("Fatal Places API auth failure while processing zip %s: %s", z, e)
             raise
@@ -315,6 +408,10 @@ def main():
     )
     parser.add_argument("--zip", help="Process a single zip code")
     parser.add_argument(
+        "--zip-list",
+        help="Comma/space-separated zips to process, skipping completed/in-progress zips unless --force",
+    )
+    parser.add_argument(
         "--next", action="store_true",
         help="Process the closest uncompleted zip in --region (one-shot)",
     )
@@ -330,6 +427,16 @@ def main():
         "--max-api-calls", type=int, default=DEFAULT_MAX_API_CALLS,
         help=f"Stop --auto if Places API calls exceed this (default {DEFAULT_MAX_API_CALLS})",
     )
+    parser.add_argument(
+        "--pages-per-category",
+        type=int,
+        choices=[1, 2, 3],
+        help="Override discovery Text Search page depth for this run (1-3)",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Allow direct/list runs to rerun complete, partial_complete, or in_progress zips",
+    )
     parser.add_argument("--region", help="Region name (see --list-regions)")
     parser.add_argument(
         "--coverage", action="store_true",
@@ -343,6 +450,8 @@ def main():
     args = parser.parse_args()
 
     config.validate()
+    if args.pages_per_category:
+        config.GOOGLE_PLACES_DISCOVERY_PAGES_PER_CATEGORY = args.pages_per_category
 
     # ── Coverage summary ──
     if args.coverage:
@@ -365,14 +474,33 @@ def main():
 
     # ── Single zip ──
     if args.zip:
-        process_zip(args.zip, admin=args.admin)
+        process_zip_if_needed(
+            args.zip,
+            admin=args.admin,
+            force=args.force,
+            max_api_calls=args.max_api_calls,
+        )
+        return
+
+    # ── Explicit zip list ──
+    if args.zip_list:
+        zips = _parse_zip_list(args.zip_list)
+        if not zips:
+            parser.error("--zip-list did not contain any valid 5-digit zips")
+        run_zip_list(
+            zips,
+            max_zips=args.max_zips,
+            max_api_calls=args.max_api_calls,
+            admin=args.admin,
+            force=args.force,
+        )
         return
 
     # ── --next ──
     if args.next:
         if not args.region:
             parser.error("--next requires --region")
-        run_next(args.region, admin=args.admin)
+        run_next(args.region, admin=args.admin, max_api_calls=args.max_api_calls)
         return
 
     # ── --auto ──

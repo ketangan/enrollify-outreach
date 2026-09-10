@@ -122,6 +122,9 @@ Critical TODO: add authentication. Until auth exists, do not share the admin URL
 ```text
 ANTHROPIC_API_KEY=
 GOOGLE_PLACES_API_KEY=
+GOOGLE_PLACES_DISCOVERY_PAGES_PER_CATEGORY=2
+GOOGLE_PLACES_DISCOVERY_DETAIL_LEVEL=minimal
+GOOGLE_PLACES_MAX_API_CALLS_PER_RUN=120
 GOOGLE_SHEETS_CREDENTIALS_PATH=./config/google-service-account.json
 GOOGLE_SHEET_ID=
 BRAND_NAME=Pontora
@@ -225,6 +228,10 @@ python scripts/run_cleanup.py
 python scripts/run_close_stale.py --commit
 python scripts/run_cleanup.py --commit
 ```
+
+## Backlog
+
+- Audit pytest runtime. Full-suite runs are too slow because `tests/test_generate_full_site.py` hits real retry/backoff sleeps in `src/mock_content_llm.py`; add a global test guard that fails on live Google/Anthropic/R2/Gmail network access and monkeypatch retry sleeps so confidence checks stay fast.
 
 ## Legacy Cleanup
 

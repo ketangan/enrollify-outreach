@@ -172,7 +172,7 @@ def test_discover_zip_reclassifies_no_website_result_when_details_has_website(mo
     monkeypatch.setattr(
         places,
         "_place_details",
-        lambda place_id: {"websiteUri": "https://coastmusicrocks.com/contact"},
+        lambda place_id, **kwargs: {"websiteUri": "https://coastmusicrocks.com/contact"},
     )
 
     result = places.discover_zip("90045")
@@ -210,3 +210,78 @@ def test_places_prefilter_does_not_skip_target_school_with_store_type():
     places.reset_api_call_count()
 
     assert places.get_api_call_count() == 0
+
+
+def test_place_details_minimal_omits_expensive_review_photo_fields(monkeypatch):
+    captured = {}
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(
+        places.requests,
+        "get",
+        lambda url, headers, timeout=30: captured.update(headers=headers) or Resp(),
+    )
+
+    places.reset_api_call_count()
+    places._place_details("places/test", detail_level="minimal")
+
+    field_mask = captured["headers"]["X-Goog-FieldMask"]
+    assert "websiteUri" in field_mask
+    assert "reviews" not in field_mask
+    assert "photos" not in field_mask
+    assert places.get_api_call_breakdown() == {"details_minimal": 1}
+
+
+def test_search_zip_marks_capped_when_configured_page_limit_stops_early(monkeypatch):
+    monkeypatch.setattr(places.config, "GOOGLE_PLACES_DISCOVERY_PAGES_PER_CATEGORY", 1)
+    monkeypatch.setattr(places.config, "CATEGORY_SEARCH_PHRASES", {"music": "music school"})
+    monkeypatch.setattr(places.regions, "zip_city_state", lambda zip_code: ("Austin", "TX"))
+    monkeypatch.setattr(
+        places,
+        "_text_search",
+        lambda query, page_token=None, **kwargs: {
+            "places": [{"id": "p1", "displayName": {"text": "Test Music"}}],
+            "nextPageToken": "next",
+        },
+    )
+
+    results, hit_cap = places.search_zip_for_category("78701", "music")
+
+    assert len(results) == 1
+    assert hit_cap is True
+
+
+def test_discover_zip_skips_details_for_known_no_website_place_ids(monkeypatch):
+    monkeypatch.setattr(places.config, "SCHOOL_CATEGORIES", ["music"])
+    monkeypatch.setattr(
+        places,
+        "search_zip_for_category",
+        lambda zip_code, category: (
+            [
+                {
+                    "id": "known-place",
+                    "displayName": {"text": "Known Studio"},
+                    "formattedAddress": "123 Main St, Austin, TX 78701",
+                }
+            ],
+            False,
+        ),
+    )
+
+    def should_not_fetch_details(*args, **kwargs):
+        raise AssertionError("details should not be fetched for known no-website place IDs")
+
+    monkeypatch.setattr(places, "_place_details", should_not_fetch_details)
+
+    result = places.discover_zip(
+        "78701",
+        detail_level="minimal",
+        skip_detail_place_ids={"known-place"},
+    )
+
+    assert len(result["places_without_website"]) == 1

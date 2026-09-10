@@ -46,6 +46,18 @@ def _stub_infer_owner_name(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _stub_content_llm_enrichment(monkeypatch):
+    """Keep generated-site tests deterministic and offline by default.
+
+    Tests that specifically assert review-driven labels, offerings, or
+    revision-note colors override the relevant helper inside the test body.
+    """
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_program_labels", lambda **kw: [])
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_theme_colors", lambda **kw: None)
+    monkeypatch.setattr(generate_full_site.mock_content_llm, "infer_category_offerings", lambda **kw: [])
+
+
+@pytest.fixture(autouse=True)
 def _stub_site_generator_state_get_org(monkeypatch):
     """generate_full_site() now looks up a saved email via
     site_generator_state.get_org() before searching — without this stub,

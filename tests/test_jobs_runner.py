@@ -27,8 +27,8 @@ def test_build_generate_full_site_cmd_includes_only_provided_optional_flags():
     assert "--city" in cmd and "Austin" in cmd
     assert "--state" not in cmd  # not provided — should be omitted, not passed as ""
     assert "--phone" not in cmd
-    assert "--google-reviews" in cmd
-    assert "--no-google-reviews" not in cmd
+    assert "--no-google-reviews" in cmd
+    assert "--google-reviews" not in cmd
 
 
 def test_build_generate_full_site_cmd_scopes_regeneration_to_one_theme():
@@ -94,6 +94,56 @@ def test_build_generate_full_site_cmd_omits_force_hero_photo_flag_by_default():
     )
 
     assert "--force-hero-photo" not in cmd
+
+
+def test_phase1_zip_list_job_uses_explicit_zip_list():
+    cmd = jobs_runner.JOB_KIND_REGISTRY["phase1_zip_list"](
+        zips="90266,90505",
+        max_zips=2,
+    )
+
+    assert "scripts/run_phase_1_discovery.py" in cmd
+    assert "--zip-list" in cmd
+    assert "90266,90505" in cmd
+    assert "--max-zips" in cmd
+    assert "2" in cmd
+
+
+def test_phase1_zip_list_job_passes_api_call_cap_when_given():
+    cmd = jobs_runner.JOB_KIND_REGISTRY["phase1_zip_list"](
+        zips="90266,90505",
+        max_zips=2,
+        max_api_calls=80,
+    )
+
+    assert "--max-api-calls" in cmd
+    assert "80" in cmd
+
+
+def test_phase1_zip_list_job_can_force_three_page_partial_rerun():
+    cmd = jobs_runner.JOB_KIND_REGISTRY["phase1_zip_list"](
+        zips="90401,90402",
+        max_zips=2,
+        max_api_calls=90,
+        pages_per_category=3,
+        force=True,
+    )
+
+    assert "--pages-per-category" in cmd
+    assert "3" in cmd
+    assert "--force" in cmd
+
+
+def test_downstream_limit_applies_to_paid_llm_phases_only():
+    steps = jobs_runner._build_downstream_steps(limit=50)
+
+    phase2_cmd = steps[0][0]
+    phase3_cmd = steps[1][0]
+    phase4_cmd = steps[2][0]
+
+    assert "--limit" not in phase2_cmd
+    assert "--limit" in phase3_cmd and "50" in phase3_cmd
+    assert "--limit" in phase4_cmd and "50" in phase4_cmd
 
 
 def test_get_job_retries_transient_partial_json(monkeypatch):

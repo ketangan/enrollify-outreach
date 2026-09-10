@@ -570,7 +570,7 @@ def main() -> None:
     parser.add_argument("--info-pages", default="", help="Comma-separated informational page URL(s) to pull content from")
     parser.add_argument("--yelp-text-file", default="", help="Path to a text file with pasted Yelp review text")
     parser.add_argument("--yelp-text", default="", help="Pasted Yelp review text directly (alternative to --yelp-text-file)")
-    parser.add_argument("--google-reviews", dest="use_google", action="store_true", default=True)
+    parser.add_argument("--google-reviews", dest="use_google", action="store_true", default=False)
     parser.add_argument("--no-google-reviews", dest="use_google", action="store_false")
     parser.add_argument("--versions", default="auto", help="'auto' for all 4, or a single theme id (e.g. 'warm') to regenerate just one")
     parser.add_argument("--revision-notes", default="", help="Optional freeform request for what should change on a regeneration")

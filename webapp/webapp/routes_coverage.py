@@ -9,16 +9,18 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 # Allow imports from project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src import coverage, regions
+from src import coverage, coverage_planner, places, regions
+from webapp.webapp import jobs_runner
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +31,35 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 templates.env.cache = None
 
 
+def _clamp_max_zips(value, default: int = 2) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, min(parsed, 10))
+
+
+def _clamp_max_api_calls(value, default: int | None = None) -> int:
+    default = default or places.discovery_cost_settings()["max_api_calls_per_run"]
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, min(parsed, 1000))
+
+
 @router.get("/coverage", response_class=HTMLResponse)
-def coverage_view(request: Request):
+def coverage_view(
+    request: Request,
+    location: str = "",
+    state: str = "CA",
+    max_zips: str = "2",
+    max_api_calls: str = "",
+    planner_error: str = "",
+):
     """All regions, summarized."""
     region_summaries = []
+    plan = None
     try:
         for name in regions.list_region_names():
             zips = regions.zips_in_region(name)
@@ -50,7 +77,10 @@ def coverage_view(request: Request):
                 "qualified_total": s["qualified_total"],
                 "capped_count": len(s["capped_zips"]),
                 "pct": round(pct),
+                "clean_pct": round((s["complete"] / s["total"] * 100) if s["total"] else 0),
             })
+        if location.strip():
+            plan = coverage_planner.build_plan(location, state_hint=state)
     except Exception as e:
         logger.exception("Coverage load failed: %s", e)
         return templates.TemplateResponse(
@@ -59,11 +89,117 @@ def coverage_view(request: Request):
             {"error": str(e), "page_title": "Coverage error"},
         )
 
+    max_zips_clamped = _clamp_max_zips(max_zips)
+    max_api_calls_clamped = _clamp_max_api_calls(max_api_calls)
+    run_zip_count = min(len(plan.runnable_zips), max_zips_clamped) if plan else 0
+    partial_run_count = min(len(plan.partial_zips), max_zips_clamped) if plan else 0
+    cost_settings = places.discovery_cost_settings()
+
     return templates.TemplateResponse(
         request,
         "coverage.html",
         {
             "page_title": "Coverage",
             "regions": region_summaries,
+            "plan": plan,
+            "run_zip_count": run_zip_count,
+            "estimated_text_search_calls": places.estimate_discovery_text_search_calls(run_zip_count),
+            "partial_run_count": partial_run_count,
+            "estimated_partial_text_search_calls": partial_run_count * len(cost_settings["categories"]) * 3,
+            "cost_settings": cost_settings,
+            "location": location,
+            "state": state,
+            "max_zips": max_zips_clamped,
+            "max_api_calls": max_api_calls_clamped,
+            "planner_error": planner_error,
         },
     )
+
+
+@router.post("/coverage/run-location")
+def coverage_run_location(
+    location: str = Form(...),
+    state: str = Form("CA"),
+    max_zips: str = Form("2"),
+    max_api_calls: str = Form(""),
+):
+    max_zips = _clamp_max_zips(max_zips)
+    max_api_calls = _clamp_max_api_calls(max_api_calls)
+    plan = coverage_planner.build_plan(location, state_hint=state)
+    if plan.resolved.status != "resolved":
+        params = urlencode({
+            "location": location,
+            "state": state,
+            "max_zips": max_zips,
+            "max_api_calls": max_api_calls,
+            "planner_error": "location_not_resolved",
+        })
+        return RedirectResponse(f"/coverage?{params}", status_code=303)
+    zips_to_run = plan.runnable_zips[:max_zips]
+    if not zips_to_run:
+        params = urlencode({
+            "location": location,
+            "state": state,
+            "max_zips": max_zips,
+            "max_api_calls": max_api_calls,
+            "planner_error": "nothing_pending",
+        })
+        return RedirectResponse(f"/coverage?{params}", status_code=303)
+
+    job_id = jobs_runner.submit_job(
+        "phase1_zip_list",
+        {
+            "zips": ",".join(zips_to_run),
+            "max_zips": len(zips_to_run),
+            "max_api_calls": max_api_calls,
+            "location": location,
+            "state": state,
+        },
+    )
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
+@router.post("/coverage/run-partials")
+def coverage_run_partials(
+    location: str = Form(...),
+    state: str = Form("CA"),
+    max_zips: str = Form("2"),
+    max_api_calls: str = Form(""),
+):
+    max_zips = _clamp_max_zips(max_zips)
+    max_api_calls = _clamp_max_api_calls(max_api_calls)
+    plan = coverage_planner.build_plan(location, state_hint=state)
+    if plan.resolved.status != "resolved":
+        params = urlencode({
+            "location": location,
+            "state": state,
+            "max_zips": max_zips,
+            "max_api_calls": max_api_calls,
+            "planner_error": "location_not_resolved",
+        })
+        return RedirectResponse(f"/coverage?{params}", status_code=303)
+    zips_to_run = plan.partial_zips[:max_zips]
+    if not zips_to_run:
+        params = urlencode({
+            "location": location,
+            "state": state,
+            "max_zips": max_zips,
+            "max_api_calls": max_api_calls,
+            "planner_error": "nothing_partial",
+        })
+        return RedirectResponse(f"/coverage?{params}", status_code=303)
+
+    job_id = jobs_runner.submit_job(
+        "phase1_zip_list",
+        {
+            "zips": ",".join(zips_to_run),
+            "max_zips": len(zips_to_run),
+            "max_api_calls": max_api_calls,
+            "pages_per_category": 3,
+            "force": True,
+            "location": location,
+            "state": state,
+            "mode": "finish_partials",
+        },
+    )
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)

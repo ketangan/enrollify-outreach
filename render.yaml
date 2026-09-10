@@ -19,6 +19,12 @@ services:
         sync: false
       - key: GOOGLE_PLACES_API_KEY
         sync: false
+      - key: GOOGLE_PLACES_DISCOVERY_PAGES_PER_CATEGORY
+        value: "2"
+      - key: GOOGLE_PLACES_DISCOVERY_DETAIL_LEVEL
+        value: minimal
+      - key: GOOGLE_PLACES_MAX_API_CALLS_PER_RUN
+        value: "120"
       - key: GOOGLE_SHEET_ID
         sync: false
       - key: BRAND_NAME

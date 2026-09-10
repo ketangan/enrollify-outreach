@@ -12,6 +12,19 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 
+def _int_env(name: str, default: int, *, min_value: int | None = None, max_value: int | None = None) -> int:
+    raw = os.getenv(name, "")
+    try:
+        value = int(raw) if raw.strip() else default
+    except ValueError:
+        value = default
+    if min_value is not None:
+        value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
+
+
 # --- API keys / secrets ---
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 ANTHROPIC_ADMIN_KEY = (
@@ -21,6 +34,21 @@ ANTHROPIC_ADMIN_KEY = (
 ANTHROPIC_OAUTH_TOKEN = os.getenv("ANTHROPIC_OAUTH_TOKEN")
 ANTHROPIC_MONTHLY_BUDGET_USD = os.getenv("ANTHROPIC_MONTHLY_BUDGET_USD", "")
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
+GOOGLE_PLACES_DISCOVERY_PAGES_PER_CATEGORY = _int_env(
+    "GOOGLE_PLACES_DISCOVERY_PAGES_PER_CATEGORY",
+    2,
+    min_value=1,
+    max_value=3,
+)
+GOOGLE_PLACES_DISCOVERY_DETAIL_LEVEL = (
+    os.getenv("GOOGLE_PLACES_DISCOVERY_DETAIL_LEVEL", "minimal").strip().lower()
+    or "minimal"
+)
+GOOGLE_PLACES_MAX_API_CALLS_PER_RUN = _int_env(
+    "GOOGLE_PLACES_MAX_API_CALLS_PER_RUN",
+    120,
+    min_value=1,
+)
 GOOGLE_SHEETS_CREDENTIALS_PATH = os.getenv(
     "GOOGLE_SHEETS_CREDENTIALS_PATH",
     str(PROJECT_ROOT / "config" / "google-service-account.json"),

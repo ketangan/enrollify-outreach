@@ -1,0 +1,51 @@
+# Curated sales markets that do not map cleanly to one official city/county.
+#
+# Keep these as city/community names, not hand-maintained zip lists. The
+# resolver expands each place through the local zip dataset and shows the
+# resulting zip coverage before any Places API spend happens.
+
+Greater_Palm_Springs:
+  display_name: "Greater Palm Springs / Coachella Valley"
+  state: CA
+  aliases:
+    - greater palm springs
+    - coachella valley
+    - palm springs area
+  places:
+    - Palm Springs
+    - Desert Hot Springs
+    - Cathedral City
+    - Rancho Mirage
+    - Palm Desert
+    - Indian Wells
+    - La Quinta
+    - Indio
+    - Coachella
+  adjacent_radius_miles: 18
+
+South_Bay_LA:
+  display_name: "South Bay LA"
+  state: CA
+  aliases:
+    - south bay
+    - south bay la
+    - south bay los angeles
+    - los angeles south bay
+  places:
+    - Carson
+    - El Segundo
+    - Gardena
+    - Hawthorne
+    - Hermosa Beach
+    - Inglewood
+    - Lawndale
+    - Lomita
+    - Manhattan Beach
+    - Palos Verdes Peninsula
+    - Rancho Palos Verdes
+    - Redondo Beach
+    - Torrance
+    - Harbor City
+    - San Pedro
+    - Wilmington
+  adjacent_radius_miles: 10

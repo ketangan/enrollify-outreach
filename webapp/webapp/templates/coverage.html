@@ -1,7 +1,227 @@
 {% extends "base.html" %}
 {% block content %}
+<h2>Coverage Planner</h2>
+<p class="muted">Resolve a city, county, ZIP, or configured market before spending Google Places calls.</p>
+
+<form method="GET" action="/coverage" class="coverage-planner-form">
+  <label>
+    Location
+    <input
+      type="search"
+      name="location"
+      value="{{ location }}"
+      placeholder="e.g. Greater Palm Springs, Fresno County, Santa Monica, 92262"
+    >
+  </label>
+  <label>
+    State hint
+    <input type="text" name="state" value="{{ state }}" maxlength="2">
+  </label>
+  <label>
+    Max zips to run
+    <input type="number" name="max_zips" value="{{ max_zips }}" min="1" max="10">
+  </label>
+  <label>
+    Max Places calls
+    <input type="number" name="max_api_calls" value="{{ max_api_calls }}" min="1" max="1000">
+  </label>
+  <button type="submit">Preview</button>
+</form>
+
+{% if planner_error %}
+  <div class="coverage-warning">
+    {% if planner_error == "nothing_pending" %}
+      Nothing pending for that location. Completed and in-progress ZIPs are skipped automatically.
+    {% elif planner_error == "nothing_partial" %}
+      Nothing partial for that location. Use the normal pending run if there are unprocessed ZIPs.
+    {% elif planner_error == "location_not_resolved" %}
+      That location was not resolved. Pick a suggestion or add a more specific state.
+    {% else %}
+      {{ planner_error }}
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if plan %}
+  <section class="coverage-plan">
+    <div class="coverage-plan-head">
+      <div>
+        <p class="section-label">Resolved location</p>
+        <h3>{{ plan.resolved.label or plan.resolved.query }}</h3>
+        <p class="muted">
+          {% if plan.resolved.status == "resolved" %}
+            {{ plan.resolved.kind|replace("_", " ") }} · {{ plan.resolved.source }}
+          {% else %}
+            {{ plan.resolved.status|replace("_", " ") }}
+          {% endif %}
+        </p>
+      </div>
+      {% if plan.resolved.status == "resolved" %}
+        <div class="coverage-plan-actions">
+          {% if plan.partial_zips %}
+            <form method="POST" action="/coverage/run-partials" class="inline-form">
+              <input type="hidden" name="location" value="{{ location }}">
+              <input type="hidden" name="state" value="{{ state }}">
+              <input type="hidden" name="max_zips" value="{{ max_zips }}">
+              <input type="hidden" name="max_api_calls" value="{{ max_api_calls }}">
+              <button type="submit">Finish next {{ partial_run_count }} partial zip{% if partial_run_count != 1 %}s{% endif %}</button>
+            </form>
+          {% endif %}
+          {% if plan.runnable_zips %}
+            <form method="POST" action="/coverage/run-location" class="inline-form">
+              <input type="hidden" name="location" value="{{ location }}">
+              <input type="hidden" name="state" value="{{ state }}">
+              <input type="hidden" name="max_zips" value="{{ max_zips }}">
+              <input type="hidden" name="max_api_calls" value="{{ max_api_calls }}">
+              <button type="submit">Run next {{ run_zip_count }} pending zip{% if run_zip_count != 1 %}s{% endif %}</button>
+            </form>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+
+    {% for warning in plan.resolved.warnings %}
+      <div class="coverage-warning">{{ warning }}</div>
+    {% endfor %}
+
+    {% if plan.resolved.status == "resolved" %}
+      <div class="coverage-metrics">
+        <div><span>Total ZIPs</span><strong>{{ plan.total }}</strong></div>
+        <div><span>Processed</span><strong>{{ plan.processed }} / {{ plan.total }}</strong></div>
+        <div><span>Clean complete</span><strong>{{ plan.complete }}</strong></div>
+        <div><span>Partial/capped</span><strong>{{ plan.partial }}</strong></div>
+        <div><span>Pending</span><strong>{{ plan.pending }}</strong></div>
+        <div><span>Qualified found</span><strong>{{ plan.qualified_total }}</strong></div>
+      </div>
+
+      {% if run_zip_count %}
+        <div class="coverage-warning">
+          Planned run: {{ run_zip_count }} ZIP{% if run_zip_count != 1 %}s{% endif %},
+          {{ cost_settings.categories|length }} categories,
+          up to {{ cost_settings.pages_per_category }} Text Search page{% if cost_settings.pages_per_category != 1 %}s{% endif %} per category
+          (up to {{ estimated_text_search_calls }} Text Search calls before details).
+          Details mode: {{ cost_settings.detail_level }}. Hard cap: {{ max_api_calls }} Places calls.
+        </div>
+      {% endif %}
+      {% if partial_run_count %}
+        <div class="coverage-warning">
+          Partial finish run: {{ partial_run_count }} ZIP{% if partial_run_count != 1 %}s{% endif %},
+          {{ cost_settings.categories|length }} categories, all 3 Text Search pages per category
+          (up to {{ estimated_partial_text_search_calls }} Text Search calls before details).
+          Hard cap: {{ max_api_calls }} Places calls.
+        </div>
+      {% endif %}
+
+      {% if plan.resolved.related_markets %}
+        <h3>Related Broader Markets</h3>
+        <table class="data-table compact-table">
+          <thead>
+            <tr>
+              <th>Market</th>
+              <th>ZIPs</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in plan.resolved.related_markets %}
+              <tr>
+                <td>{{ item.label }}</td>
+                <td>{{ item.zip_count }}</td>
+                <td><a href="/coverage?location={{ item.label|urlencode }}&state={{ item.state }}&max_zips={{ max_zips }}&max_api_calls={{ max_api_calls }}">Preview</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      {% if plan.resolved.adjacent_areas %}
+        <h3>Nearby Areas Not Included</h3>
+        <p class="muted">Use this as an expansion checklist, not a hard requirement.</p>
+        <table class="data-table compact-table">
+          <thead>
+            <tr>
+              <th>Area</th>
+              <th>County</th>
+              <th>ZIPs</th>
+              <th>Distance</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in plan.resolved.adjacent_areas %}
+              <tr>
+                <td>{{ item.label }}</td>
+                <td>{{ item.county }}</td>
+                <td>{{ item.zip_count }}</td>
+                <td>{% if item.distance_miles is not none %}{{ item.distance_miles }} mi{% endif %}</td>
+                <td><a href="/coverage?location={{ item.label|urlencode }}&state={{ item.state }}&max_zips={{ max_zips }}&max_api_calls={{ max_api_calls }}">Preview</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      <h3>ZIP Preview</h3>
+      <table class="data-table compact-table">
+        <thead>
+          <tr>
+            <th>ZIP</th>
+            <th>City</th>
+            <th>County</th>
+            <th>Status</th>
+            <th>Found</th>
+            <th>Qualified</th>
+            <th>Capped Categories</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for z in plan.zips %}
+            <tr>
+              <td><strong>{{ z.zip }}</strong></td>
+              <td>{{ z.city }}, {{ z.state }}</td>
+              <td>{{ z.county }}</td>
+              <td><span class="coverage-status coverage-status-{{ z.status|replace('_', '-') }}">{{ z.status }}</span></td>
+              <td>{{ z.total_found }}</td>
+              <td>{{ z.qualified }}</td>
+              <td>{{ z.capped_categories }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      {% if plan.resolved.suggestions %}
+        <h3>Suggestions</h3>
+        <table class="data-table compact-table">
+          <thead>
+            <tr>
+              <th>Location</th>
+              <th>Type</th>
+              <th>County</th>
+              <th>ZIPs</th>
+              <th>Match</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in plan.resolved.suggestions %}
+              <tr>
+                <td>{{ item.label }}</td>
+                <td>{{ item.kind }}</td>
+                <td>{{ item.county }}</td>
+                <td>{{ item.zip_count }}</td>
+                <td>{{ item.score }}</td>
+                <td><a href="/coverage?location={{ item.label|urlencode }}&state={{ item.state }}&max_zips={{ max_zips }}&max_api_calls={{ max_api_calls }}">Preview</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    {% endif %}
+  </section>
+{% endif %}
+
 <h2>Coverage by Region</h2>
-<p class="muted">Progress across all configured regions. Click a region name for details.</p>
+<p class="muted">Legacy configured regions. Processed includes partial/capped ZIPs; clean complete means no category hit Google's result cap.</p>
 
 <table class="data-table">
   <thead>
@@ -9,6 +229,7 @@
       <th>Region</th>
       <th>Progress</th>
       <th>Zips Done</th>
+      <th>Clean %</th>
       <th>Complete</th>
       <th>Partial</th>
       <th>In Progress</th>
@@ -28,6 +249,7 @@
         </div>
       </td>
       <td>{{ r.done }} / {{ r.total }}</td>
+      <td>{{ r.clean_pct }}%</td>
       <td>{{ r.complete }}</td>
       <td>{{ r.partial }}</td>
       <td>{{ r.in_progress }}</td>
