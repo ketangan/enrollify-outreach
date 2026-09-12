@@ -425,3 +425,26 @@ def test_phase5_quality_gate_blocks_prefiltered_bad_ready_lead():
     assert result is not None
     assert result.status == "online_system_exclude"
     assert result.reason == "prefilter:known_chain:ec los angeles"
+
+
+def test_phase5_local_visit_safety_blocks_far_surviving_claim(monkeypatch):
+    monkeypatch.setattr(run_phase_5.drafter.config, "HOME_ZIP", "90045")
+    monkeypatch.setattr(run_phase_5.drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
+    monkeypatch.setattr(
+        run_phase_5.drafter.regions,
+        "_lookup_zip",
+        lambda zip_code: {
+            "90045": {"lat": 33.9516, "lng": -118.3980},
+            "93301": {"lat": 35.3733, "lng": -119.0187},
+        }.get(str(zip_code).zfill(5)),
+    )
+
+    rendered = run_phase_5.drafter.RenderedEmail(
+        subject="Test",
+        html_body="<p>I can come and visit your school if helpful.</p>",
+        template_id="contact_form",
+    )
+
+    result = run_phase_5._local_visit_safety_problem({"zip": "93301"}, rendered)
+
+    assert result.startswith("non_local_visit_claim_remaining:")

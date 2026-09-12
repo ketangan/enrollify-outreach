@@ -98,6 +98,151 @@ def test_render_email_strips_long_google_places_descriptor(monkeypatch):
     assert raw_name not in rendered.html_body
 
 
+def test_render_email_strips_local_visit_claim_for_far_lead(monkeypatch):
+    monkeypatch.setattr(
+        drafter,
+        "_load_templates",
+        lambda: {
+            "contact_form": {
+                "subject": "Hello {{school_name}}",
+                "observation": "",
+                "body": (
+                    "<p>Hi {{owner_first_name}},</p>"
+                    "<p>I'm also in the LA area and can come by in person if helpful.</p>"
+                    "<p>Your enrollment flow looked worth a note.</p>"
+                ),
+            }
+        },
+    )
+    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
+    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
+    monkeypatch.setattr(
+        drafter.regions,
+        "_lookup_zip",
+        lambda zip_code: {
+            "90045": {"lat": 33.9516, "lng": -118.3980},
+            "93101": {"lat": 34.4208, "lng": -119.6982},
+        }.get(str(zip_code).zfill(5)),
+    )
+
+    rendered = drafter.render_email(
+        {
+            "enrollment_method": "contact_form_qualify",
+            "owner_name": "Jane Owner",
+            "name": "SoCal Piano Academy",
+            "category": "music",
+            "id": "lead-1",
+            "zip": "93101",
+        }
+    )
+
+    assert "LA area" not in rendered.html_body
+    assert "in person" not in rendered.html_body
+    assert "Your enrollment flow looked worth a note." in rendered.html_body
+
+
+def test_render_email_keeps_local_visit_claim_for_near_lead(monkeypatch):
+    monkeypatch.setattr(
+        drafter,
+        "_load_templates",
+        lambda: {
+            "contact_form": {
+                "subject": "Hello {{school_name}}",
+                "observation": "",
+                "body": (
+                    "<p>Hi {{owner_first_name}},</p>"
+                    "<p>I'm also in the LA area and can come by in person if helpful.</p>"
+                ),
+            }
+        },
+    )
+    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
+    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
+    monkeypatch.setattr(
+        drafter.regions,
+        "_lookup_zip",
+        lambda zip_code: {
+            "90045": {"lat": 33.9516, "lng": -118.3980},
+            "90266": {"lat": 33.8895, "lng": -118.3998},
+        }.get(str(zip_code).zfill(5)),
+    )
+
+    rendered = drafter.render_email(
+        {
+            "enrollment_method": "contact_form_qualify",
+            "owner_name": "Jane Owner",
+            "name": "Coast Music",
+            "category": "music",
+            "id": "lead-1",
+            "zip": "90266",
+        }
+    )
+
+    assert "LA area" in rendered.html_body
+    assert "in person" in rendered.html_body
+
+
+def test_render_email_strips_plain_text_local_visit_sentence(monkeypatch):
+    monkeypatch.setattr(
+        drafter,
+        "_load_templates",
+        lambda: {
+            "contact_form": {
+                "subject": "Hello {{school_name}}",
+                "observation": "",
+                "body": (
+                    "Hi {{owner_first_name}}, I'm also in the LA area and can come by. "
+                    "Your enrollment flow looked worth a note."
+                ),
+            }
+        },
+    )
+    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
+    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
+    monkeypatch.setattr(
+        drafter.regions,
+        "_lookup_zip",
+        lambda zip_code: {
+            "90045": {"lat": 33.9516, "lng": -118.3980},
+            "94566": {"lat": 37.6656, "lng": -121.8747},
+        }.get(str(zip_code).zfill(5)),
+    )
+
+    rendered = drafter.render_email(
+        {
+            "enrollment_method": "contact_form_qualify",
+            "owner_name": "Jane Owner",
+            "name": "Creatif Pleasanton",
+            "category": "art",
+            "id": "lead-1",
+            "zip": "94566",
+        }
+    )
+
+    assert "LA area" not in rendered.html_body
+    assert "Your enrollment flow looked worth a note." in rendered.html_body
+
+
+def test_local_visit_claim_problem_detects_surviving_far_claim(monkeypatch):
+    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
+    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
+    monkeypatch.setattr(
+        drafter.regions,
+        "_lookup_zip",
+        lambda zip_code: {
+            "90045": {"lat": 33.9516, "lng": -118.3980},
+            "93301": {"lat": 35.3733, "lng": -119.0187},
+        }.get(str(zip_code).zfill(5)),
+    )
+
+    problem = drafter.local_visit_claim_problem(
+        {"zip": "93301"},
+        "<p>I can come and visit your school if that helps.</p>",
+    )
+
+    assert problem.startswith("non_local_visit_claim_remaining:")
+
+
 def test_render_follow_up_appends_website_mock_addendum(monkeypatch):
     monkeypatch.setattr(
         drafter,
@@ -133,3 +278,44 @@ def test_render_follow_up_appends_website_mock_addendum(monkeypatch):
     assert "Just following up." in rendered.html_body
     assert "P.S." in rendered.html_body
     assert "Studio concept" in rendered.html_body
+
+
+def test_render_follow_up_strips_local_visit_claim_for_far_lead(monkeypatch):
+    monkeypatch.setattr(
+        drafter,
+        "_load_templates",
+        lambda: {
+            "follow_up": {
+                "subject": "Re: {{brand_name}}",
+                "observation": "",
+                "body": (
+                    "<p>Hi {{owner_first_name}},</p>"
+                    "<p>I'm also in the LA area and can come by in person if helpful.</p>"
+                    "<p>Just following up.</p>"
+                ),
+            },
+        },
+    )
+    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
+    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
+    monkeypatch.setattr(
+        drafter.regions,
+        "_lookup_zip",
+        lambda zip_code: {
+            "90045": {"lat": 33.9516, "lng": -118.3980},
+            "93101": {"lat": 34.4208, "lng": -119.6982},
+        }.get(str(zip_code).zfill(5)),
+    )
+
+    rendered = drafter.render_follow_up(
+        {
+            "id": "lead-1",
+            "name": "SoCal Piano Academy",
+            "owner_name": "Jane Owner",
+            "zip": "93101",
+        }
+    )
+
+    assert "LA area" not in rendered.html_body
+    assert "in person" not in rendered.html_body
+    assert "Just following up." in rendered.html_body

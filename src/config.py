@@ -49,6 +49,12 @@ GOOGLE_PLACES_MAX_API_CALLS_PER_RUN = _int_env(
     120,
     min_value=1,
 )
+GOOGLE_PLACES_DISCOVERY_RADIUS_MILES = _int_env(
+    "GOOGLE_PLACES_DISCOVERY_RADIUS_MILES",
+    40,
+    min_value=1,
+    max_value=100,
+)
 GOOGLE_SHEETS_CREDENTIALS_PATH = os.getenv(
     "GOOGLE_SHEETS_CREDENTIALS_PATH",
     str(PROJECT_ROOT / "config" / "google-service-account.json"),
@@ -127,6 +133,7 @@ WORKING_HOURS_START = int(os.getenv("WORKING_HOURS_START", "9"))
 WORKING_HOURS_END = int(os.getenv("WORKING_HOURS_END", "17"))
 TIMEZONE = os.getenv("TIMEZONE", "America/Los_Angeles")
 HOME_ZIP = os.getenv("HOME_ZIP", "90045")
+LOCAL_VISIT_MAX_MILES = _int_env("LOCAL_VISIT_MAX_MILES", 40, min_value=1)
 ACTIVE_OUTREACH_START_DATE = os.getenv("ACTIVE_OUTREACH_START_DATE", "2026-07-29")
 
 

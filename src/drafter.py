@@ -28,7 +28,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from src import config, sheets, website_mocks
+from src import config, regions, sheets, website_mocks
 from src.name_cleaner import clean_school_name
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,21 @@ class RenderedEmail:
 
 
 _template_cache: dict[str, dict] | None = None
+
+LOCAL_VISIT_CLAIM_RE = re.compile(
+    r"\b(?:LA|Los Angeles)\s+area\b"
+    r"|\bin[-\s]?person\b"
+    r"|\bcome\s+(?:by|visit)\b"
+    r"|\bcome\s+and\s+visit\b"
+    r"|\bstop\s+by\b"
+    r"|\bdrop\s+by\b"
+    r"|\bswing\s+by\b"
+    r"|\bvisit\s+(?:you|in\s+person|your\s+(?:school|studio|center|centre|academy|location|campus))\b"
+    r"|\bmeet\s+(?:you\s+)?(?:in person|at)\b"
+    r"|\blocal\s+to\s+(?:LA|Los Angeles)\b"
+    r"|\bI(?:'m| am)\s+(?:also\s+)?(?:nearby|local)\b",
+    re.IGNORECASE,
+)
 
 # Honorifics that are STRIPPED from the greeting (generic titles).
 # "Dr. Sarah Lee" → "Sarah"
@@ -327,6 +342,96 @@ def _render(text: str, ctx: dict) -> str:
     return result
 
 
+def _lead_zip(lead: dict) -> str:
+    raw_zip = str(lead.get("zip", "") or "")
+    match = re.search(r"\b(\d{5})(?:-\d{4})?\b", raw_zip)
+    if match:
+        return match.group(1)
+
+    address = str(lead.get("address", "") or "")
+    match = re.search(r"\b(\d{5})(?:-\d{4})?\b", address)
+    return match.group(1) if match else ""
+
+
+def _distance_from_home_miles(lead: dict) -> float | None:
+    home = regions._lookup_zip(str(config.HOME_ZIP).zfill(5))
+    lead_zip = _lead_zip(lead)
+    destination = regions._lookup_zip(lead_zip) if lead_zip else None
+    if not home or not destination:
+        return None
+
+    return regions._haversine_miles(
+        float(home["lat"]),
+        float(home["lng"]),
+        float(destination["lat"]),
+        float(destination["lng"]),
+    )
+
+
+def _allows_local_visit_claim(lead: dict) -> bool:
+    distance = _distance_from_home_miles(lead)
+    return distance is not None and distance <= config.LOCAL_VISIT_MAX_MILES
+
+
+def _strip_local_visit_claims(body: str) -> str:
+    if not body:
+        return body
+
+    def strip_tag_block(match: re.Match) -> str:
+        block = match.group(0)
+        text = re.sub(r"<[^>]+>", " ", block)
+        return "" if LOCAL_VISIT_CLAIM_RE.search(text) else block
+
+    result = body
+    for tag in ("p", "div", "li"):
+        result = re.sub(
+            rf"<{tag}\b[^>]*>.*?</{tag}>",
+            strip_tag_block,
+            result,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+    lines = result.splitlines()
+    if len(lines) > 1:
+        result = "\n".join(
+            line for line in lines if not LOCAL_VISIT_CLAIM_RE.search(line)
+        )
+
+    if LOCAL_VISIT_CLAIM_RE.search(result):
+        sentence_re = re.compile(
+            rf"[^.!?\n]*(?:{LOCAL_VISIT_CLAIM_RE.pattern})[^.!?\n]*(?:[.!?]|$)",
+            re.IGNORECASE,
+        )
+        result = sentence_re.sub("", result).strip()
+
+    return result
+
+
+def local_visit_claim_problem(lead: dict, body: str) -> str:
+    if _allows_local_visit_claim(lead):
+        return ""
+    text = re.sub(r"<[^>]+>", " ", body or "")
+    if LOCAL_VISIT_CLAIM_RE.search(text):
+        distance = _distance_from_home_miles(lead)
+        distance_note = f"{distance:.0f}mi" if distance is not None else "unknown_distance"
+        return f"non_local_visit_claim_remaining:{distance_note}"
+    return ""
+
+
+def _local_visit_context(lead: dict) -> dict:
+    distance = _distance_from_home_miles(lead)
+    allowed = distance is not None and distance <= config.LOCAL_VISIT_MAX_MILES
+    return {
+        "local_visit_line": (
+            "I'm also in the LA area, so I can come by in person if that is useful."
+            if allowed
+            else ""
+        ),
+        "local_visit_allowed": "true" if allowed else "false",
+        "distance_from_home_miles": f"{distance:.0f}" if distance is not None else "",
+    }
+
+
 def render_email(lead: dict) -> RenderedEmail | None:
     """
     Render the email for a single lead dict.
@@ -375,7 +480,10 @@ def render_email(lead: dict) -> RenderedEmail | None:
         "product_url": config.PRODUCT_URL,
         "demo_url": config.DEMO_URL,
     }
+    body_ctx.update(_local_visit_context(lead))
     body = _render(tpl["body"], body_ctx)
+    if not _allows_local_visit_claim(lead):
+        body = _strip_local_visit_claims(body)
     subject = _render(tpl["subject"], body_ctx)
 
     return RenderedEmail(
@@ -412,6 +520,7 @@ def render_follow_up(lead: dict, greeting_override: str | None = None) -> Render
         "demo_url": config.DEMO_URL,
         "website_mock_addendum": "",
     }
+    ctx.update(_local_visit_context(lead))
 
     addendum_template = (templates.get(website_mocks.MOCK_TEMPLATE_ID) or {}).get("body", "")
     mock_addendum = website_mocks.render_followup_addendum(lead, addendum_template)
@@ -421,6 +530,9 @@ def render_follow_up(lead: dict, greeting_override: str | None = None) -> Render
 
     if mock_addendum and "{{website_mock_addendum}}" not in tpl["body"]:
         body = body.rstrip() + "\n\n" + mock_addendum
+
+    if not _allows_local_visit_claim(lead):
+        body = _strip_local_visit_claims(body)
 
     if greeting_override:
         body = re.sub(

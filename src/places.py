@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -123,6 +124,7 @@ def discovery_cost_settings() -> dict:
         "pages_per_category": _discovery_pages_per_category(),
         "detail_level": detail_level,
         "max_api_calls_per_run": config.GOOGLE_PLACES_MAX_API_CALLS_PER_RUN,
+        "search_radius_miles": config.GOOGLE_PLACES_DISCOVERY_RADIUS_MILES,
     }
 
 
@@ -163,6 +165,8 @@ class DiscoveredPlace:
     google_reviews: list[dict] = field(default_factory=list)
     google_photo_names: list[str] = field(default_factory=list)
     skip_reason: str = ""
+    searched_zip: str = ""
+    distance_from_search_zip_miles: float | None = None
 
     @property
     def has_website(self) -> bool:
@@ -200,10 +204,69 @@ def _check_response(resp: requests.Response, context: str) -> None:
     raise PlacesAPIError(f"Places API {resp.status_code}: {context}")
 
 
-def _text_search(query: str, page_token: str | None = None, *, max_api_calls: int | None = None) -> dict:
+def _zip_location_restriction(zip_code: str) -> dict | None:
+    origin = regions._lookup_zip(zip_code)
+    if not origin:
+        return None
+
+    radius_miles = float(config.GOOGLE_PLACES_DISCOVERY_RADIUS_MILES)
+    lat = float(origin["lat"])
+    lng = float(origin["lng"])
+    lat_delta = radius_miles / 69.0
+    lng_delta = radius_miles / (69.0 * math.cos(math.radians(lat)) + 1e-9)
+
+    return {
+        "rectangle": {
+            "low": {
+                "latitude": max(-90.0, lat - lat_delta),
+                "longitude": max(-180.0, lng - lng_delta),
+            },
+            "high": {
+                "latitude": min(90.0, lat + lat_delta),
+                "longitude": min(180.0, lng + lng_delta),
+            },
+        }
+    }
+
+
+def _distance_from_zip(zip_code: str, place: DiscoveredPlace) -> float | None:
+    origin = regions._lookup_zip(zip_code)
+    if not origin:
+        return None
+
+    lat = place.latitude
+    lng = place.longitude
+    if lat is None or lng is None:
+        place_zip = re.sub(r"\D", "", str(place.zip or ""))[:5]
+        place_info = regions._lookup_zip(place_zip) if len(place_zip) == 5 else None
+        if not place_info:
+            return None
+        lat = place_info["lat"]
+        lng = place_info["lng"]
+
+    try:
+        return regions._haversine_miles(
+            float(origin["lat"]),
+            float(origin["lng"]),
+            float(lat),
+            float(lng),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _text_search(
+    query: str,
+    page_token: str | None = None,
+    *,
+    max_api_calls: int | None = None,
+    location_restriction: dict | None = None,
+) -> dict:
     payload = {"textQuery": query, "pageSize": 20}
     if page_token:
         payload["pageToken"] = page_token
+    if location_restriction:
+        payload["locationRestriction"] = location_restriction
 
     _ensure_api_budget(max_api_calls)
     _bump_api_count("text_search")
@@ -398,10 +461,16 @@ def search_zip_for_category(
     pages = 0
     max_pages = max(1, min(int(max_pages or _discovery_pages_per_category()), 3))
     hit_cap = False
+    location_restriction = _zip_location_restriction(zip_code)
 
     while pages < max_pages:
         try:
-            response = _text_search(query, page_token=page_token, max_api_calls=max_api_calls)
+            response = _text_search(
+                query,
+                page_token=page_token,
+                max_api_calls=max_api_calls,
+                location_restriction=location_restriction,
+            )
         except PlacesCallLimitReached:
             hit_cap = True
             break
@@ -470,6 +539,16 @@ def discover_zip(
             place = _parse_place(raw, category, fallback_zip=zip_code)
             if not place.place_id:
                 continue
+            place.searched_zip = zip_code
+            place.distance_from_search_zip_miles = _distance_from_zip(zip_code, place)
+            if (
+                place.distance_from_search_zip_miles is not None
+                and place.distance_from_search_zip_miles > config.GOOGLE_PLACES_DISCOVERY_RADIUS_MILES
+            ):
+                place.skip_reason = (
+                    "outside_search_radius:"
+                    f"{place.distance_from_search_zip_miles:.1f}mi"
+                )
             if place.place_id in seen_place_ids:
                 continue
             seen_place_ids[place.place_id] = place

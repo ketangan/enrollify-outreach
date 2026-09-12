@@ -102,6 +102,10 @@ def _draft_quality_block(
     )
 
 
+def _local_visit_safety_problem(lead: dict, rendered: drafter.RenderedEmail) -> str:
+    return drafter.local_visit_claim_problem(lead, rendered.html_body)
+
+
 def _status_for_initial_preflight_block(sources: list[str]) -> str:
     """
     Prior-contact conflicts are dead leads. Existing-draft conflicts need human
@@ -550,6 +554,28 @@ def main():
             failures.append({
                 "school": _display_school_name(lead),
                 "error": f"template render failed for enrollment_method={lead.get('enrollment_method')}",
+            })
+            continue
+
+        local_claim_problem = _local_visit_safety_problem(lead, rendered)
+        if local_claim_problem:
+            logger.warning("  skipping — local-visit safety gate blocked draft: %s", local_claim_problem)
+            if not args.dry_run:
+                leads_ws.batch_update(
+                    [
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["status"] + 1),
+                         "values": [["needs_manual_review"]]},
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["notes"] + 1),
+                         "values": [[f"phase5_local_visit_claim_blocked:{local_claim_problem[:350]}"]]},
+                        {"range": rowcol_to_a1(lead["_row_idx"], col["last_action"] + 1),
+                         "values": [["phase5_local_visit_claim_blocked"]]},
+                    ],
+                    value_input_option="USER_ENTERED",
+                )
+                time.sleep(SHEET_WRITE_THROTTLE_SEC)
+            failures.append({
+                "school": _display_school_name(lead),
+                "error": f"local-visit safety gate blocked draft: {local_claim_problem}",
             })
             continue
 

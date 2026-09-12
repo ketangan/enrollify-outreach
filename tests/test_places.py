@@ -1,3 +1,5 @@
+import json
+
 from src import places
 
 
@@ -254,6 +256,85 @@ def test_search_zip_marks_capped_when_configured_page_limit_stops_early(monkeypa
 
     assert len(results) == 1
     assert hit_cap is True
+
+
+def test_search_zip_restricts_text_search_to_zip_area(monkeypatch):
+    captured = {}
+
+    class Resp:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"places": []}
+
+    monkeypatch.setattr(places.config, "CATEGORY_SEARCH_PHRASES", {"music": "music school"})
+    monkeypatch.setattr(places.config, "GOOGLE_PLACES_DISCOVERY_RADIUS_MILES", 40)
+    monkeypatch.setattr(places.regions, "zip_city_state", lambda zip_code: ("Santa Monica", "CA"))
+    monkeypatch.setattr(
+        places.regions,
+        "_lookup_zip",
+        lambda zip_code: {
+            "zip": zip_code,
+            "city": "Santa Monica",
+            "state": "CA",
+            "lat": 34.0195,
+            "lng": -118.4912,
+        },
+    )
+    monkeypatch.setattr(
+        places.requests,
+        "post",
+        lambda url, headers, data, timeout=30: captured.update(payload=json.loads(data)) or Resp(),
+    )
+
+    places.search_zip_for_category("90401", "music", max_pages=1)
+
+    assert captured["payload"]["textQuery"] == "music school in Santa Monica, CA 90401"
+    restriction = captured["payload"]["locationRestriction"]["rectangle"]
+    assert restriction["low"]["latitude"] < 34.0195
+    assert restriction["high"]["latitude"] > 34.0195
+
+
+def test_discover_zip_skips_far_stray_result(monkeypatch):
+    monkeypatch.setattr(places.config, "SCHOOL_CATEGORIES", ["music"])
+    monkeypatch.setattr(places.config, "GOOGLE_PLACES_DISCOVERY_RADIUS_MILES", 40)
+    monkeypatch.setattr(
+        places.regions,
+        "_lookup_zip",
+        lambda zip_code: {
+            "90045": {
+                "zip": "90045",
+                "city": "Los Angeles",
+                "state": "CA",
+                "lat": 33.9516,
+                "lng": -118.3980,
+            }
+        }.get(str(zip_code).zfill(5)),
+    )
+    monkeypatch.setattr(
+        places,
+        "search_zip_for_category",
+        lambda zip_code, category: (
+            [
+                {
+                    "id": "santa-barbara-place",
+                    "displayName": {"text": "SoCal Piano Academy"},
+                    "formattedAddress": "Santa Barbara, CA 93101, USA",
+                    "websiteUri": "https://www.socalpianoacademy.com/",
+                    "location": {"latitude": 34.4208, "longitude": -119.6982},
+                    "types": ["school", "point_of_interest"],
+                }
+            ],
+            False,
+        ),
+    )
+
+    result = places.discover_zip("90045")
+
+    assert result["places_with_website"] == []
+    assert len(result["places_skipped"]) == 1
+    assert result["places_skipped"][0].skip_reason.startswith("outside_search_radius:")
 
 
 def test_discover_zip_skips_details_for_known_no_website_place_ids(monkeypatch):
