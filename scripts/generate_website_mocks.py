@@ -32,6 +32,13 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+if __name__ == "__main__":
+    # Category template modules import this file as scripts.generate_website_mocks
+    # to use shared helpers. When this file is executed directly, register the
+    # already-loading __main__ module under that import name so Python does not
+    # start loading a second, partially initialized copy of the same file.
+    sys.modules.setdefault("scripts.generate_website_mocks", sys.modules[__name__])
+
 from gspread.utils import rowcol_to_a1
 
 from src import config, fetcher, photo_quality, sheets, website_mocks

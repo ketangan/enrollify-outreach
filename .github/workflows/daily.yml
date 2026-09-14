@@ -79,6 +79,16 @@ jobs:
         run: |
           python scripts/generate_website_mocks.py --base-url "$WEBSITE_MOCK_BASE_URL" --output-dir generated/website-mocks-site --force
 
+      - name: Warn when website mock rendering fails
+        if: ${{ vars.WEBSITE_MOCK_BASE_URL != '' && vars.CLOUDFLARE_MOCKS_WORKER_NAME != '' && steps.render_mocks.outcome == 'failure' }}
+        run: |
+          echo "::warning title=Website mock render failed::Daily outreach will continue, but mock pages were not rendered or deployed."
+          {
+            echo "### Website mock render failed"
+            echo ""
+            echo "Daily outreach continued, but mock pages were not rendered or deployed. Check the 'Render website mocks' step log before expecting mock links in follow-up drafts."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Deploy website mocks to Cloudflare Workers
         id: deploy_mocks
         if: ${{ vars.WEBSITE_MOCK_BASE_URL != '' && vars.CLOUDFLARE_MOCKS_WORKER_NAME != '' && steps.render_mocks.outcome == 'success' }}

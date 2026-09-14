@@ -1,9 +1,15 @@
 import re
+import subprocess
+import sys
+from pathlib import Path
 
 from PIL import Image
 
 from scripts import generate_website_mocks, mock_templates_music
 from src import website_mocks
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _lead(category: str = "music") -> dict:
@@ -22,6 +28,21 @@ def _variant(mock_type: str, version_id: str) -> website_mocks.MockVariant:
         for variant in website_mocks.MOCK_VARIANTS[mock_type]
         if variant.version_id == version_id
     )
+
+
+def test_generate_website_mocks_cli_help_loads_without_template_circular_import():
+    result = subprocess.run(
+        [sys.executable, "scripts/generate_website_mocks.py", "--help"],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "--base-url" in result.stdout
+    assert "--write-sheet" in result.stdout
+    assert "partially initialized module" not in result.stderr
 
 
 def test_content_signal_from_text_is_source_agnostic():
