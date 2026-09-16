@@ -62,8 +62,25 @@ VENDOR_MARKERS = [
     "activenetwork", "amilia", "perfectmind", "swimschoolsoftware",
     "gostudiopro", "opus1", "childplus", "childplus.net", "pushpress",
     "wellnessliving", "zenplanner", "wodify", "kicksite", "sparkmembership",
-    "gymdesk", "clubready", "teamup.com",
+    "gymdesk", "clubready", "teamup.com", "fsenrollment",
+    "finalsiteenrollment", "schooladminonline",
 ]
+
+IMPORTANT_LLM_LINK_PATTERNS = [
+    r"enroll",
+    r"register",
+    r"\bapply\b",
+    r"application",
+    r"admission",
+    r"tuition",
+    r"portal",
+    r"login",
+]
+
+IMPORTANT_LLM_LINK_RE = re.compile(
+    "|".join(IMPORTANT_LLM_LINK_PATTERNS + [re.escape(marker) for marker in VENDOR_MARKERS]),
+    re.IGNORECASE,
+)
 
 # Non-target organizations that can look like schools at the page level.
 NON_TARGET_ORG_KEYWORDS = [
@@ -142,6 +159,10 @@ def _check_keywords(text: str, keyword_list: list[str]) -> tuple[bool, str]:
         if kw in text_lower:
             return True, f"keyword:{kw}"
     return False, ""
+
+
+def _is_important_llm_link(label: str) -> bool:
+    return bool(IMPORTANT_LLM_LINK_RE.search(label or ""))
 
 
 def _link_signal(pages: list[fetcher.FetchedPage]) -> str:
@@ -484,14 +505,23 @@ def llm_classify(
 ) -> Classification:
     """Call Claude Haiku with the combined page content."""
     combined_text = []
-    combined_links = []
+    important_links = []
+    context_links = []
+    seen_links = set()
     for p in pages:
         if p.text:
             combined_text.append(f"--- {p.url} ---\n{p.text}")
-        for link in p.outbound_links[:15]:
+        for idx, link in enumerate(p.outbound_links):
             label = f"[{link['text']}] {link['href']}"
-            if label not in combined_links:
-                combined_links.append(label)
+            if label in seen_links:
+                continue
+            seen_links.add(label)
+            if _is_important_llm_link(label):
+                important_links.append(label)
+            elif idx < 15:
+                context_links.append(label)
+
+    combined_links = important_links + context_links
 
     metadata_lines = []
     for key, value in (metadata or {}).items():

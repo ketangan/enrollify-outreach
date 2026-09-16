@@ -26,24 +26,42 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
 
-# Strong keywords in link text/href that suggest the link leads to an
-# enrollment, pricing, schedule, or portal page.
-PRIMARY_ENROLLMENT_LINK_PATTERNS = [
+# Highest-confidence links: these usually point directly to the admissions
+# path and must outrank generic "program" or "portal" nav links.
+HIGH_INTENT_ENROLLMENT_LINK_PATTERNS = [
     r"enroll",
     r"register",
-    r"apply",
+    r"\bapply\b",
     r"application",
     r"admission",
+    r"fsenrollment",
+]
+
+# Useful but weaker links. Portal/login may be parent-login only, while
+# program/class/schedule pages often describe offerings before they explain
+# how to apply. Keep them behind the explicit admissions/apply signals.
+PORTAL_LINK_PATTERNS = [
     r"sign[-_\s]?up",
     r"join",
     r"portal",
     r"login",
+]
+
+PROGRAM_LINK_PATTERNS = [
     r"class(?:es)?",
     r"programs?",
     r"pricing",
     r"tuition",
     r"schedule",
 ]
+
+# Backward-compatible union for code/tests that treat "primary" as all
+# enrollment-ish links.
+PRIMARY_ENROLLMENT_LINK_PATTERNS = (
+    HIGH_INTENT_ENROLLMENT_LINK_PATTERNS
+    + PORTAL_LINK_PATTERNS
+    + PROGRAM_LINK_PATTERNS
+)
 
 # Useful but weaker links. Contact pages often clarify the enrollment path,
 # but they should not crowd out stronger location/portal evidence.
@@ -295,7 +313,9 @@ def find_enrollment_links(page: FetchedPage, max_links: int = 3) -> list[str]:
     """From a fetched homepage, pick up to max_links that look enrollment-related."""
     if not page.outbound_links:
         return []
-    primary_pattern = re.compile("|".join(PRIMARY_ENROLLMENT_LINK_PATTERNS), re.IGNORECASE)
+    high_intent_pattern = re.compile("|".join(HIGH_INTENT_ENROLLMENT_LINK_PATTERNS), re.IGNORECASE)
+    portal_pattern = re.compile("|".join(PORTAL_LINK_PATTERNS), re.IGNORECASE)
+    program_pattern = re.compile("|".join(PROGRAM_LINK_PATTERNS), re.IGNORECASE)
     secondary_pattern = re.compile("|".join(SECONDARY_ENROLLMENT_LINK_PATTERNS), re.IGNORECASE)
     location_pattern = re.compile("|".join(LOCATION_LINK_PATTERNS), re.IGNORECASE)
     candidates = []
@@ -311,15 +331,19 @@ def find_enrollment_links(page: FetchedPage, max_links: int = 3) -> list[str]:
 
         signal = f"{text} {href}"
         priority = None
-        if primary_pattern.search(signal):
+        if high_intent_pattern.search(signal):
             priority = 0
+        elif portal_pattern.search(signal):
+            priority = 1
+        elif program_pattern.search(signal):
+            priority = 2
         elif location_pattern.search(text):
             # Location subdomains often carry the actual registration portal.
             # Do not inspect the full href here: domains like dancestudio.com
             # would make every link look like a location.
-            priority = 1
+            priority = 3
         elif secondary_pattern.search(signal):
-            priority = 2
+            priority = 4
 
         if priority is not None:
             seen.add(href)

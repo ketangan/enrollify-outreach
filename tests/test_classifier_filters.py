@@ -1,4 +1,4 @@
-from src import classifier, skip_lists
+from src import classifier, fetcher, skip_lists
 from src.fetcher import FetchedPage
 
 
@@ -129,6 +129,93 @@ def test_vendor_link_is_online_system_exclude_even_when_raw_html_misses_it():
     assert result is not None
     assert result.status == "online_system_exclude"
     assert result.reason == "local:vendor:jackrabbitclass"
+
+
+def test_finalsite_enrollment_link_is_online_system_exclude():
+    page = FetchedPage(
+        url="https://www.internationalschool.la/",
+        status_code=200,
+        text="International School of Los Angeles Admissions Apply Now",
+        raw_html_snippet="",
+        outbound_links=[
+            {
+                "href": "https://internationalschool-la.fsenrollment.com/portal",
+                "text": "Apply Now",
+            }
+        ],
+    )
+
+    result = classifier.local_classify([page])
+
+    assert result is not None
+    assert result.status == "online_system_exclude"
+    assert result.reason == "local:vendor:fsenrollment"
+
+
+def test_enrollment_link_picker_prioritizes_admissions_over_program_noise():
+    page = FetchedPage(
+        url="https://www.internationalschool.la/",
+        status_code=200,
+        text="International School of Los Angeles",
+        raw_html_snippet="",
+        outbound_links=[
+            {"href": "https://www.internationalschool.la/lila-portal/", "text": "My Portal"},
+            {
+                "href": "https://www.internationalschool.la/academics/middle-school/international-middle-school/",
+                "text": "International Program",
+            },
+            {
+                "href": "https://www.internationalschool.la/academics/middle-school/middle-school-bilingual-program/",
+                "text": "Bilingual Program",
+            },
+            {"href": "https://www.internationalschool.la/admissions/", "text": "Admissions"},
+            {
+                "href": "https://www.internationalschool.la/admissions/admission-process/",
+                "text": "Admission Process",
+            },
+        ],
+    )
+
+    assert fetcher.find_enrollment_links(page, max_links=2) == [
+        "https://www.internationalschool.la/admissions/",
+        "https://www.internationalschool.la/admissions/admission-process/",
+    ]
+
+
+def test_llm_prompt_includes_late_high_signal_links(monkeypatch):
+    page = FetchedPage(
+        url="https://www.example-school.org/",
+        status_code=200,
+        text="Example School welcomes families.",
+        raw_html_snippet="",
+        outbound_links=[
+            {"href": f"https://www.example-school.org/nav-{idx}/", "text": f"Nav {idx}"}
+            for idx in range(20)
+        ]
+        + [
+            {
+                "href": "https://admissions.example-vendor.com/apply",
+                "text": "Apply Now",
+            }
+        ],
+    )
+    captured = {}
+
+    class FakeContent:
+        text = '{"status": "needs_enrollment_system_classification", "reason": "fixture"}'
+
+    class FakeResponse:
+        content = [FakeContent()]
+
+    def fake_call(client, user_content):
+        captured["user_content"] = user_content
+        return FakeResponse()
+
+    monkeypatch.setattr(classifier, "_call_llm_with_retry", fake_call)
+
+    classifier.llm_classify([page], client=None)
+
+    assert "https://admissions.example-vendor.com/apply" in captured["user_content"]
 
 
 def test_pushpress_link_is_online_system_exclude():
