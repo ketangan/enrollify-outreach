@@ -161,6 +161,37 @@ def test_run_location_passes_custom_api_call_cap(monkeypatch):
     assert submitted["job"][1]["max_api_calls"] == 80
 
 
+def test_coverage_decision_marks_fully_processed_area_done_for_outreach():
+    plan = _plan(partial_zips=["90401", "90402"])
+    plan.zips = [
+        coverage_planner.PlannedZip(zip="90401", city="Santa Monica", state="CA", status="partial_complete"),
+        coverage_planner.PlannedZip(zip="90402", city="Santa Monica", state="CA", status="partial_complete"),
+    ]
+    plan.partial = 2
+    plan.pending = 0
+
+    decision = routes_coverage._coverage_decision(plan)
+
+    assert decision["tone"] == "done"
+    assert decision["title"] == "Done for outreach"
+    assert "downstream" in decision["body"]
+
+
+def test_coverage_decision_marks_pending_area_as_searchable():
+    plan = _plan(runnable_zips=["90403", "90404"])
+    plan.zips = [
+        coverage_planner.PlannedZip(zip="90403", city="Santa Monica", state="CA", status="pending"),
+        coverage_planner.PlannedZip(zip="90404", city="Santa Monica", state="CA", status="pending"),
+    ]
+    plan.pending = 2
+
+    decision = routes_coverage._coverage_decision(plan)
+
+    assert decision["tone"] == "action"
+    assert decision["title"] == "2 ZIPs left to search"
+    assert "Google Places" in decision["body"]
+
+
 def test_run_partials_requires_confirmation(monkeypatch):
     submitted = {}
     monkeypatch.setattr(

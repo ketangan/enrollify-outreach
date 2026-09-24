@@ -31,11 +31,11 @@
 {% if planner_error %}
   <div class="coverage-warning">
     {% if planner_error == "nothing_pending" %}
-      Nothing pending for that location. Completed and in-progress ZIPs are skipped automatically.
+      There are no ZIPs left to search for that location. Move to downstream processing or pick a nearby area.
     {% elif planner_error == "nothing_partial" %}
-      Nothing partial for that location. Use the normal pending run if there are unprocessed ZIPs.
+      There are no previously searched ZIPs that need special handling.
     {% elif planner_error == "partial_confirmation_required" %}
-      Partial ZIP finishing is intentionally blocked from one-click runs because it spends many more Google Places calls and can rediscover already-known schools. Use pending ZIP runs first.
+      Deep reruns are blocked here because they spend many more Google Places calls. This area is already usable for normal outreach.
     {% elif planner_error == "location_not_resolved" %}
       That location was not resolved. Pick a suggestion or add a more specific state.
     {% else %}
@@ -58,19 +58,6 @@
           {% endif %}
         </p>
       </div>
-      {% if plan.resolved.status == "resolved" %}
-        <div class="coverage-plan-actions">
-          {% if plan.runnable_zips %}
-            <form method="POST" action="/coverage/run-location" class="inline-form">
-              <input type="hidden" name="location" value="{{ location }}">
-              <input type="hidden" name="state" value="{{ state }}">
-              <input type="hidden" name="max_zips" value="{{ max_zips }}">
-              <input type="hidden" name="max_api_calls" value="{{ max_api_calls }}">
-              <button type="submit">Run next {{ run_zip_count }} pending zip{% if run_zip_count != 1 %}s{% endif %}</button>
-            </form>
-          {% endif %}
-        </div>
-      {% endif %}
     </div>
 
     {% for warning in plan.resolved.warnings %}
@@ -78,29 +65,40 @@
     {% endfor %}
 
     {% if plan.resolved.status == "resolved" %}
+      {% if coverage_decision %}
+        <div class="coverage-decision coverage-decision-{{ coverage_decision.tone }}">
+          <div>
+            <p class="section-label">Recommended next step</p>
+            <strong>{{ coverage_decision.title }}</strong>
+            <p>{{ coverage_decision.body }}</p>
+          </div>
+          {% if run_zip_count %}
+            <form method="POST" action="/coverage/run-location" class="inline-form">
+              <input type="hidden" name="location" value="{{ location }}">
+              <input type="hidden" name="state" value="{{ state }}">
+              <input type="hidden" name="max_zips" value="{{ max_zips }}">
+              <input type="hidden" name="max_api_calls" value="{{ max_api_calls }}">
+              <button type="submit">Search next {{ run_zip_count }} ZIP{% if run_zip_count != 1 %}s{% endif %}</button>
+            </form>
+          {% endif %}
+        </div>
+      {% endif %}
+
       <div class="coverage-metrics">
-        <div><span>Total ZIPs</span><strong>{{ plan.total }}</strong></div>
-        <div><span>Processed</span><strong>{{ plan.processed }} / {{ plan.total }}</strong></div>
-        <div><span>Clean complete</span><strong>{{ plan.complete }}</strong></div>
-        <div><span>Partial/capped</span><strong>{{ plan.partial }}</strong></div>
-        <div><span>Pending</span><strong>{{ plan.pending }}</strong></div>
-        <div><span>Qualified found</span><strong>{{ plan.qualified_total }}</strong></div>
+        <div><span>Area status</span><strong>{% if plan.pending %}Needs search{% elif plan.in_progress %}Running{% else %}Ready for downstream{% endif %}</strong></div>
+        <div><span>ZIPs searched</span><strong>{{ plan.processed }} / {{ plan.total }}</strong></div>
+        <div><span>ZIPs left</span><strong>{{ plan.pending }}</strong></div>
+        <div><span>Schools collected</span><strong>{{ plan.qualified_total }}</strong></div>
       </div>
 
       {% if run_zip_count %}
-        <div class="coverage-warning">
-          Planned run: {{ run_zip_count }} ZIP{% if run_zip_count != 1 %}s{% endif %},
-          {{ cost_settings.categories|length }} categories,
-          up to {{ cost_settings.pages_per_category }} Text Search page{% if cost_settings.pages_per_category != 1 %}s{% endif %} per category
-          (up to {{ estimated_text_search_calls }} Text Search calls before details).
-          Details mode: {{ cost_settings.detail_level }}. Hard cap: {{ max_api_calls }} Places calls.
+        <div class="coverage-info">
+          This will search {{ run_zip_count }} new ZIP{% if run_zip_count != 1 %}s{% endif %}. New ZIP searches use Google Places calls; reruns of already-covered ZIPs are skipped.
         </div>
       {% endif %}
       {% if partial_run_count %}
-        <div class="coverage-warning">
-          {{ partial_run_count }} partial ZIP{% if partial_run_count != 1 %}s are{% else %} is{% endif %} already covered enough for normal outreach. Deep finishing is no longer a one-click action because it uses all 3 Google Places pages per category
-          (up to {{ estimated_partial_text_search_calls }} Text Search calls before details).
-          Run pending ZIPs first; use a manual deep finish only when you deliberately need extra coverage for a specific ZIP.
+        <div class="coverage-info">
+          Some ZIPs hit Google's result cap, but they are treated as covered for outreach. You do not need to do anything with them before running downstream.
         </div>
       {% endif %}
 
@@ -153,7 +151,7 @@
         </table>
       {% endif %}
 
-      <h3>ZIP Preview</h3>
+      <h3>ZIP Status</h3>
       <table class="data-table compact-table">
         <thead>
           <tr>
@@ -161,9 +159,8 @@
             <th>City</th>
             <th>County</th>
             <th>Status</th>
-            <th>Found</th>
-            <th>Qualified</th>
-            <th>Capped Categories</th>
+            <th>Schools collected</th>
+            <th>What it means</th>
           </tr>
         </thead>
         <tbody>
@@ -172,10 +169,31 @@
               <td><strong>{{ z.zip }}</strong></td>
               <td>{{ z.city }}, {{ z.state }}</td>
               <td>{{ z.county }}</td>
-              <td><span class="coverage-status coverage-status-{{ z.status|replace('_', '-') }}">{{ z.status }}</span></td>
-              <td>{{ z.total_found }}</td>
+              <td>
+                {% if z.status == "complete" or z.status == "partial_complete" %}
+                  <span class="coverage-status coverage-status-covered">Covered</span>
+                {% elif z.status == "in_progress" %}
+                  <span class="coverage-status coverage-status-in-progress">Running</span>
+                {% elif z.status == "failed" %}
+                  <span class="coverage-status coverage-status-failed">Retry needed</span>
+                {% else %}
+                  <span class="coverage-status coverage-status-pending">Not searched</span>
+                {% endif %}
+              </td>
               <td>{{ z.qualified }}</td>
-              <td>{{ z.capped_categories }}</td>
+              <td>
+                {% if z.status == "complete" %}
+                  Fully searched.
+                {% elif z.status == "partial_complete" %}
+                  Covered for outreach. No action needed.
+                {% elif z.status == "in_progress" %}
+                  A job is currently working on this ZIP.
+                {% elif z.status == "failed" %}
+                  This ZIP can be retried.
+                {% else %}
+                  This ZIP will be included in the next pending run.
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>

@@ -164,6 +164,40 @@ table.data-table tr:hover { background: #f8f4ec; }
   justify-content: flex-end;
   gap: 8px;
 }
+.coverage-decision {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  border: 1px solid #d8e0d4;
+  border-radius: 6px;
+  background: #f4f8f1;
+  color: #22331f;
+  padding: 14px;
+  margin: 14px 0;
+}
+.coverage-decision strong {
+  display: block;
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+.coverage-decision p {
+  margin: 0;
+  color: #4f5d4b;
+  font-size: 13px;
+}
+.coverage-decision-action {
+  border-color: #d8dfcb;
+  background: #f7f3e5;
+}
+.coverage-decision-busy {
+  border-color: #cbdbee;
+  background: #f2f7fd;
+}
+.coverage-decision-done {
+  border-color: #c6dec3;
+  background: #f1f8ef;
+}
 .section-label {
   margin: 0 0 4px;
   color: #777;
@@ -181,9 +215,18 @@ table.data-table tr:hover { background: #f8f4ec; }
   margin: 10px 0;
   padding: 9px 11px;
 }
+.coverage-info {
+  background: #f6f3eb;
+  border-left: 4px solid #b8aa8e;
+  border-radius: 4px;
+  color: #4f4a40;
+  font-size: 13px;
+  margin: 10px 0;
+  padding: 9px 11px;
+}
 .coverage-metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin: 14px 0 18px;
 }
@@ -215,6 +258,7 @@ table.data-table tr:hover { background: #f8f4ec; }
   font-size: 11px;
   white-space: nowrap;
 }
+.coverage-status-covered { background: #c8e6c9; color: #1b5e20; }
 .coverage-status-complete { background: #c8e6c9; color: #1b5e20; }
 .coverage-status-partial-complete { background: #fff0b3; color: #664d00; }
 .coverage-status-in-progress { background: #d7e8ff; color: #123f75; }
@@ -227,6 +271,12 @@ table.data-table tr:hover { background: #f8f4ec; }
   }
   .coverage-plan-head {
     display: block;
+  }
+  .coverage-decision {
+    display: block;
+  }
+  .coverage-decision form {
+    margin-top: 12px;
   }
   .coverage-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));

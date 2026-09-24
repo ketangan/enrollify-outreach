@@ -48,6 +48,34 @@ def _clamp_max_api_calls(value, default: int | None = None) -> int:
     return max(1, min(parsed, 1000))
 
 
+def _coverage_decision(plan: coverage_planner.CoveragePlan | None) -> dict:
+    if not plan or plan.resolved.status != "resolved":
+        return {}
+    if plan.pending:
+        return {
+            "tone": "action",
+            "title": f"{plan.pending} ZIP{'s' if plan.pending != 1 else ''} left to search",
+            "body": "Run the pending ZIPs in small batches. Each pending ZIP is a new Google Places search, so it will use API calls.",
+        }
+    if plan.in_progress:
+        return {
+            "tone": "busy",
+            "title": "Search already running",
+            "body": "Wait for the current job to finish, then preview this area again.",
+        }
+    if plan.processed == plan.total and plan.total:
+        return {
+            "tone": "done",
+            "title": "Done for outreach",
+            "body": "All ZIPs in this area have been searched enough for normal outreach. Do not rerun them; the next step is downstream processing.",
+        }
+    return {
+        "tone": "neutral",
+        "title": "Preview ready",
+        "body": "Review the ZIP list below before starting discovery.",
+    }
+
+
 @router.get("/coverage", response_class=HTMLResponse)
 def coverage_view(
     request: Request,
@@ -94,6 +122,7 @@ def coverage_view(
     run_zip_count = min(len(plan.runnable_zips), max_zips_clamped) if plan else 0
     partial_run_count = min(len(plan.partial_zips), max_zips_clamped) if plan else 0
     cost_settings = places.discovery_cost_settings()
+    coverage_decision = _coverage_decision(plan)
 
     return templates.TemplateResponse(
         request,
@@ -107,6 +136,7 @@ def coverage_view(
             "partial_run_count": partial_run_count,
             "estimated_partial_text_search_calls": partial_run_count * len(cost_settings["categories"]) * 3,
             "cost_settings": cost_settings,
+            "coverage_decision": coverage_decision,
             "location": location,
             "state": state,
             "max_zips": max_zips_clamped,
