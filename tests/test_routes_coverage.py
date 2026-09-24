@@ -109,7 +109,7 @@ def test_coverage_preview_accepts_blank_max_zips(monkeypatch):
     assert response.context["max_zips"] == 2
     assert response.context["max_api_calls"] == 120
     assert response.context["run_zip_count"] == 2
-    assert response.context["estimated_text_search_calls"] == 52
+    assert response.context["estimated_text_search_calls"] == 26
 
 
 def test_blank_max_zips_defaults_to_two_when_running_location(monkeypatch):

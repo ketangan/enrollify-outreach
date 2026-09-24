@@ -113,15 +113,56 @@ def _load_markets() -> dict:
 
 
 def _rows_to_zips(rows: pd.DataFrame) -> list[ZipInfo]:
+    search_point_counts: dict[tuple[str, str, str, float, float], int] = {}
+    place_search_points: dict[tuple[str, str, str], set[tuple[float, float]]] = {}
+    for _, row in rows.iterrows():
+        lat = float(row["latitude"]) if _is_number(row.get("latitude")) else None
+        lng = float(row["longitude"]) if _is_number(row.get("longitude")) else None
+        if lat is None or lng is None:
+            continue
+        place_key = (
+            str(row.get("place_name", "") or ""),
+            str(row.get("state_code", "") or ""),
+            str(row.get("county_name", "") or ""),
+        )
+        point = (round(lat, 4), round(lng, 4))
+        search_point = (*place_key, *point)
+        search_point_counts[search_point] = search_point_counts.get(search_point, 0) + 1
+        place_search_points.setdefault(place_key, set()).add(point)
+
     seen: set[str] = set()
+    seen_search_points: set[tuple[str, str, str, float, float]] = set()
     out: list[ZipInfo] = []
     for _, row in rows.sort_values(["state_code", "place_name", "zip"]).iterrows():
         zip_code = str(row.get("zip", "")).zfill(5)
         if not zip_code or zip_code in seen:
             continue
-        seen.add(zip_code)
         lat = float(row["latitude"]) if _is_number(row.get("latitude")) else None
         lng = float(row["longitude"]) if _is_number(row.get("longitude")) else None
+        if lat is not None and lng is not None:
+            place_key = (
+                str(row.get("place_name", "") or ""),
+                str(row.get("state_code", "") or ""),
+                str(row.get("county_name", "") or ""),
+            )
+            search_point = (
+                *place_key,
+                round(lat, 4),
+                round(lng, 4),
+            )
+            # pgeocode includes PO-box/unique ZIPs with the same generic city
+            # centroid. Running Places for each one repeats nearly identical
+            # paid searches. When a city has real distinct ZIP centroids, drop
+            # those duplicate generic clusters; otherwise keep one fallback.
+            if (
+                search_point_counts.get(search_point, 0) > 1
+                and len(place_search_points.get(place_key, set())) > 1
+            ):
+                continue
+            if search_point in seen_search_points:
+                continue
+            seen_search_points.add(search_point)
+        seen.add(zip_code)
         out.append(ZipInfo(
             zip=zip_code,
             city=str(row.get("place_name", "") or ""),

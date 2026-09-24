@@ -11,6 +11,15 @@ def test_palm_springs_city_warns_about_broader_market():
     assert any("broader configured market" in warning for warning in resolved.warnings)
 
 
+def test_city_resolution_collapses_duplicate_search_point_zips():
+    resolved = location_resolver.resolve_location("Santa Monica", state_hint="CA")
+
+    assert resolved.status == "resolved"
+    assert resolved.kind == "city"
+    assert resolved.zip_codes == ["90401", "90402", "90403", "90404", "90405"]
+    assert not {"90406", "90407", "90408", "90409", "90410", "90411"} & set(resolved.zip_codes)
+
+
 def test_greater_palm_springs_market_expands_to_coachella_valley_cities():
     resolved = location_resolver.resolve_location("Greater Palm Springs")
 
@@ -29,7 +38,7 @@ def test_la_county_resolves_as_county_but_legacy_key_still_resolves_region():
     assert county.status == "resolved"
     assert county.kind == "county"
     assert county.label == "Los Angeles County, CA"
-    assert len(county.zip_codes) > 400
+    assert len(county.zip_codes) > 300
 
     assert legacy.status == "resolved"
     assert legacy.kind == "configured_region"
