@@ -34,6 +34,8 @@
       Nothing pending for that location. Completed and in-progress ZIPs are skipped automatically.
     {% elif planner_error == "nothing_partial" %}
       Nothing partial for that location. Use the normal pending run if there are unprocessed ZIPs.
+    {% elif planner_error == "partial_confirmation_required" %}
+      Partial ZIP finishing is intentionally blocked from one-click runs because it spends many more Google Places calls and can rediscover already-known schools. Use pending ZIP runs first.
     {% elif planner_error == "location_not_resolved" %}
       That location was not resolved. Pick a suggestion or add a more specific state.
     {% else %}
@@ -58,15 +60,6 @@
       </div>
       {% if plan.resolved.status == "resolved" %}
         <div class="coverage-plan-actions">
-          {% if plan.partial_zips %}
-            <form method="POST" action="/coverage/run-partials" class="inline-form">
-              <input type="hidden" name="location" value="{{ location }}">
-              <input type="hidden" name="state" value="{{ state }}">
-              <input type="hidden" name="max_zips" value="{{ max_zips }}">
-              <input type="hidden" name="max_api_calls" value="{{ max_api_calls }}">
-              <button type="submit">Finish next {{ partial_run_count }} partial zip{% if partial_run_count != 1 %}s{% endif %}</button>
-            </form>
-          {% endif %}
           {% if plan.runnable_zips %}
             <form method="POST" action="/coverage/run-location" class="inline-form">
               <input type="hidden" name="location" value="{{ location }}">
@@ -105,10 +98,9 @@
       {% endif %}
       {% if partial_run_count %}
         <div class="coverage-warning">
-          Partial finish run: {{ partial_run_count }} ZIP{% if partial_run_count != 1 %}s{% endif %},
-          {{ cost_settings.categories|length }} categories, all 3 Text Search pages per category
+          {{ partial_run_count }} partial ZIP{% if partial_run_count != 1 %}s are{% else %} is{% endif %} already covered enough for normal outreach. Deep finishing is no longer a one-click action because it uses all 3 Google Places pages per category
           (up to {{ estimated_partial_text_search_calls }} Text Search calls before details).
-          Hard cap: {{ max_api_calls }} Places calls.
+          Run pending ZIPs first; use a manual deep finish only when you deliberately need extra coverage for a specific ZIP.
         </div>
       {% endif %}
 

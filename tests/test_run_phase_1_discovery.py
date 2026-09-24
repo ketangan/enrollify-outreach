@@ -17,6 +17,11 @@ def _load_script(module_name: str, script_name: str):
 phase1 = _load_script("phase1_for_tests", "run_phase_1_discovery.py")
 
 
+@pytest.fixture(autouse=True)
+def _stub_sheet_reads(monkeypatch):
+    monkeypatch.setattr(phase1.sheets, "read_all_rows", lambda tab: [])
+
+
 def test_process_zip_marks_failed_when_discovery_crashes(monkeypatch):
     calls = []
 
@@ -45,6 +50,41 @@ def test_process_zip_marks_failed_when_discovery_crashes(monkeypatch):
         ("in_progress", "90221", "Compton", "CA", "Ketan"),
         ("failed", "90221", "Compton", "CA", "Ketan"),
     ]
+
+
+def test_process_zip_refuses_to_spend_places_when_leads_dedupe_read_fails(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(phase1.regions, "zip_city_state", lambda zip_code: ("Compton", "CA"))
+    monkeypatch.setattr(
+        phase1.coverage,
+        "mark_in_progress",
+        lambda zip_code, city, state, admin="": calls.append(("in_progress", zip_code)),
+    )
+    monkeypatch.setattr(
+        phase1.coverage,
+        "mark_failed",
+        lambda zip_code, city, state, admin="": calls.append(("failed", zip_code)),
+    )
+
+    def read_failure(tab):
+        if tab == phase1.config.TAB_LEADS:
+            raise RuntimeError("quota")
+        return []
+
+    monkeypatch.setattr(phase1.sheets, "read_all_rows", read_failure)
+    discover_calls = []
+    monkeypatch.setattr(
+        phase1.places,
+        "discover_zip",
+        lambda zip_code, **kwargs: discover_calls.append(zip_code) or {},
+    )
+
+    with pytest.raises(RuntimeError, match="refusing to run discovery"):
+        phase1.process_zip("90221", admin="Ketan")
+
+    assert calls == [("in_progress", "90221"), ("failed", "90221")]
+    assert discover_calls == []
 
 
 def _stub_place(place_id, name="Test Studio", **overrides):
@@ -106,6 +146,104 @@ def test_process_zip_appends_nothing_when_all_places_already_known(monkeypatch):
     phase1.process_zip("78701")
 
     assert appended == []
+
+
+def test_process_zip_appends_place_id_for_new_website_lead(monkeypatch):
+    monkeypatch.setattr(phase1.regions, "zip_city_state", lambda zip_code: ("Austin", "TX"))
+    monkeypatch.setattr(phase1.coverage, "mark_in_progress", lambda zip_code, **kw: None)
+    mark_complete_calls = []
+    monkeypatch.setattr(phase1.coverage, "mark_complete", lambda **kw: mark_complete_calls.append(kw))
+
+    new_place = _stub_place(
+        "place-new",
+        name="Brand New Music",
+        website="https://brandnewmusic.example.com",
+        phone="(512) 555-0100",
+        address="123 Main St, Austin, TX 78701",
+    )
+    monkeypatch.setattr(
+        phase1.places, "discover_zip",
+        lambda zip_code, **kwargs: {
+            "places_with_website": [new_place],
+            "places_without_website": [],
+            "places_skipped": [],
+            "capped_categories": [],
+        },
+    )
+    monkeypatch.setattr(phase1.no_website_schools, "known_place_ids", lambda: set())
+    monkeypatch.setattr(phase1.sheets, "read_all_rows", lambda tab: [])
+    monkeypatch.setattr(phase1.sheets, "get_headers", lambda tab: ["id", "name", "website"])
+    monkeypatch.setattr(phase1.sheets, "ensure_headers", lambda tab, required: required)
+
+    appended = []
+    monkeypatch.setattr(phase1.sheets, "append_rows", lambda tab, rows, headers: appended.append((tab, rows, headers)))
+
+    phase1.process_zip("78701")
+
+    assert len(appended) == 1
+    tab, rows, headers = appended[0]
+    assert tab == phase1.config.TAB_LEADS
+    assert headers[-1] == "place_id"
+    assert rows[0]["place_id"] == "place-new"
+    assert rows[0]["status"] == "pending_classify"
+    assert mark_complete_calls[0]["qualified"] == 1
+
+
+def test_process_zip_skips_existing_website_lead_before_append(monkeypatch):
+    monkeypatch.setattr(phase1.regions, "zip_city_state", lambda zip_code: ("Austin", "TX"))
+    monkeypatch.setattr(phase1.coverage, "mark_in_progress", lambda zip_code, **kw: None)
+    mark_complete_calls = []
+    monkeypatch.setattr(phase1.coverage, "mark_complete", lambda **kw: mark_complete_calls.append(kw))
+
+    duplicate_place = _stub_place(
+        "place-existing",
+        name="Existing Music",
+        website="https://existingmusic.example.com",
+    )
+    monkeypatch.setattr(
+        phase1.places, "discover_zip",
+        lambda zip_code, **kwargs: {
+            "places_with_website": [duplicate_place],
+            "places_without_website": [],
+            "places_skipped": [],
+            "capped_categories": [],
+        },
+    )
+    monkeypatch.setattr(phase1.no_website_schools, "known_place_ids", lambda: set())
+    monkeypatch.setattr(
+        phase1.sheets,
+        "read_all_rows",
+        lambda tab: [{"place_id": "place-existing", "name": "Existing Music"}]
+        if tab == phase1.config.TAB_LEADS
+        else [],
+    )
+
+    appended = []
+    monkeypatch.setattr(phase1.sheets, "append_rows", lambda tab, rows, headers: appended.append((tab, rows)))
+
+    phase1.process_zip("78701")
+
+    assert appended == []
+    assert mark_complete_calls[0]["qualified"] == 0
+
+
+def test_run_zip_list_reuses_known_lead_keys_between_zips(monkeypatch):
+    calls = []
+    seen_keys = set()
+    monkeypatch.setattr(phase1, "load_known_website_lead_keys", lambda: seen_keys)
+    monkeypatch.setattr(phase1.places, "get_api_call_count", lambda: 0)
+
+    def fake_process(zip_code, admin="", force=False, max_api_calls=None, known_website_lead_keys=None):
+        calls.append((zip_code, known_website_lead_keys is seen_keys))
+        known_website_lead_keys.add(f"zip:{zip_code}")
+        return True
+
+    monkeypatch.setattr(phase1, "process_zip_if_needed", fake_process)
+
+    phase1.run_zip_list(["90266", "90505"], max_zips=2, max_api_calls=500, admin="Ketan")
+
+    assert calls == [("90266", True), ("90505", True)]
+    assert seen_keys == {"zip:90266", "zip:90505"}
 
 
 def test_run_auto_bubbles_places_auth_errors(monkeypatch):

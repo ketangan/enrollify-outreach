@@ -165,9 +165,20 @@ def coverage_run_partials(
     state: str = Form("CA"),
     max_zips: str = Form("2"),
     max_api_calls: str = Form(""),
+    confirm_deep: str = Form(""),
 ):
     max_zips = _clamp_max_zips(max_zips)
     max_api_calls = _clamp_max_api_calls(max_api_calls)
+    if confirm_deep != "RUN_PARTIALS":
+        params = urlencode({
+            "location": location,
+            "state": state,
+            "max_zips": max_zips,
+            "max_api_calls": max_api_calls,
+            "planner_error": "partial_confirmation_required",
+        })
+        return RedirectResponse(f"/coverage?{params}", status_code=303)
+
     plan = coverage_planner.build_plan(location, state_hint=state)
     if plan.resolved.status != "resolved":
         params = urlencode({

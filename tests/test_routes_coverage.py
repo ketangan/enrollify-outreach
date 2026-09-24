@@ -161,7 +161,7 @@ def test_run_location_passes_custom_api_call_cap(monkeypatch):
     assert submitted["job"][1]["max_api_calls"] == 80
 
 
-def test_run_partials_submits_force_deep_zip_list(monkeypatch):
+def test_run_partials_requires_confirmation(monkeypatch):
     submitted = {}
     monkeypatch.setattr(
         routes_coverage.coverage_planner,
@@ -179,6 +179,32 @@ def test_run_partials_submits_force_deep_zip_list(monkeypatch):
         state="CA",
         max_zips="2",
         max_api_calls="90",
+    )
+
+    assert response.status_code == 303
+    assert "planner_error=partial_confirmation_required" in response.headers["location"]
+    assert submitted == {}
+
+
+def test_run_partials_submits_force_deep_zip_list_when_confirmed(monkeypatch):
+    submitted = {}
+    monkeypatch.setattr(
+        routes_coverage.coverage_planner,
+        "build_plan",
+        lambda location, state_hint="CA": _plan(partial_zips=["90401", "90402", "90403"]),
+    )
+    monkeypatch.setattr(
+        routes_coverage.jobs_runner,
+        "submit_job",
+        lambda kind, params=None: submitted.update({"job": (kind, params)}) or "job-1",
+    )
+
+    response = routes_coverage.coverage_run_partials(
+        location="Santa Monica",
+        state="CA",
+        max_zips="2",
+        max_api_calls="90",
+        confirm_deep="RUN_PARTIALS",
     )
 
     assert response.status_code == 303
@@ -209,6 +235,7 @@ def test_run_partials_redirects_when_no_partial_zips(monkeypatch):
         location="Santa Monica",
         state="CA",
         max_zips="2",
+        confirm_deep="RUN_PARTIALS",
     )
 
     assert response.status_code == 303

@@ -70,6 +70,7 @@ logger = logging.getLogger("phase1")
 
 DEFAULT_MAX_API_CALLS = config.GOOGLE_PLACES_MAX_API_CALLS_PER_RUN
 SKIP_ZIP_STATUSES = {"complete", "partial_complete", "in_progress"}
+LEADS_DISCOVERY_HEADERS = ["place_id"]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ def _new_lead_id(zip_code: str) -> str:
 def _place_to_lead_row(place: places.DiscoveredPlace) -> dict:
     return {
         "id": _new_lead_id(place.zip),
+        "place_id": place.place_id,
         "name": place.name,
         "website": place.website,
         "category": place.category,
@@ -107,6 +109,76 @@ def _place_to_lead_row(place: places.DiscoveredPlace) -> dict:
         "notes": "",
         "do_not_contact_reason": "",
     }
+
+
+def _row_name(row: dict) -> str:
+    return str(row.get("name") or row.get("school_name") or "").strip()
+
+
+def _identity_keys(row: dict) -> set[str]:
+    """Strong keys used to avoid appending already-known website leads.
+
+    Phase 2 still owns final dedupe decisions. This guard exists earlier so a
+    repeated ZIP scan does not add hundreds of rows only to demote them later.
+    Keep these keys conservative: exact place ID, phone, address, exact path URL,
+    or same root website + same cleaned name + same location.
+    """
+    keys: set[str] = set()
+
+    place_id = str(row.get("place_id", "")).strip()
+    if place_id:
+        keys.add(f"place:{place_id}")
+
+    phone = dedupe_within_leads._normalize_phone(str(row.get("phone", "")))
+    if phone:
+        keys.add(f"tel:{phone}")
+
+    address = dedupe_within_leads._normalize_address(str(row.get("address", "")))
+    if address:
+        keys.add(f"addr:{address}")
+
+    url = dedupe_within_leads._normalize_url(str(row.get("website", "")))
+    if url and dedupe_within_leads._url_has_path(url):
+        keys.add(f"url:{url}")
+
+    root = dedupe_within_leads._root_domain(url)
+    name_key = dedupe_within_leads._normalize_name_key({
+        "name": _row_name(row),
+        "city": row.get("city", ""),
+        "state": row.get("state", ""),
+    })
+    zip_key = dedupe_within_leads._normalize_zip(str(row.get("zip", "")))
+    city_key = dedupe_within_leads._normalize_city(str(row.get("city", "")))
+    state_key = str(row.get("state", "")).strip().upper()
+    if root and name_key and zip_key:
+        keys.add(f"site-name-zip:{root}:{name_key}:{zip_key}")
+    if root and name_key and city_key and state_key:
+        keys.add(f"site-name-city:{root}:{name_key}:{city_key}:{state_key}")
+
+    return keys
+
+
+def load_known_website_lead_keys() -> set[str]:
+    """Index existing Leads/Archive/Already_Contacted rows before appending.
+
+    This costs a few Google Sheets reads, but it prevents much more expensive
+    downstream churn and accidental duplicate outreach from overlapping ZIP
+    scans or forced partial reruns.
+    """
+    known: set[str] = set()
+    for tab_name in (config.TAB_LEADS, config.TAB_ARCHIVE, config.TAB_ALREADY_CONTACTED):
+        try:
+            rows = sheets.read_all_rows(tab_name)
+        except Exception as e:
+            if tab_name == config.TAB_LEADS:
+                raise RuntimeError(
+                    f"Could not read {config.TAB_LEADS}; refusing to run discovery without pre-append dedupe"
+                ) from e
+            logger.warning("Could not read %s for pre-append dedupe; continuing: %s", tab_name, e)
+            continue
+        for row in rows:
+            known.update(_identity_keys(row))
+    return known
 
 
 def _place_to_no_website_row(place: places.DiscoveredPlace) -> dict:
@@ -138,7 +210,13 @@ def _place_to_no_website_row(place: places.DiscoveredPlace) -> dict:
 # Core: process one zip
 # ─────────────────────────────────────────────────────────────
 
-def process_zip(zip_code: str, admin: str = "", *, max_api_calls: int | None = None) -> dict:
+def process_zip(
+    zip_code: str,
+    admin: str = "",
+    *,
+    max_api_calls: int | None = None,
+    known_website_lead_keys: set[str] | None = None,
+) -> dict:
     """Run discovery for one zip and write results to the sheet."""
     zip_code = str(zip_code).zfill(5)
     city, state = regions.zip_city_state(zip_code)
@@ -146,6 +224,8 @@ def process_zip(zip_code: str, admin: str = "", *, max_api_calls: int | None = N
     coverage.mark_in_progress(zip_code, city=city, state=state, admin=admin)
 
     try:
+        if known_website_lead_keys is None:
+            known_website_lead_keys = load_known_website_lead_keys()
         try:
             known_no_website_place_ids = no_website_schools.known_place_ids()
         except Exception as e:
@@ -163,10 +243,31 @@ def process_zip(zip_code: str, admin: str = "", *, max_api_calls: int | None = N
         coverage.mark_failed(zip_code, city=city, state=state, admin=admin)
         raise
 
+    appended_website_count = 0
+    skipped_known_website_count = 0
     if result["places_with_website"]:
-        lead_rows = [_place_to_lead_row(p) for p in result["places_with_website"]]
-        lead_headers = sheets.get_headers(config.TAB_LEADS)
-        sheets.append_rows(config.TAB_LEADS, lead_rows, lead_headers)
+        lead_rows = []
+        for place in result["places_with_website"]:
+            row = _place_to_lead_row(place)
+            keys = _identity_keys(row)
+            if keys and keys.intersection(known_website_lead_keys):
+                skipped_known_website_count += 1
+                continue
+            lead_rows.append(row)
+            known_website_lead_keys.update(keys)
+
+        if skipped_known_website_count:
+            logger.info(
+                "Skipped %d already-known website lead(s) before append",
+                skipped_known_website_count,
+            )
+        if lead_rows:
+            lead_headers = sheets.ensure_headers(
+                config.TAB_LEADS,
+                sheets.get_headers(config.TAB_LEADS) + LEADS_DISCOVERY_HEADERS,
+            )
+            sheets.append_rows(config.TAB_LEADS, lead_rows, lead_headers)
+            appended_website_count = len(lead_rows)
 
     if result["places_without_website"]:
         # Zip radius searches overlap heavily in dense areas — the same
@@ -195,7 +296,7 @@ def process_zip(zip_code: str, admin: str = "", *, max_api_calls: int | None = N
         city=city,
         state=state,
         total_found=total,
-        qualified=len(result["places_with_website"]),
+        qualified=appended_website_count,
         capped_categories=result["capped_categories"],
         admin=admin,
     )
@@ -205,9 +306,10 @@ def process_zip(zip_code: str, admin: str = "", *, max_api_calls: int | None = N
         if result["capped_categories"] else ""
     )
     logger.info(
-        "  DONE %s: %d leads, %d no-website, %d skipped%s; Places calls=%d %s",
+        "  DONE %s: %d new leads (%d already-known), %d no-website, %d skipped%s; Places calls=%d %s",
         zip_code,
-        len(result["places_with_website"]),
+        appended_website_count,
+        skipped_known_website_count,
         len(result["places_without_website"]),
         len(result["places_skipped"]),
         capped_note,
@@ -265,12 +367,18 @@ def process_zip_if_needed(
     *,
     force: bool = False,
     max_api_calls: int | None = None,
+    known_website_lead_keys: set[str] | None = None,
 ) -> bool:
     skip, reason = should_skip_zip(zip_code, force=force)
     if skip:
         logger.info("Skipping zip %s: coverage status is %s", str(zip_code).zfill(5), reason)
         return False
-    process_zip(zip_code, admin=admin, max_api_calls=max_api_calls)
+    process_zip(
+        zip_code,
+        admin=admin,
+        max_api_calls=max_api_calls,
+        known_website_lead_keys=known_website_lead_keys,
+    )
     return True
 
 
@@ -283,6 +391,7 @@ def run_zip_list(
     force: bool = False,
 ) -> None:
     processed = 0
+    known_website_lead_keys = load_known_website_lead_keys()
     for zip_code in zip_codes:
         if processed >= max_zips:
             break
@@ -292,7 +401,13 @@ def run_zip_list(
                 places.get_api_call_count(), max_api_calls, processed,
             )
             break
-        if process_zip_if_needed(zip_code, admin=admin, force=force, max_api_calls=max_api_calls):
+        if process_zip_if_needed(
+            zip_code,
+            admin=admin,
+            force=force,
+            max_api_calls=max_api_calls,
+            known_website_lead_keys=known_website_lead_keys,
+        ):
             processed += 1
     logger.info(
         "Zip-list run complete. Processed: %d zips, used: %d API calls.",
@@ -332,6 +447,7 @@ def run_auto(
 ) -> None:
     """Loop run_next() up to max_zips OR until API cost cap reached."""
     placed = 0
+    known_website_lead_keys = load_known_website_lead_keys()
     while placed < max_zips:
         # Cost check before each zip
         if places.get_api_call_count() >= max_api_calls:
@@ -354,7 +470,12 @@ def run_auto(
             places.get_api_call_count(), max_api_calls,
         )
         try:
-            process_zip(z, admin=admin, max_api_calls=max_api_calls)
+            process_zip(
+                z,
+                admin=admin,
+                max_api_calls=max_api_calls,
+                known_website_lead_keys=known_website_lead_keys,
+            )
         except places.PlacesAuthError as e:
             logger.exception("Fatal Places API auth failure while processing zip %s: %s", z, e)
             raise
