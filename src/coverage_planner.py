@@ -33,6 +33,34 @@ class PlannedZip:
 
 
 @dataclass
+class AdjacentAreaCoverage:
+    label: str
+    state: str = ""
+    county: str = ""
+    zip_count: int = 0
+    distance_miles: float | None = None
+    processed: int = 0
+    pending: int = 0
+    qualified_total: int = 0
+
+    @property
+    def status(self) -> str:
+        if self.zip_count and self.pending == 0:
+            return "covered"
+        if self.processed:
+            return "partial"
+        return "not_started"
+
+    @property
+    def status_label(self) -> str:
+        return {
+            "covered": "Covered",
+            "partial": "Partly searched",
+            "not_started": "Not searched",
+        }[self.status]
+
+
+@dataclass
 class CoveragePlan:
     resolved: location_resolver.ResolvedLocation
     zips: list[PlannedZip] = field(default_factory=list)
@@ -44,6 +72,7 @@ class CoveragePlan:
     failed: int = 0
     pending: int = 0
     qualified_total: int = 0
+    adjacent_areas: list[AdjacentAreaCoverage] = field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -111,6 +140,7 @@ def build_plan_for_resolved(resolved: location_resolver.ResolvedLocation) -> Cov
     planned.sort(key=lambda item: (item.status in BUSY_STATUSES, item.city, item.zip))
     runnable = [z.zip for z in planned if z.is_pending]
     partial_zips = [z.zip for z in planned if z.status == "partial_complete"]
+    adjacent_areas = _adjacent_area_coverage(resolved.adjacent_areas, coverage_rows)
 
     return CoveragePlan(
         resolved=resolved,
@@ -123,4 +153,35 @@ def build_plan_for_resolved(resolved: location_resolver.ResolvedLocation) -> Cov
         failed=counts["failed"],
         pending=counts["pending"],
         qualified_total=counts["qualified_total"],
+        adjacent_areas=adjacent_areas,
     )
+
+
+def _adjacent_area_coverage(
+    suggestions: list[location_resolver.AreaSuggestion],
+    coverage_rows: dict[str, coverage.CoverageRow],
+) -> list[AdjacentAreaCoverage]:
+    out: list[AdjacentAreaCoverage] = []
+    for suggestion in suggestions:
+        processed = 0
+        qualified_total = 0
+        for zip_code in suggestion.zips:
+            row = coverage_rows.get(zip_code)
+            if not row:
+                continue
+            if row.status in BUSY_STATUSES:
+                processed += 1
+            qualified_total += row.qualified
+        zip_count = suggestion.zip_count or len(suggestion.zips)
+        pending = max(zip_count - processed, 0)
+        out.append(AdjacentAreaCoverage(
+            label=suggestion.label,
+            state=suggestion.state,
+            county=suggestion.county,
+            zip_count=zip_count,
+            distance_miles=suggestion.distance_miles,
+            processed=processed,
+            pending=pending,
+            qualified_total=qualified_total,
+        ))
+    return out

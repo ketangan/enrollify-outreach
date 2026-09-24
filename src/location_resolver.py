@@ -50,6 +50,7 @@ class AreaSuggestion:
     state: str = ""
     county: str = ""
     zip_count: int = 0
+    zips: tuple[str, ...] = ()
     score: float = 0
     distance_miles: float | None = None
 
@@ -276,6 +277,7 @@ def _area_suggestion(label: str, kind: str, rows: pd.DataFrame, score: float = 0
         state=state,
         county=county,
         zip_count=len({str(z).zfill(5) for z in rows.get("zip", [])}),
+        zips=tuple(sorted({str(z).zfill(5) for z in rows.get("zip", [])})),
         score=round(score, 1),
     )
 
@@ -341,6 +343,7 @@ def _related_markets_for_city(city: str, state: str) -> list[AreaSuggestion]:
             kind="market",
             state=market.state,
             zip_count=len(market.zips),
+            zips=tuple(market.zip_codes),
             score=100,
         ))
     return related
@@ -573,6 +576,7 @@ def suggest_adjacent_areas(
             state=state,
             county=county,
             zip_count=len(data["zips"]),
+            zips=tuple(sorted(data["zips"])),
             distance_miles=round(float(data["distance"]), 1),
         )
         for (city, state, county), data in grouped.items()

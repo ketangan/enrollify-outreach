@@ -124,25 +124,36 @@
         </table>
       {% endif %}
 
-      {% if plan.resolved.adjacent_areas %}
-        <h3>Nearby Areas Not Included</h3>
-        <p class="muted">Use this as an expansion checklist, not a hard requirement.</p>
+      {% if plan.adjacent_areas %}
+        <h3>Nearby Areas You May Expand To</h3>
+        <p class="muted">These are adjacent areas, not missing work. Search only the ones marked Not searched or Partly searched.</p>
         <table class="data-table compact-table">
           <thead>
             <tr>
               <th>Area</th>
               <th>County</th>
               <th>ZIPs</th>
+              <th>Status</th>
+              <th>Schools collected</th>
               <th>Distance</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {% for item in plan.resolved.adjacent_areas %}
+            {% for item in plan.adjacent_areas %}
               <tr>
                 <td>{{ item.label }}</td>
                 <td>{{ item.county }}</td>
                 <td>{{ item.zip_count }}</td>
+                <td>
+                  <span class="coverage-status coverage-status-{{ item.status|replace('_', '-') }}">
+                    {{ item.status_label }}
+                  </span>
+                  {% if item.processed and item.pending %}
+                    <span class="muted">({{ item.processed }}/{{ item.zip_count }})</span>
+                  {% endif %}
+                </td>
+                <td>{{ item.qualified_total }}</td>
                 <td>{% if item.distance_miles is not none %}{{ item.distance_miles }} mi{% endif %}</td>
                 <td><a href="/coverage?location={{ item.label|urlencode }}&state={{ item.state }}&max_zips={{ max_zips }}&max_api_calls={{ max_api_calls }}">Preview</a></td>
               </tr>
@@ -231,7 +242,7 @@
 {% endif %}
 
 <h2>Coverage by Region</h2>
-<p class="muted">Legacy configured regions. Processed includes partial/capped ZIPs; clean complete means no category hit Google's result cap.</p>
+<p class="muted">Configured markets and legacy regions. Click Preview to inspect the area before spending Google Places calls.</p>
 
 <table class="data-table">
   <thead>
@@ -239,19 +250,16 @@
       <th>Region</th>
       <th>Progress</th>
       <th>Zips Done</th>
-      <th>Clean %</th>
-      <th>Complete</th>
-      <th>Partial</th>
       <th>In Progress</th>
       <th>Pending</th>
-      <th>Qualified Leads</th>
-      <th>Capped Zips</th>
+      <th>Schools Collected</th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
   {% for r in regions %}
     <tr>
-      <td><strong>{{ r.name }}</strong></td>
+      <td><strong><a href="/coverage?location={{ r.name|urlencode }}&state={{ state }}&max_zips={{ max_zips }}&max_api_calls={{ max_api_calls }}">{{ r.name }}</a></strong></td>
       <td>
         <div class="progress-bar">
           <div class="progress-fill" style="width: {{ r.pct }}%"></div>
@@ -259,13 +267,10 @@
         </div>
       </td>
       <td>{{ r.done }} / {{ r.total }}</td>
-      <td>{{ r.clean_pct }}%</td>
-      <td>{{ r.complete }}</td>
-      <td>{{ r.partial }}</td>
       <td>{{ r.in_progress }}</td>
       <td>{{ r.pending }}</td>
       <td>{{ r.qualified_total }}</td>
-      <td>{{ r.capped_count }}</td>
+      <td><a href="/coverage?location={{ r.name|urlencode }}&state={{ state }}&max_zips={{ max_zips }}&max_api_calls={{ max_api_calls }}">Preview</a></td>
     </tr>
   {% endfor %}
   </tbody>

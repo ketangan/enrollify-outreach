@@ -260,7 +260,9 @@ table.data-table tr:hover { background: #f8f4ec; }
 }
 .coverage-status-covered { background: #c8e6c9; color: #1b5e20; }
 .coverage-status-complete { background: #c8e6c9; color: #1b5e20; }
+.coverage-status-partial { background: #fff0b3; color: #664d00; }
 .coverage-status-partial-complete { background: #fff0b3; color: #664d00; }
+.coverage-status-not-started { background: #e1bee7; color: #4a148c; }
 .coverage-status-in-progress { background: #d7e8ff; color: #123f75; }
 .coverage-status-failed { background: #ffcdd2; color: #6b0000; }
 .coverage-status-pending { background: #e1bee7; color: #4a148c; }

@@ -84,7 +84,7 @@
       <span class="phase-num">1</span>
       <span class="phase-title">Discovery</span>
     </div>
-    <p class="phase-desc">Find new schools in a region (Google Places).</p>
+    <p class="phase-desc">Find new schools by city, ZIP, county, or market.</p>
     <p class="phase-count {% if disc.pending > 0 %}phase-count-pending{% else %}phase-count-clear{% endif %}">
       <span>{{ disc.pending }}</span> new leads waiting
       <small>{{ disc.breakdown.pending_classify or 0 }} pending_classify rows from Discovery</small>
@@ -96,19 +96,8 @@
     {% set rec = recommendations.discovery %}
     <p class="phase-rec rec-{{ rec.level }}">{{ rec.text }}</p>
     <div class="phase-actions">
-      <form method="POST" action="/actions/phase1-next" class="inline-form">
-        <select name="region" required>
-          {% for r in regions_list %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
-        </select>
-        <button type="submit">Next zip (1)</button>
-      </form>
-      <form method="POST" action="/actions/phase1-auto" class="inline-form">
-        <select name="region" required>
-          {% for r in regions_list %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
-        </select>
-        <input type="number" name="max_zips" value="2" min="1" max="10" title="Number of zips">
-        <button type="submit">Auto N zips</button>
-      </form>
+      <a href="/coverage" class="btn-link">Open Coverage Planner →</a>
+      <small class="muted">Preview an area first, then search only ZIPs that are not covered yet.</small>
     </div>
   </div>
 
