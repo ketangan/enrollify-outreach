@@ -1,4 +1,4 @@
-from src import coverage_planner, location_resolver
+from src import coverage, coverage_planner, location_resolver
 from webapp.webapp import routes_coverage
 
 
@@ -25,12 +25,17 @@ def _plan(*, status="resolved", runnable_zips=None, partial_zips=None):
     )
 
 
+def _stub_coverage_read(monkeypatch, rows=None):
+    monkeypatch.setattr(routes_coverage.coverage, "read_all", lambda: list(rows or []))
+
+
 def test_run_location_submits_only_requested_pending_zips(monkeypatch):
     submitted = {}
+    _stub_coverage_read(monkeypatch)
     monkeypatch.setattr(
         routes_coverage.coverage_planner,
         "build_plan",
-        lambda location, state_hint="CA": _plan(runnable_zips=["90266", "90505", "92262"]),
+        lambda location, state_hint="CA", coverage_rows=None: _plan(runnable_zips=["90266", "90505", "92262"]),
     )
     monkeypatch.setattr(
         routes_coverage.jobs_runner,
@@ -59,10 +64,11 @@ def test_run_location_submits_only_requested_pending_zips(monkeypatch):
 
 
 def test_run_location_redirects_when_no_pending_zips(monkeypatch):
+    _stub_coverage_read(monkeypatch)
     monkeypatch.setattr(
         routes_coverage.coverage_planner,
         "build_plan",
-        lambda location, state_hint="CA": _plan(runnable_zips=[]),
+        lambda location, state_hint="CA", coverage_rows=None: _plan(runnable_zips=[]),
     )
 
     response = routes_coverage.coverage_run_location(
@@ -76,12 +82,13 @@ def test_run_location_redirects_when_no_pending_zips(monkeypatch):
 
 
 def test_coverage_preview_accepts_blank_max_zips(monkeypatch):
+    _stub_coverage_read(monkeypatch)
     monkeypatch.setattr(routes_coverage.regions, "list_region_names", lambda: ["Test_Region"])
     monkeypatch.setattr(routes_coverage.regions, "zips_in_region", lambda name: ["90401"])
     monkeypatch.setattr(
         routes_coverage.coverage,
         "region_summary",
-        lambda zips: {
+        lambda zips, rows=None: {
             "total": 1,
             "complete": 0,
             "partial": 0,
@@ -94,7 +101,7 @@ def test_coverage_preview_accepts_blank_max_zips(monkeypatch):
     monkeypatch.setattr(
         routes_coverage.coverage_planner,
         "build_plan",
-        lambda location, state_hint="CA": _plan(runnable_zips=["90401", "90402", "90403"]),
+        lambda location, state_hint="CA", coverage_rows=None: _plan(runnable_zips=["90401", "90402", "90403"]),
     )
 
     response = routes_coverage.coverage_view(
@@ -112,12 +119,38 @@ def test_coverage_preview_accepts_blank_max_zips(monkeypatch):
     assert response.context["estimated_text_search_calls"] == 26
 
 
+def test_coverage_preview_reads_coverage_sheet_once(monkeypatch):
+    calls = {"read_all": 0}
+
+    def _read_all():
+        calls["read_all"] += 1
+        return [
+            coverage.CoverageRow(zip="90401", city="Santa Monica", qualified=12, status="complete"),
+            coverage.CoverageRow(zip="90402", city="Santa Monica", qualified=8, status="partial_complete"),
+        ]
+
+    monkeypatch.setattr(routes_coverage.coverage, "read_all", _read_all)
+    monkeypatch.setattr(routes_coverage.regions, "list_region_names", lambda: ["A", "B"])
+    monkeypatch.setattr(
+        routes_coverage.regions,
+        "zips_in_region",
+        lambda name: ["90401"] if name == "A" else ["90402"],
+    )
+
+    response = routes_coverage.coverage_view(_request())
+
+    assert calls["read_all"] == 1
+    assert response.context["regions"][0]["qualified_total"] == 12
+    assert response.context["regions"][1]["qualified_total"] == 8
+
+
 def test_blank_max_zips_defaults_to_two_when_running_location(monkeypatch):
     submitted = {}
+    _stub_coverage_read(monkeypatch)
     monkeypatch.setattr(
         routes_coverage.coverage_planner,
         "build_plan",
-        lambda location, state_hint="CA": _plan(runnable_zips=["90401", "90402", "90403"]),
+        lambda location, state_hint="CA", coverage_rows=None: _plan(runnable_zips=["90401", "90402", "90403"]),
     )
     monkeypatch.setattr(
         routes_coverage.jobs_runner,
@@ -139,10 +172,11 @@ def test_blank_max_zips_defaults_to_two_when_running_location(monkeypatch):
 
 def test_run_location_passes_custom_api_call_cap(monkeypatch):
     submitted = {}
+    _stub_coverage_read(monkeypatch)
     monkeypatch.setattr(
         routes_coverage.coverage_planner,
         "build_plan",
-        lambda location, state_hint="CA": _plan(runnable_zips=["90401", "90402", "90403"]),
+        lambda location, state_hint="CA", coverage_rows=None: _plan(runnable_zips=["90401", "90402", "90403"]),
     )
     monkeypatch.setattr(
         routes_coverage.jobs_runner,
@@ -219,10 +253,11 @@ def test_run_partials_requires_confirmation(monkeypatch):
 
 def test_run_partials_submits_force_deep_zip_list_when_confirmed(monkeypatch):
     submitted = {}
+    _stub_coverage_read(monkeypatch)
     monkeypatch.setattr(
         routes_coverage.coverage_planner,
         "build_plan",
-        lambda location, state_hint="CA": _plan(partial_zips=["90401", "90402", "90403"]),
+        lambda location, state_hint="CA", coverage_rows=None: _plan(partial_zips=["90401", "90402", "90403"]),
     )
     monkeypatch.setattr(
         routes_coverage.jobs_runner,
@@ -256,10 +291,11 @@ def test_run_partials_submits_force_deep_zip_list_when_confirmed(monkeypatch):
 
 
 def test_run_partials_redirects_when_no_partial_zips(monkeypatch):
+    _stub_coverage_read(monkeypatch)
     monkeypatch.setattr(
         routes_coverage.coverage_planner,
         "build_plan",
-        lambda location, state_hint="CA": _plan(partial_zips=[]),
+        lambda location, state_hint="CA", coverage_rows=None: _plan(partial_zips=[]),
     )
 
     response = routes_coverage.coverage_run_partials(

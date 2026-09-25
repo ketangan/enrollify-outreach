@@ -89,9 +89,10 @@ def coverage_view(
     region_summaries = []
     plan = None
     try:
+        coverage_rows = coverage.read_all()
         for name in regions.list_region_names():
             zips = regions.zips_in_region(name)
-            s = coverage.region_summary(zips)
+            s = coverage.region_summary(zips, coverage_rows)
             done = s["complete"] + s["partial"]
             pct = (done / s["total"] * 100) if s["total"] else 0
             region_summaries.append({
@@ -108,7 +109,7 @@ def coverage_view(
                 "clean_pct": round((s["complete"] / s["total"] * 100) if s["total"] else 0),
             })
         if location.strip():
-            plan = coverage_planner.build_plan(location, state_hint=state)
+            plan = coverage_planner.build_plan(location, state_hint=state, coverage_rows=coverage_rows)
     except Exception as e:
         logger.exception("Coverage load failed: %s", e)
         return templates.TemplateResponse(
@@ -155,7 +156,8 @@ def coverage_run_location(
 ):
     max_zips = _clamp_max_zips(max_zips)
     max_api_calls = _clamp_max_api_calls(max_api_calls)
-    plan = coverage_planner.build_plan(location, state_hint=state)
+    coverage_rows = coverage.read_all()
+    plan = coverage_planner.build_plan(location, state_hint=state, coverage_rows=coverage_rows)
     if plan.resolved.status != "resolved":
         params = urlencode({
             "location": location,
@@ -209,7 +211,8 @@ def coverage_run_partials(
         })
         return RedirectResponse(f"/coverage?{params}", status_code=303)
 
-    plan = coverage_planner.build_plan(location, state_hint=state)
+    coverage_rows = coverage.read_all()
+    plan = coverage_planner.build_plan(location, state_hint=state, coverage_rows=coverage_rows)
     if plan.resolved.status != "resolved":
         params = urlencode({
             "location": location,

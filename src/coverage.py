@@ -24,6 +24,7 @@ Columns (in order):
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
@@ -78,6 +79,10 @@ def _to_int(val) -> int:
         return int(val)
     except (ValueError, TypeError):
         return 0
+
+
+def _rows_by_zip(rows: Iterable[CoverageRow] | None = None) -> dict[str, CoverageRow]:
+    return {r.zip: r for r in (rows if rows is not None else read_all())}
 
 
 def completed_zips() -> set[str]:
@@ -156,14 +161,14 @@ def mark_failed(
     )
 
 
-def region_summary(region_zips: list[str]) -> dict:
+def region_summary(region_zips: list[str], rows: Iterable[CoverageRow] | None = None) -> dict:
     """
     Returns {
         'total': N, 'complete': N, 'partial': N, 'in_progress': N,
         'pending': N, 'qualified_total': N, 'capped_zips': [...]
     } for a given region's zip list.
     """
-    all_rows = {r.zip: r for r in read_all()}
+    all_rows = _rows_by_zip(rows)
     summary = {
         "total": len(region_zips),
         "complete": 0,

@@ -8,6 +8,7 @@ does not write to Sheets.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from src import coverage, location_resolver
@@ -91,13 +92,25 @@ class CoveragePlan:
         return round((self.complete / self.total) * 100) if self.total else 0
 
 
-def build_plan(query: str, state_hint: str = location_resolver.DEFAULT_STATE_HINT) -> CoveragePlan:
+def build_plan(
+    query: str,
+    state_hint: str = location_resolver.DEFAULT_STATE_HINT,
+    coverage_rows: Iterable[coverage.CoverageRow] | dict[str, coverage.CoverageRow] | None = None,
+) -> CoveragePlan:
     resolved = location_resolver.resolve_location(query, state_hint=state_hint)
-    return build_plan_for_resolved(resolved)
+    return build_plan_for_resolved(resolved, coverage_rows=coverage_rows)
 
 
-def build_plan_for_resolved(resolved: location_resolver.ResolvedLocation) -> CoveragePlan:
-    coverage_rows = {row.zip: row for row in coverage.read_all()}
+def build_plan_for_resolved(
+    resolved: location_resolver.ResolvedLocation,
+    coverage_rows: Iterable[coverage.CoverageRow] | dict[str, coverage.CoverageRow] | None = None,
+) -> CoveragePlan:
+    if coverage_rows is None:
+        rows_by_zip = {row.zip: row for row in coverage.read_all()}
+    elif isinstance(coverage_rows, dict):
+        rows_by_zip = coverage_rows
+    else:
+        rows_by_zip = {row.zip: row for row in coverage_rows}
     planned: list[PlannedZip] = []
     counts = {
         "complete": 0,
@@ -109,7 +122,7 @@ def build_plan_for_resolved(resolved: location_resolver.ResolvedLocation) -> Cov
     }
 
     for z in resolved.zips:
-        row = coverage_rows.get(z.zip)
+        row = rows_by_zip.get(z.zip)
         status = row.status if row else "pending"
         if status == "complete":
             counts["complete"] += 1
@@ -140,7 +153,7 @@ def build_plan_for_resolved(resolved: location_resolver.ResolvedLocation) -> Cov
     planned.sort(key=lambda item: (item.status in BUSY_STATUSES, item.city, item.zip))
     runnable = [z.zip for z in planned if z.is_pending]
     partial_zips = [z.zip for z in planned if z.status == "partial_complete"]
-    adjacent_areas = _adjacent_area_coverage(resolved.adjacent_areas, coverage_rows)
+    adjacent_areas = _adjacent_area_coverage(resolved.adjacent_areas, rows_by_zip)
 
     return CoveragePlan(
         resolved=resolved,
