@@ -19,6 +19,7 @@ import sys
 import uuid
 from datetime import date
 from pathlib import Path
+from threading import Lock
 from urllib.parse import urlencode
 
 from anthropic import Anthropic
@@ -46,6 +47,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 OUTPUT_DIR = PROJECT_ROOT / "generated" / "full-sites"
 ACCESS_COOKIE = "site_gen_key"
+_retry_lock = Lock()
 
 
 def require_access(request: Request) -> None:
@@ -490,6 +492,40 @@ def site_generator_delete(request: Request, org_id: str = Form(...)):
     # history all go away, not just the listing).
     site_generator_state.delete_org(org_id)
     return _remember_key_cookie(request, RedirectResponse("/site-generator", status_code=303))
+
+
+@router.post("/site-generator/jobs/{job_id}/retry", dependencies=[Depends(require_access)])
+def site_generator_retry(request: Request, job_id: str):
+    # Keep persisted upload paths and single-concept scope server-side. A new
+    # multipart form cannot resubmit the user's original file selection.
+    with _retry_lock:
+        job = jobs_runner.get_job(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+        if job.get("kind") != "generate_full_site" or job.get("status") != "failed":
+            raise HTTPException(409, "Only a blocked site generation can be continued.")
+        retry_id = job.get("retry_job_id")
+        if not retry_id:
+            result = _finalize_job(job)
+            if not result or not result.get("blocked") or result.get("blocked_reason") != "existing_website_found":
+                raise HTTPException(409, "This job was not stopped by the website check.")
+            params = dict(job["params"])
+            if not params.get("is_regeneration"):
+                existing = site_generator_state.find_existing_org(**{
+                    key: params.get(key, "")
+                    for key in ("name", "category", "address", "phone", "no_website_schools_id")
+                })
+                if existing:
+                    query = urlencode({"duplicate_org_id": existing["org_id"]})
+                    return _remember_key_cookie(request, RedirectResponse(
+                        f"/site-generator?{query}#org-{existing['org_id']}", status_code=303,
+                    ))
+            params["skip_website_check"] = True
+            retry_id = jobs_runner.submit_job("generate_full_site", params)
+            jobs_runner._write_status(job_id, retry_job_id=retry_id)
+    return _remember_key_cookie(
+        request, RedirectResponse(f"/site-generator/jobs/{retry_id}", status_code=303)
+    )
 
 
 @router.get("/site-generator/jobs/{job_id}", response_class=HTMLResponse, dependencies=[Depends(require_access)])

@@ -436,7 +436,7 @@ def test_regenerate_unknown_theme_returns_404(monkeypatch, tmp_path):
     assert resp.status_code == 404
 
 
-def test_blocked_regeneration_retry_form_stays_on_regenerate_path(monkeypatch, tmp_path):
+def test_blocked_regeneration_retry_preserves_concept_and_upload(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     monkeypatch.setattr(jobs_runner, "JOBS_DIR", tmp_path / "jobs")
     jobs_runner.JOBS_DIR.mkdir()
@@ -466,6 +466,9 @@ def test_blocked_regeneration_retry_form_stays_on_regenerate_path(monkeypatch, t
             "is_regeneration": True,
             "org_id": "green-garden-preschool-1224e2",
             "theme": "preschool-structured",
+            "versions": "structured",
+            "hero_photo_json": json.dumps({"url": "../photos/hero-0.jpg", "width": 960, "height": 958}),
+            "force_hero_photo": True,
             "revision_notes": "make the headline warmer",
         },
     }))
@@ -473,9 +476,111 @@ def test_blocked_regeneration_retry_form_stays_on_regenerate_path(monkeypatch, t
     resp = client.get("/site-generator/jobs/job-regen", params={"key": "secret123"})
 
     assert resp.status_code == 200
-    assert 'action="/site-generator/regenerate"' in resp.text
-    assert 'name="theme" value="preschool-structured"' in resp.text
+    assert 'action="/site-generator/jobs/job-regen/retry"' in resp.text
     assert 'action="/site-generator/generate"' not in resp.text
+    captured = {}
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda kind, params: captured.update(params) or "retry-1")
+    original = jobs_runner.get_job("job-regen")["params"]
+    resp = client.post("/site-generator/jobs/job-regen/retry", params={"key": "secret123"}, follow_redirects=False)
+    assert resp.status_code == 303
+    assert captured == {**original, "skip_website_check": True}
+
+
+@pytest.mark.parametrize("remote", [False, True])
+def test_upload_survives_existing_website_retry(monkeypatch, tmp_path, remote):
+    from webapp.webapp import routes_site_generator as routes
+
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(jobs_runner, "JOBS_DIR", tmp_path / "jobs")
+    jobs_runner.JOBS_DIR.mkdir()
+    monkeypatch.setattr(routes, "OUTPUT_DIR", tmp_path / "generated")
+    monkeypatch.setattr(routes.r2_storage, "is_configured", lambda: remote)
+    monkeypatch.setattr(routes.r2_storage, "upload_bytes", lambda *args: None)
+    monkeypatch.setattr(routes.r2_storage, "public_url", lambda key: f"https://sites.example/{key}")
+    submitted = []
+
+    def submit(kind, params):
+        job_id = f"job-{len(submitted)}"
+        submitted.append(params)
+        jobs_runner._write_status(job_id, id=job_id, kind=kind, status="queued", params=params)
+        return job_id
+
+    monkeypatch.setattr(jobs_runner, "submit_job", submit)
+    response = client.post(
+        "/site-generator/generate", params={"key": "secret123"},
+        data={"name": "GymRatz", "category": "sports", "force_hero_photo": "true", "yelp_text": "Original source"},
+        files=[("hero_photo", ("hero.jpg", _real_jpeg_bytes(960, 958), "image/jpeg")),
+               ("uploaded_photos", ("other.jpg", _real_jpeg_bytes(1200, 800), "image/jpeg"))],
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    original = submitted[0]
+    result_dir = routes.OUTPUT_DIR / "mocks" / original["subject_id"]
+    result_dir.mkdir(parents=True, exist_ok=True)
+    result_path = result_dir / "result.json"
+    result_path.write_text(json.dumps({"blocked": True, "blocked_reason": "existing_website_found"}))
+    jobs_runner._write_status("job-0", status="failed")
+    page = client.get("/site-generator/jobs/job-0", params={"key": "secret123"})
+    assert 'action="/site-generator/jobs/job-0/retry"' in page.text
+
+    response = client.post("/site-generator/jobs/job-0/retry", params={"key": "secret123"}, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/site-generator/jobs/job-1"
+    assert submitted[1] == {**original, "skip_website_check": True}
+    hero = json.loads(submitted[1]["hero_photo_json"])
+    assert hero["width"] == 960 and hero["height"] == 958
+    assert hero["url"].startswith("https://" if remote else "../photos/")
+    if not remote:
+        assert (result_dir / "photos" / "hero-0.jpg").exists()
+    cmd = jobs_runner._build_generate_full_site_cmd(**submitted[1])
+    assert json.loads(cmd[cmd.index("--hero-photo") + 1]) == hero
+    assert "--force-hero-photo" in cmd and "--no-google-reviews" in cmd
+
+    # A second click, even after the result file changes, cannot spend again.
+    result_path.write_text(json.dumps({"rendered": []}))
+    response = client.post("/site-generator/jobs/job-0/retry", params={"key": "secret123"}, follow_redirects=False)
+    assert response.headers["location"] == "/site-generator/jobs/job-1"
+    assert len(submitted) == 2
+
+
+@pytest.mark.parametrize("kind,status,result", [
+    ("downstream", "failed", {"blocked": True, "blocked_reason": "existing_website_found"}),
+    ("generate_full_site", "running", {"blocked": True, "blocked_reason": "existing_website_found"}),
+    ("generate_full_site", "done", {"blocked": True, "blocked_reason": "existing_website_found"}),
+    ("generate_full_site", "failed", None),
+    ("generate_full_site", "failed", {"blocked": True, "blocked_reason": "other"}),
+])
+def test_retry_rejects_nonblocked_jobs(monkeypatch, kind, status, result):
+    from webapp.webapp import routes_site_generator as routes
+
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(jobs_runner, "get_job", lambda _: {"kind": kind, "status": status})
+    monkeypatch.setattr(routes, "_finalize_job", lambda _: result)
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda *args: pytest.fail("Must not start a job"))
+    response = client.post("/site-generator/jobs/job-0/retry", params={"key": "secret123"})
+    assert response.status_code == 409
+
+
+def test_retry_requires_access_and_existing_job(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(jobs_runner, "get_job", lambda _: None)
+    assert client.post("/site-generator/jobs/missing/retry", params={"key": "wrong"}).status_code == 403
+    assert client.post("/site-generator/jobs/missing/retry", params={"key": "secret123"}).status_code == 404
+
+
+def test_retry_preserves_existing_org_dedupe(monkeypatch):
+    from webapp.webapp import routes_site_generator as routes
+
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(jobs_runner, "get_job", lambda _: {
+        "kind": "generate_full_site", "status": "failed", "params": {"name": "GymRatz"},
+    })
+    monkeypatch.setattr(routes, "_finalize_job", lambda _: {"blocked": True, "blocked_reason": "existing_website_found"})
+    monkeypatch.setattr(site_generator_state, "find_existing_org", lambda **kw: {"org_id": "existing"})
+    monkeypatch.setattr(jobs_runner, "submit_job", lambda *args: pytest.fail("Must not start another org"))
+    response = client.post("/site-generator/jobs/job-0/retry", params={"key": "secret123"}, follow_redirects=False)
+    assert response.status_code == 303
+    assert "duplicate_org_id=existing" in response.headers["location"]
 
 
 def test_regenerate_passes_orgs_known_phone_through(monkeypatch, tmp_path):
