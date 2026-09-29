@@ -22,7 +22,8 @@ from anthropic import Anthropic
 from gspread.utils import rowcol_to_a1
 
 
-from src import config, sheets, classifier
+from src import config, sheets, classifier, website_mocks, website_review
+from scripts.suggest_website_mocks import write_review_results
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,6 +57,8 @@ def main():
     anthropic_client = Anthropic(max_retries=5)
 
     leads_ws = sheets.get_tab(config.TAB_LEADS)
+    if not args.dry_run:
+        sheets.ensure_headers(config.TAB_LEADS, website_mocks.MOCK_LEAD_HEADERS + website_review.REVIEW_HEADERS)
     all_rows = leads_ws.get_all_values()
     headers = all_rows[0]
 
@@ -74,13 +77,14 @@ def main():
     # Collect leads to process
     todo = []
     for i, row in enumerate(all_rows[1:], start=2):
-        if len(row) <= max(col.values()):
+        if len(row) <= max(col["status"], col["website"], col["name"], col["zip"]):
             continue
         if row[col["status"]] != "pending_classify":
             continue
         if args.zip and row[col["zip"]] != args.zip:
             continue
         todo.append({
+            **{h: row[index] if index < len(row) else "" for h, index in col.items()},
             "row_idx": i,
             "name": row[col["name"]],
             "website": row[col["website"]],
@@ -97,6 +101,7 @@ def main():
     # Track stats
     stats = {"llm": 0, "local": 0, "prefilter": 0, "fetch_failed": 0}
     status_counts = {}
+    website_reviews = []
 
     for idx, lead in enumerate(todo, start=1):
         logger.info("[%d/%d] %s", idx, len(todo), lead["name"][:60])
@@ -135,6 +140,14 @@ def main():
         logger.info("   -> %s (%s) [used_llm=%s, pages=%d]",
                     new_status, result.reason[:80], result.used_llm, result.pages_fetched)
 
+        # Reuse the homepage already downloaded. No extra Google/LLM or site calls.
+        if result.homepage and new_status == "ready_for_owner_lookup":
+            snapshot = {**lead, "status": new_status, "enrollment_method": result.status}
+            try:
+                website_reviews.append((snapshot, website_review.review_updates(snapshot, result.homepage)))
+            except Exception:
+                logger.exception("Optional website review failed for %s; classification continues", lead["name"])
+
         if not args.dry_run:
             leads_ws.batch_update([
                 {"range": rowcol_to_a1(lead["row_idx"], status_col),
@@ -148,6 +161,13 @@ def main():
             ], value_input_option="USER_ENTERED")
 
         time.sleep(POLITE_DELAY_SECONDS)
+
+    if not args.dry_run and website_reviews:
+        try:
+            count = write_review_results(leads_ws, website_reviews)
+            logger.info("Recorded %d website reviews using existing homepage fetches", count)
+        except Exception:
+            logger.exception("Website reviews could not be saved; daily scan can retry. Classification is saved.")
 
     logger.info("")
     logger.info("=" * 50)

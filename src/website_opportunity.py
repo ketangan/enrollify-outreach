@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from urllib.parse import urlparse
+
+from bs4 import BeautifulSoup
 
 from src import fetcher, website_mocks
 
@@ -112,18 +115,9 @@ def _clean(value) -> str:
 
 def _host(url: str) -> str:
     try:
-        return urlparse(_clean(url)).netloc.lower().lstrip("www.")
+        return (urlparse(_clean(url)).hostname or "").lower().removeprefix("www.")
     except Exception:
         return ""
-
-
-def _latest_year(text: str) -> int | None:
-    years = [
-        int(match)
-        for match in re.findall(r"\b(?:19|20)\d{2}\b", text)
-        if 1995 <= int(match) <= 2026
-    ]
-    return max(years) if years else None
 
 
 def _safe_excerpt(value: str, max_len: int = 180) -> str:
@@ -185,7 +179,7 @@ def evaluate_page_for_mock(lead: dict, page: fetcher.FetchedPage) -> WebsiteOppo
 
     host_marker_matched = False
     for marker, label in DATED_HOST_MARKERS.items():
-        if marker in host or marker in _clean(website).lower():
+        if host == marker or host.endswith("." + marker):
             score += 3
             has_website_refresh_signal = True
             reasons.append(label)
@@ -215,6 +209,24 @@ def evaluate_page_for_mock(lead: dict, page: fetcher.FetchedPage) -> WebsiteOppo
         has_website_refresh_signal = True
         reasons.append("table-heavy layout")
 
+    # Only flag a combination of legacy layout signals, not minimal HTML alone.
+    soup = BeautifulSoup(raw, "html.parser")
+    has_viewport = any(
+        str(meta.get("name", "")).lower() == "viewport" for meta in soup.find_all("meta")
+    )
+    legacy_layout = bool(soup.find(["center", "font"])) or any(
+        tag.has_attr("bgcolor") or tag.has_attr("align") for tag in soup.find_all(True)
+    )
+    wide_images = any(
+        str(img.get("width", "")).isdigit() and int(img["width"]) >= 700
+        for img in soup.find_all("img")
+    )
+    responsive_css = bool(re.search(r"@media|max-width\s*:|width\s*:\s*100%", raw))
+    if not has_viewport and legacy_layout and wide_images and not responsive_css:
+        score += 3
+        has_website_refresh_signal = True
+        reasons.append("legacy fixed-width layout without mobile viewport")
+
     for marker, label in DATED_TEXT_MARKERS.items():
         if marker in signal:
             score += 2
@@ -222,18 +234,22 @@ def evaluate_page_for_mock(lead: dict, page: fetcher.FetchedPage) -> WebsiteOppo
             reasons.append(label)
             break
 
-    latest_year = _latest_year(signal)
-    if latest_year and latest_year <= 2020:
+    # Article dates and image filenames are not evidence of a maintained footer.
+    visible_text = soup.get_text(" ", strip=True)
+    copyright_years = []
+    for match in re.finditer(r"(?:\u00a9|copyright|\(c\))\s*((?:19|20)\d{2}(?:\s*[-\u2013\u2014]\s*(?:19|20)\d{2})?)", visible_text, re.I):
+        copyright_years.extend(int(year) for year in re.findall(r"(?:19|20)\d{2}", match.group(1)))
+    latest_year = max(copyright_years) if copyright_years else None
+    if latest_year and latest_year <= datetime.now(timezone.utc).year - 5:
         score += 1
-        has_website_refresh_signal = True
-        reasons.append(f"stale visible year {latest_year}")
+        reasons.append(f"old copyright year {latest_year}")
 
     enrollment_method = _clean(lead.get("enrollment_method")).lower()
     if any(marker in enrollment_method for marker in MANUAL_ENROLLMENT_METHOD_MARKERS):
         score += 1
         reasons.append(f"manual enrollment path ({enrollment_method})")
 
-    if _clean(website).startswith("http://"):
+    if _clean(page.url or website).startswith("http://"):
         score += 1
         reasons.append("non-HTTPS website URL")
 

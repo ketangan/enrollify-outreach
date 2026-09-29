@@ -2,6 +2,24 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def block_live_network(monkeypatch):
+    """A missing test double must fail instead of spending API credits."""
+    import socket
+    original = socket.socket.connect
+    original_ex = socket.socket.connect_ex
+
+    def guard(method):
+        def connect(sock, address):
+            if sock.family in {socket.AF_INET, socket.AF_INET6}:
+                raise AssertionError("Tests must not connect to live network services")
+            return method(sock, address)
+        return connect
+
+    monkeypatch.setattr(socket.socket, "connect", guard(original))
+    monkeypatch.setattr(socket.socket, "connect_ex", guard(original_ex))
+
+
+@pytest.fixture(autouse=True)
 def block_live_internal_notifications(monkeypatch, request):
     """Prevent tests from sending real operational emails."""
     if request.path.name == "test_gmail_client.py":

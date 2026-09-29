@@ -75,6 +75,8 @@
       <p class="lead-notes"><strong>Notes:</strong> {{ lead.get("notes", "")[:300] }}</p>
     {% endif %}
 
+    {% with row=lead %}{% include "website_review_note.html" %}{% endwith %}
+
     <form method="POST" action="/review/save" class="review-form">
       <input type="hidden" name="lead_id" value="{{ lead.get('id', '') }}">
       <input type="hidden" name="mode" value="{{ mode }}">
@@ -250,6 +252,7 @@
         <input type="hidden" name="versions" value="{{ r.get('_mock_versions_default', 'auto') }}">
         <td>
           <div class="school-name">{{ r.get("name", "") }}</div>
+          {% with row=r %}{% include "website_review_note.html" %}{% endwith %}
           <div class="school-meta">
             {{ r.get("category", "") }} · {{ r.get("zip", "") }} ·
             <a href="/review?id={{ r.get('id', '') }}&mode={{ mode }}" title="Load in top card">review ↑</a>

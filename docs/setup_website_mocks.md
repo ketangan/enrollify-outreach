@@ -86,6 +86,23 @@ This writes `website_mock_candidate=suggested` and
 `website_mock_status=needs_review`. It does not generate pages and does not
 change email copy.
 
+Classification also checks qualified schools using the homepage it already
+downloaded, without another website fetch or Google Places/Anthropic call.
+Suggestions remain subject to approval; they do not automatically generate mocks.
+
+The scanner saves every outcome, including negative results and fetch errors, in
+automatically appended `website_mock_scan_*` columns and
+`website_mock_scanned_at`. Unscanned schools go first. Negative/blocked results
+are eligible again after 30 days, errors after 3 days, and changed URLs
+immediately. This lets the bounded daily scan advance instead of revisiting the
+same first 40 schools. `--force` bypasses the time interval, never approvals,
+explicit skips, or DNC protections.
+
+Website branding disagreements are saved as evidence in `website_name_*`
+columns and shown on Leads and Review. They never automatically rename schools.
+Review notes hide after a manual name or website correction. Existing manual
+mock decisions are preserved, including when they change during a scan.
+
 Approve suggestions from In Progress or Review before the follow-up is due.
 That changes the row to `website_mock_candidate=yes` and
 `website_mock_status=not_started`.

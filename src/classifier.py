@@ -22,7 +22,7 @@ import logging
 import random
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import anthropic
 from anthropic import Anthropic
@@ -141,6 +141,7 @@ class Classification:
     reason: str
     used_llm: bool
     pages_fetched: int = 0
+    homepage: fetcher.FetchedPage | None = field(default=None, repr=False, compare=False)
 
 
 def _check_vendor_markers(snippet: str) -> tuple[bool, str]:
@@ -695,6 +696,7 @@ def classify_lead(
 
     verdict = local_classify(pages)
     if verdict:
+        verdict.homepage = home
         return verdict
 
     sub_urls = fetcher.find_enrollment_links(home, max_links=2)
@@ -705,9 +707,10 @@ def classify_lead(
 
     verdict = local_classify(pages)
     if verdict:
+        verdict.homepage = home
         return verdict
 
-    return llm_classify(
+    verdict = llm_classify(
         pages,
         client,
         metadata={
@@ -718,3 +721,5 @@ def classify_lead(
             "website": website,
         },
     )
+    verdict.homepage = home
+    return verdict

@@ -20,7 +20,7 @@ def test_scan_target_skips_existing_mock_decisions():
     }
 
     assert not suggest_website_mocks.is_scan_target(row)
-    assert suggest_website_mocks.is_scan_target(row, force=True)
+    assert not suggest_website_mocks.is_scan_target(row, force=True)
 
 
 def test_scan_target_skips_terminal_rows():

@@ -64,7 +64,7 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td>{{ r.get("name", "") }}</td>
+      <td>{{ r.get("name", "") }}{% with row=r %}{% include "website_review_note.html" %}{% endwith %}</td>
       <td><span class="status-tag status-{{ r.get('status', '')|replace('_', '-') }}">{{ r.get("status", "") }}</span></td>
       <td>{{ r.get("category", "") }}</td>
       <td>{{ r.get("zip", "") }}</td>

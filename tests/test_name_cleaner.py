@@ -84,3 +84,12 @@ def test_clean_school_name_preserves_accented_latin_names():
     assert clean_school_name("Perez Family Child Care🧸") == "Perez Family Child Care"
     assert clean_school_name("Just 4 Kidd’s Family Daycare LLC") == "Just 4 Kidd's Family Daycare"
     assert clean_school_name("GymRatz L.A.") == "GymRatz L.A."
+
+
+def test_lowercase_names_are_presentable_without_damaging_mixed_case_brands():
+    assert clean_school_name("little sunshine preschool") == "Little Sunshine Preschool"
+    assert clean_school_name("pepe's sports") == "Pepe's Sports"
+    assert clean_school_name("la school of music") == "LA School of Music"
+    assert clean_school_name("GymRatz Academy") == "GymRatz Academy"
+    assert clean_school_name("iD Tech") == "iD Tech"
+    assert clean_school_name("Little Sunshine Preschool") == "Little Sunshine Preschool"

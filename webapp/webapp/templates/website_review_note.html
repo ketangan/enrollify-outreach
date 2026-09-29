@@ -1,0 +1,8 @@
+{% if row.get('website_name_observed') and row.get('website_name_checked') == row.get('name') and row.get('website_name_source') == row.get('website') %}
+<div class="school-meta">
+  <strong>Check school name:</strong> website branding is {{ row.get('website_name_observed') }}.
+</div>
+{% endif %}
+{% if row.get('website_mock_candidate') == 'suggested' and row.get('website_mock_status') == 'needs_review' %}
+<div class="school-meta"><strong>Mock suggested:</strong> {{ row.get('website_mock_scan_reason', '') }}</div>
+{% endif %}

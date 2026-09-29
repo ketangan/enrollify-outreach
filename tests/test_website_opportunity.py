@@ -138,3 +138,44 @@ def test_unrecognized_generator_tag_does_not_add_signal():
 
     assert not result.should_suggest
     assert result.score < 2
+
+
+def test_nichigetsukai_legacy_layout_is_detected_despite_article_date_and_https_redirect():
+    page = _page(url="https://nichigetsukai.org/", text="Class information " * 40, raw='''
+        <html><head><title>Nichigetsukai Foundation</title></head>
+        <body bgcolor="#ffffff"><center><img width="795" src="dojo.jpg"></center>
+        <p>Featured in April 2023</p><p>&copy;2019, Nichigetsukai Foundation</p></body></html>
+    ''')
+    result = website_opportunity.evaluate_page_for_mock(
+        {"website": "http://www.nichigetsukai.org/", "category": "martial_arts"}, page,
+    )
+    assert result.should_suggest
+    assert "legacy fixed-width layout without mobile viewport" in result.reasons
+    assert "old copyright year 2019" in result.reasons
+    assert "non-HTTPS website URL" not in result.reasons
+
+
+def test_new_york_wix_site_is_suggested_without_enrollment_metadata():
+    url = "https://newyorkoneartschoo.wixsite.com/kidartschool"
+    result = website_opportunity.evaluate_page_for_mock({"website": url}, _page(url=url))
+    assert result.should_suggest
+    assert "hosted on wixsite.com" in result.reasons
+
+
+def test_wix_string_in_path_or_unrelated_host_does_not_count():
+    for url in ("https://example.com/wixsite.com", "https://notwixsite.com"):
+        assert not website_opportunity.evaluate_page_for_mock({"website": url}, _page(url=url)).should_suggest
+
+
+def test_old_copyright_and_simple_html_alone_are_not_a_redesign_signal():
+    page = _page(raw='<html><body><p>&copy;2000 School</p></body></html>')
+    assert not website_opportunity.evaluate_page_for_mock(
+        {"enrollment_method": "email_qualify"}, page,
+    ).should_suggest
+
+
+def test_responsive_legacy_markup_does_not_trigger_layout_signal():
+    for responsive in ('<meta name="viewport" content="width=device-width">',
+                       '<style>img {max-width: 100%;}</style>'):
+        page = _page(raw=f'<html><head>{responsive}</head><body><center><img width="900"></center></body></html>')
+        assert not website_opportunity.evaluate_page_for_mock({}, page).should_suggest

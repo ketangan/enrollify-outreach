@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gspread.utils import rowcol_to_a1
 
-from src import config, sheets, website_mocks, website_opportunity
+from src import config, fetcher, sheets, website_mocks, website_review
 from webapp.webapp import outreach_state
 
 logging.basicConfig(
@@ -40,13 +40,7 @@ logging.basicConfig(
 logger = logging.getLogger("suggest_website_mocks")
 
 SHEET_WRITE_THROTTLE_SEC = 1.2
-TERMINAL_STATUSES = {
-    "already_contacted",
-    "bounced",
-    "closed_no_reply",
-    "do_not_contact",
-    "online_system_exclude",
-}
+TERMINAL_STATUSES = website_review.TERMINAL_STATUSES
 
 
 def _clean(value) -> str:
@@ -69,22 +63,19 @@ def _row_dicts(all_rows: list[list[str]]) -> list[dict]:
 
 
 def _already_has_mock_decision(row: dict, *, force: bool = False) -> bool:
-    if force:
-        return False
-    candidate = _clean(row.get("website_mock_candidate")).lower()
-    status = _clean(row.get("website_mock_status")).lower()
-    if candidate in {"yes", "no", "suggested"}:
-        return True
-    return status in {"needs_review", "not_started", "generated", "skip"}
+    # Force retries evaluations, but cannot undo an approval or explicit skip.
+    return website_review.has_mock_decision(row)
 
 
 def is_scan_target(row: dict, *, include_ready_to_send: bool = False, force: bool = False) -> bool:
     status = _clean(row.get("status")).lower()
-    if status in TERMINAL_STATUSES:
+    if status in TERMINAL_STATUSES or _clean(row.get("do_not_contact_reason")):
         return False
     if not _clean(row.get("website")):
         return False
     if _already_has_mock_decision(row, force=force):
+        return False
+    if not force and not website_review.scan_due(row):
         return False
     if outreach_state.is_active_outreach(row):
         return True
@@ -95,16 +86,41 @@ def _write_updates(ws, all_rows: list[list[str]], updates_by_row: dict[int, dict
     if not updates_by_row:
         return
     headers = all_rows[0]
+    batch = []
     for row_idx, updates in sorted(updates_by_row.items()):
-        batch = [
+        batch.extend([
             {"range": rowcol_to_a1(row_idx, headers.index(key) + 1), "values": [[value]]}
             for key, value in updates.items()
             if key in headers
-        ]
-        if not batch:
-            continue
-        ws.batch_update(batch, value_input_option="USER_ENTERED")
+        ])
+    for offset in range(0, len(batch), 200):
+        ws.batch_update(batch[offset:offset + 200], value_input_option="RAW")
         time.sleep(SHEET_WRITE_THROTTLE_SEC)
+
+
+def write_review_results(ws, pending: list[tuple[dict, dict]]) -> int:
+    """Refresh once, resolve stable IDs, and leave concurrent manual edits alone."""
+    if not pending:
+        return 0
+    all_rows = ws.get_all_values()
+    current_by_id = {}
+    for row in _row_dicts(all_rows):
+        lead_id = _clean(row.get("id"))
+        current_by_id.setdefault(lead_id, []).append(row)
+    updates_by_row = {}
+    for snapshot, updates in pending:
+        lead_id = _clean(snapshot.get("id"))
+        matches = current_by_id.get(lead_id, [])
+        if not lead_id or len(matches) != 1:
+            logger.warning("Skipping website review with missing/ambiguous ID: %s", lead_id)
+            continue
+        current = matches[0]
+        if not website_review.unchanged_review(snapshot, current):
+            logger.info("Preserving changed lead %s; website review not applied", lead_id)
+            continue
+        updates_by_row[int(current["_row_idx"])] = updates
+    _write_updates(ws, all_rows, updates_by_row)
+    return len(updates_by_row)
 
 
 def _validate_sheets_config() -> None:
@@ -129,7 +145,7 @@ def main() -> None:
     parser.add_argument("--include-ready-to-send", action="store_true",
                         help="Also scan ready_to_send rows before initial drafts are created")
     parser.add_argument("--force", action="store_true",
-                        help="Re-evaluate rows that already have a mock decision")
+                        help="Retry scans before their due date; preserve approvals and skips")
     parser.add_argument("--limit", type=int, default=0,
                         help="Maximum rows to evaluate after filtering; 0 means no limit")
     args = parser.parse_args()
@@ -139,7 +155,7 @@ def main() -> None:
     _validate_sheets_config()
     ws = sheets.get_tab(config.TAB_LEADS)
     if args.write_sheet:
-        sheets.ensure_headers(config.TAB_LEADS, website_mocks.MOCK_LEAD_HEADERS)
+        sheets.ensure_headers(config.TAB_LEADS, website_mocks.MOCK_LEAD_HEADERS + website_review.REVIEW_HEADERS)
         ws = sheets.get_tab(config.TAB_LEADS)
 
     all_rows = ws.get_all_values()
@@ -152,50 +168,41 @@ def main() -> None:
             force=args.force,
         )
     ]
+    targets.sort(key=website_review.scan_order)
     if args.limit and args.limit > 0:
         targets = targets[:args.limit]
 
     logger.info("Website mock opportunity scan targets: %d", len(targets))
 
-    updates_by_row: dict[int, dict] = {}
+    pending = []
     suggested = 0
     blocked = 0
     skipped = 0
 
     for row in targets:
-        result = website_opportunity.fetch_and_evaluate(row)
+        page = fetcher.fetch(_clean(row.get("website")))
+        updates = website_review.review_updates(row, page)
+        pending.append((row, updates))
         name = _clean(row.get("name")) or _clean(row.get("id")) or "unknown"
         lead_id = _clean(row.get("id"))
-        if result.blocker:
+        outcome = updates["website_mock_scan_result"]
+        reason = updates["website_mock_scan_reason"]
+        if outcome == "blocked":
             blocked += 1
-            logger.info("skip %-45s blocker=%s", name[:45], result.blocker)
+            logger.info("skip %-45s blocker=%s", name[:45], reason)
             continue
-        if result.error:
+        if outcome == "error":
             skipped += 1
-            logger.info("skip %-45s error=%s", name[:45], result.error)
+            logger.info("retry later %-45s error=%s", name[:45], reason)
             continue
-        if not result.should_suggest:
+        if outcome != "suggested":
             skipped += 1
-            logger.info("skip %-45s score=%s", name[:45], result.score)
+            logger.info("reviewed %-45s reason=%s", name[:45], reason)
             continue
 
         suggested += 1
-        reason = result.reason_text or "website looks dated or hard to use"
         logger.info(
-            "suggest %-45s id=%s type=%s confidence=%s score=%s reason=%s",
-            name[:45],
-            lead_id,
-            result.mock_type,
-            result.confidence,
-            result.score,
-            reason,
-        )
-        updates_by_row[int(row["_row_idx"])] = website_mocks.suggested_updates(
-            result.mock_type,
-            category=_clean(row.get("category")),
-            confidence=result.confidence,
-            reason=reason,
-            existing_notes=_clean(row.get("website_mock_notes")),
+            "suggest %-45s id=%s reason=%s", name[:45], lead_id, reason,
         )
 
     logger.info(
@@ -206,10 +213,9 @@ def main() -> None:
         dry_run,
     )
 
-    if args.write_sheet and updates_by_row:
-        logger.info("Writing website mock suggestions to Leads: %d row(s)", len(updates_by_row))
-        updated_rows = ws.get_all_values()
-        _write_updates(ws, updated_rows, updates_by_row)
+    if args.write_sheet and pending:
+        count = write_review_results(ws, pending)
+        logger.info("Recorded website reviews for %d row(s)", count)
     elif args.write_sheet:
         logger.info("No sheet updates needed.")
 

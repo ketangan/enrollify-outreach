@@ -279,7 +279,7 @@ def clean_school_name(raw_name: str, *, city: str = "", state: str = "") -> str:
     letters = [c for c in name if c.isalpha()]
     if letters:
         uppercase_ratio = sum(c.isupper() for c in letters) / len(letters)
-        if uppercase_ratio >= 0.8 and len(letters) >= 4:
+        if (uppercase_ratio >= 0.8 or uppercase_ratio == 0) and len(letters) >= 4:
             name = _smart_title(name)
 
     return name

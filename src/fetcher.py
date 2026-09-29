@@ -176,6 +176,7 @@ class FetchedPage:
     outbound_links: list[dict] = field(default_factory=list)  # {href, text}
     raw_html_snippet: str = ""  # short snippet for pattern-matching vendor URLs
     error: str = ""
+    website_names: list[str] = field(default_factory=list)
 
 
 def _clean_url(url: str) -> str:
@@ -245,6 +246,8 @@ def fetch(url: str) -> FetchedPage:
         return FetchedPage(url=url, status_code=resp.status_code, error=f"not_html:{content_type}")
 
     html = resp.text
+    from src.school_identity import extract_website_names
+    website_names = extract_website_names(html)
     # Save a raw snippet for vendor-pattern matching before stripping
     raw_snippet = html[:20000].lower()
 
@@ -306,6 +309,7 @@ def fetch(url: str) -> FetchedPage:
         text=text,
         outbound_links=links,
         raw_html_snippet=raw_snippet,
+        website_names=website_names,
     )
 
 
