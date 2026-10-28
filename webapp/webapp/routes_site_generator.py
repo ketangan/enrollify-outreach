@@ -200,7 +200,15 @@ def site_generator_home(
     duplicate_org_id: str = "",
 ):
     page = max(page, 1)
-    picker_rows, picker_total = no_website_schools.list_page(page=page, page_size=10, q=q)
+    # Fetched once and reused for both the "already generated" picker filter
+    # and the org list below — list_orgs() is a full Generated_Sites read,
+    # and the display cache in src/sheets.py would absorb a second call
+    # anyway, but there's no reason to rely on that timing here.
+    orgs = site_generator_state.list_orgs()
+    picker_rows, picker_total = no_website_schools.list_page(
+        page=page, page_size=10, q=q,
+        exclude_identity_keys=site_generator_state.generated_identity_keys(orgs),
+    )
 
     prefill = None
     if from_no_website_id:
@@ -216,7 +224,6 @@ def site_generator_home(
             "reasoning": checked_reasoning,
         }
 
-    orgs = site_generator_state.list_orgs()
     duplicate_org = next((o for o in orgs if o.get("org_id") == duplicate_org_id), None)
 
     response = templates.TemplateResponse(
@@ -452,6 +459,43 @@ def site_generator_archive_no_website(
         existing_website_url=existing_website_url,
     )
     return _remember_key_cookie(request, RedirectResponse("/site-generator", status_code=303))
+
+
+@router.post("/site-generator/mark-dnc", dependencies=[Depends(require_access)])
+def site_generator_mark_dnc(
+    request: Request,
+    no_website_schools_id: str = Form(...),
+    page: int = Form(1),
+    q: str = Form(""),
+):
+    # Explicit user action only, confirm()-gated on the button itself (see
+    # site_generator.html) — moves the row to No_Website_Archive with a
+    # do_not_contact reason so it drops out of the active picker for good
+    # without losing the discovery record, same archive_row() mechanism the
+    # "existing website found" and "promoted to leads" paths already use.
+    ok = no_website_schools.archive_row(no_website_schools_id, reason=no_website_schools.REASON_DO_NOT_CONTACT)
+    if not ok:
+        raise HTTPException(404, f"Unknown No_Website_Schools row: {no_website_schools_id}")
+    query = urlencode({"page": page, "q": q}) if q else urlencode({"page": page})
+    return _remember_key_cookie(request, RedirectResponse(f"/site-generator?{query}", status_code=303))
+
+
+@router.post("/site-generator/mark-contacted", dependencies=[Depends(require_access)])
+def site_generator_mark_contacted(
+    request: Request,
+    no_website_schools_id: str = Form(...),
+    page: int = Form(1),
+    q: str = Form(""),
+):
+    # Status change in place, not an archive — the row stays in
+    # No_Website_Schools (see STATUS_CONTACTED) so it's still reachable by
+    # id for check-website/generate later, just hidden from the default
+    # unfiltered picker view until a search brings it back up.
+    ok = no_website_schools.mark_status(no_website_schools_id, no_website_schools.STATUS_CONTACTED)
+    if not ok:
+        raise HTTPException(404, f"Unknown No_Website_Schools row: {no_website_schools_id}")
+    query = urlencode({"page": page, "q": q}) if q else urlencode({"page": page})
+    return _remember_key_cookie(request, RedirectResponse(f"/site-generator?{query}", status_code=303))
 
 
 @router.post("/site-generator/promote-no-website", dependencies=[Depends(require_access)])

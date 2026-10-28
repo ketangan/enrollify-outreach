@@ -178,6 +178,18 @@ def test_phase5_reroutes_bad_owner_greetings_before_drafting():
     }) is None
 
 
+def test_phase5_does_not_reroute_owner_named_after_their_own_business():
+    # Regression for the bug where a sole-proprietor's real name (also the
+    # business's namesake, e.g. "Gerry Blanck's Martial Arts Center") was
+    # wrongly treated as a copy-pasted school-name fragment, wiping a correct
+    # owner_name back to blank on every daily Phase 5 run.
+    for lead in [
+        {"_row_idx": 20, "name": "Gerry Blanck's Martial Arts Center", "owner_name": "Gerry Blanck"},
+        {"_row_idx": 21, "name": "Guitar Lessons with Shawn Fleming", "owner_name": "Shawn Fleming"},
+    ]:
+        assert run_phase_5._owner_greeting_reroute_for_lead(lead) is None
+
+
 def test_phase6_internal_summary_display_name_strips_descriptor():
     lead = {
         "name": "Living Tango - Argentine Tango lessons, Coaching & Wedding Dance prep",

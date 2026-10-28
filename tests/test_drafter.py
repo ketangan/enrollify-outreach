@@ -35,6 +35,22 @@ def test_greeting_quality_blocks_school_name_fragments():
     assert drafter.greeting_quality_problem("Dinesha Jeewanthi", "Dinesha's Kids Corner Daycare") == ""
 
 
+def test_greeting_quality_allows_owner_name_that_is_the_schools_own_namesake():
+    # Sole-proprietor businesses literally named after their owner are routine
+    # in these verticals (martial arts, music lessons, art studios) — a real
+    # owner's first+last name recurring in the school name is not junk, and
+    # must not be flagged/wiped the way a copy-pasted descriptor fragment is.
+    assert drafter.greeting_quality_problem(
+        "Gerry Blanck", "Gerry Blanck's Martial Arts Center",
+    ) == ""
+    assert drafter.greeting_quality_problem(
+        "Shawn Fleming", "Guitar Lessons with Shawn Fleming",
+    ) == ""
+    assert drafter.greeting_quality_problem(
+        "Jove Wang", "Jove Wang Art Studio",
+    ) == ""
+
+
 def test_render_email_supports_brand_placeholders(monkeypatch):
     monkeypatch.setattr(
         drafter,

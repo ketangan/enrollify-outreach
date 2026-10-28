@@ -990,6 +990,93 @@ def test_archive_no_website_calls_archive_row_and_redirects(monkeypatch):
     assert calls == [("90277-abc123", "existing_website_found", "https://www.real.example/")]
 
 
+def test_mark_dnc_archives_row_and_redirects_preserving_page_and_query(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    calls = []
+    monkeypatch.setattr(
+        no_website_schools, "archive_row",
+        lambda row_id, *, reason: calls.append((row_id, reason)) or True,
+    )
+
+    resp = client.post(
+        "/site-generator/mark-dnc",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "90277-abc123", "page": "2", "q": "soriel"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/site-generator?page=2&q=soriel"
+    assert calls == [("90277-abc123", no_website_schools.REASON_DO_NOT_CONTACT)]
+
+
+def test_mark_dnc_unknown_row_returns_404(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(no_website_schools, "archive_row", lambda row_id, *, reason: False)
+
+    resp = client.post(
+        "/site-generator/mark-dnc",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "does-not-exist"},
+    )
+
+    assert resp.status_code == 404
+
+
+def test_mark_contacted_updates_status_and_redirects_preserving_page_and_query(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    calls = []
+    monkeypatch.setattr(
+        no_website_schools, "mark_status",
+        lambda row_id, new_status: calls.append((row_id, new_status)) or True,
+    )
+
+    resp = client.post(
+        "/site-generator/mark-contacted",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "90277-abc123", "page": "2", "q": "soriel"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/site-generator?page=2&q=soriel"
+    assert calls == [("90277-abc123", no_website_schools.STATUS_CONTACTED)]
+
+
+def test_mark_contacted_unknown_row_returns_404(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(no_website_schools, "mark_status", lambda row_id, new_status: False)
+
+    resp = client.post(
+        "/site-generator/mark-contacted",
+        params={"key": "secret123"},
+        data={"no_website_schools_id": "does-not-exist"},
+    )
+
+    assert resp.status_code == 404
+
+
+def test_home_passes_generated_identity_keys_to_list_page_for_exclusion(monkeypatch):
+    monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
+    monkeypatch.setattr(
+        site_generator_state, "list_orgs",
+        lambda: [{
+            "org_id": "org-1", "name": "Coast Music", "address": "719 10th St", "phone": "",
+            "no_website_schools_id": "", "city": "", "state": "", "texted": False, "themes": {},
+        }],
+    )
+    captured = {}
+    monkeypatch.setattr(
+        no_website_schools, "list_page",
+        lambda page=1, page_size=10, **kw: (captured.update(kw) or [], 0),
+    )
+
+    resp = client.get("/site-generator", params={"key": "secret123"})
+
+    assert resp.status_code == 200
+    assert ("name_addr", "coast music", "719 10th st") in captured["exclude_identity_keys"]
+
+
 def test_check_website_preserves_search_query_in_redirect(monkeypatch):
     monkeypatch.setattr(config, "SITE_GENERATOR_ACCESS_KEY", "secret123")
     monkeypatch.setattr(

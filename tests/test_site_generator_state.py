@@ -332,6 +332,40 @@ def test_find_existing_org_does_not_match_name_only(fake_sheet):
     assert state.find_existing_org(name="Green Garden Preschool", category="preschool") is None
 
 
+def test_generated_identity_keys_includes_source_id_name_address_and_phone(fake_sheet):
+    state.record_initial_generation(
+        org_id="org-existing-1", name="Green Garden Preschool", category="preschool",
+        address="11871 Lindblade St, Culver City, CA 90230, USA",
+        rendered=[{
+            "type": "preschool", "version": "warm", "label": "Warm", "url": "u1", "preview_url": "p1",
+            "phone": "(310) 555-0100",
+        }],
+        no_website_schools_id="90045-abc123",
+    )
+
+    keys = state.generated_identity_keys()
+
+    assert ("id", "90045-abc123") in keys
+    assert ("name_addr", "green garden preschool", "11871 lindblade st, culver city, ca 90230, usa") in keys
+    assert ("name_phone", "green garden preschool", "3105550100") in keys
+
+
+def test_generated_identity_keys_accepts_precomputed_orgs_list(fake_sheet):
+    # Lets a caller that already fetched list_orgs() (e.g. the site
+    # generator's home route) skip a second Generated_Sites read.
+    orgs = [{"org_id": "org-1", "name": "Test School", "address": "", "phone": "", "no_website_schools_id": "nws-1"}]
+
+    keys = state.generated_identity_keys(orgs)
+
+    assert keys == {("id", "nws-1")}
+
+
+def test_generated_identity_keys_skips_orgs_with_no_name(fake_sheet):
+    orgs = [{"org_id": "org-1", "name": "", "address": "123 Main St", "phone": "", "no_website_schools_id": ""}]
+
+    assert state.generated_identity_keys(orgs) == set()
+
+
 def test_owner_name_is_persisted_at_org_level(fake_sheet):
     state.record_initial_generation(
         org_id="org-owner-1", name="Test School", category="music",

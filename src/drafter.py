@@ -221,6 +221,21 @@ def greeting_quality_problem(owner_name: str, school_name: str = "") -> str:
     Empty owner_name is allowed because the template falls back to "Hi there".
     Non-empty junk should be routed back to owner review instead of becoming an
     embarrassing Gmail draft.
+
+    `school_name` is accepted for backward compatibility with callers but is
+    no longer used: this used to also flag an owner_name sharing 2+ words
+    with the school name (meant to catch a school's own name/descriptor
+    copy-pasted into the owner field, e.g. "Lakewood Little Minds" for
+    "Lakewood Little Minds Preschool" — already caught above by
+    is_junk_owner_name's ORG_GREETING_WORDS check, since that example, like
+    every real case that motivated the rule, contains one of those words).
+    Its only live effect ended up being a false positive on sole-proprietor
+    businesses literally named after their owner — "Gerry Blanck" for
+    "Gerry Blanck's Martial Arts Center", "Shawn Fleming" for "Guitar Lessons
+    with Shawn Fleming" — a routine pattern in these verticals (martial arts,
+    music lessons, art studios). That falsely wiped a correct owner_name back
+    to blank and rerouted the lead to needs_owner_review on every Phase 5
+    run, undoing a manual fix daily.
     """
     owner_name = str(owner_name or "").strip()
     if not owner_name:
@@ -233,13 +248,6 @@ def greeting_quality_problem(owner_name: str, school_name: str = "") -> str:
     greeting = _greeting_name(owner_name)
     if not greeting:
         return f"unusable_greeting:{owner_name}"
-
-    owner_tokens = set(_name_tokens(owner_name))
-    school_tokens = set(_name_tokens(school_name)) - ORG_GREETING_WORDS
-    if owner_tokens and school_tokens:
-        overlap = owner_tokens & school_tokens
-        if len(overlap) >= 2 and len(overlap) / len(owner_tokens) >= 0.6:
-            return f"owner_name_matches_school_name:{owner_name}"
 
     greeting_token = _name_tokens(greeting)
     if greeting_token and greeting_token[0] in ORG_GREETING_WORDS:

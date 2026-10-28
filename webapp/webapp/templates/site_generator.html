@@ -22,7 +22,10 @@
 <p class="muted" style="max-width: 720px;">
   Picked up by discovery, no website on file. Pick one to fill in the form
   below — if generation finds they actually have a site after all, you'll
-  get the option to archive it from here.
+  get the option to archive it from here. "Already contacted" hides a
+  school from this queue once you've reached out, but it's still findable
+  with the search box below if you need to check on it or generate a site
+  for it later. "Do not contact" removes it for good.
 </p>
 <form method="GET" action="/site-generator" class="site-gen-picker-search">
   <input type="search" name="q" value="{{ picker_q }}" placeholder="Search by name, city, or address…">
@@ -35,11 +38,14 @@
   </p>
 {% else %}
   <table class="data-table">
-    <thead><tr><th>Business</th><th>Category</th><th>City</th><th>Address</th><th>Google reviews</th><th>Yelp reviews</th><th colspan="2"></th></tr></thead>
+    <thead><tr><th>Business</th><th>Category</th><th>City</th><th>Address</th><th>Google reviews</th><th>Yelp reviews</th><th colspan="4"></th></tr></thead>
     <tbody>
       {% for row in picker_rows %}
         <tr>
-          <td>{{ row.name }}</td>
+          <td>
+            {{ row.name }}
+            {% if row.status == "contacted" %}<span class="muted" title="Already texted — found via search, hidden from the default queue">(contacted)</span>{% endif %}
+          </td>
           <td>{{ row.category }}</td>
           <td>{{ row.city }}{% if row.state %}, {{ row.state }}{% endif %}</td>
           <td>{{ row.address if row.address else "—" }}</td>
@@ -54,10 +60,27 @@
             </form>
           </td>
           <td><a href="/site-generator?from_no_website_id={{ row.id }}#generate-form" class="btn-secondary">Use this</a></td>
+          <td>
+            <form method="POST" action="/site-generator/mark-contacted" class="site-gen-inline-form">
+              <input type="hidden" name="no_website_schools_id" value="{{ row.id }}">
+              <input type="hidden" name="page" value="{{ picker_page }}">
+              <input type="hidden" name="q" value="{{ picker_q }}">
+              <button type="submit" class="btn-secondary">Already contacted</button>
+            </form>
+          </td>
+          <td>
+            <form method="POST" action="/site-generator/mark-dnc" class="site-gen-inline-form"
+                  onsubmit="return confirm('Mark {{ row.name }} as do-not-contact and remove it from this queue?');">
+              <input type="hidden" name="no_website_schools_id" value="{{ row.id }}">
+              <input type="hidden" name="page" value="{{ picker_page }}">
+              <input type="hidden" name="q" value="{{ picker_q }}">
+              <button type="submit" class="btn-danger">Do not contact</button>
+            </form>
+          </td>
         </tr>
         {% if checked and checked.id == row.id %}
           <tr class="site-gen-check-result-row">
-            <td colspan="8">
+            <td colspan="10">
               {% if checked.found %}
                 <div class="check-result check-result-found">
                   <strong>Possible existing website found</strong>

@@ -155,6 +155,23 @@ def test_list_page_sorts_businesses_with_no_reviews_to_the_end(fake_sheets):
     assert [r["id"] for r in rows] == ["has-reviews", "no-reviews", "blank-review-count"]
 
 
+def test_list_page_sorts_by_review_count_descending_not_just_presence(fake_sheets):
+    # Regression: the old sort key was `_review_count(r) == 0` — a boolean
+    # that only split rows into "has reviews" vs "none", leaving any two
+    # reviewed rows in whatever order the sheet already had. Inserted here
+    # with the low-review one first so a magnitude-blind sort would leave it
+    # first too — only a real descending sort by count corrects this.
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="low-reviews", name="Low Reviews", google_review_count="4"))
+    no_website_rows.append(_row(row_id="high-reviews", name="High Reviews", google_review_count="47"))
+    no_website_rows.append(_row(row_id="mid-reviews", name="Mid Reviews", google_review_count="15"))
+
+    rows, total = nws.list_page()
+
+    assert total == 3
+    assert [r["id"] for r in rows] == ["high-reviews", "mid-reviews", "low-reviews"]
+
+
 def test_list_page_counts_yelp_reviews_when_google_has_none(fake_sheets):
     no_website_rows, _ = fake_sheets
     no_website_rows.append(_row(row_id="yelp-only", name="Yelp Only", google_review_count="0", yelp_review_count="5"))
@@ -166,8 +183,9 @@ def test_list_page_counts_yelp_reviews_when_google_has_none(fake_sheets):
 
 
 def test_list_page_keeps_relative_order_within_each_review_group(fake_sheets):
-    # Stable sort — no-review businesses keep their original relative
-    # order among themselves, same for reviewed ones.
+    # Reviewed rows rank by count (3 beats 1), and the two zero-review rows
+    # are a genuine tie — a stable sort keeps their original relative order
+    # rather than reshuffling them arbitrarily.
     no_website_rows, _ = fake_sheets
     no_website_rows.append(_row(row_id="reviewed-first", name="Reviewed First", google_review_count="3"))
     no_website_rows.append(_row(row_id="unreviewed-first", name="Unreviewed First", google_review_count="0"))
@@ -179,6 +197,91 @@ def test_list_page_keeps_relative_order_within_each_review_group(fake_sheets):
     assert [r["id"] for r in rows] == [
         "reviewed-first", "reviewed-second", "unreviewed-first", "unreviewed-second",
     ]
+
+
+def test_list_page_excludes_contacted_rows_from_default_browse(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="active", status="collected"))
+    no_website_rows.append(_row(row_id="contacted", name="Reached Out Studio", status="contacted"))
+
+    rows, total = nws.list_page()
+
+    assert total == 1
+    assert rows[0]["id"] == "active"
+
+
+def test_list_page_search_still_finds_contacted_rows(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="active", name="Other Place", status="collected"))
+    no_website_rows.append(_row(row_id="contacted", name="Reached Out Studio", status="contacted"))
+
+    rows, total = nws.list_page(q="reached out")
+
+    assert total == 1
+    assert rows[0]["id"] == "contacted"
+    assert rows[0]["status"] == "contacted"
+
+
+def test_list_page_search_excludes_site_generated_and_archived_statuses(fake_sheets):
+    # A search widens to STATUS_CONTACTED specifically, not every status —
+    # site_generated rows (already shown under "Generated businesses") stay
+    # out even when searched for by name here.
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="done", name="Finished School", status="site_generated"))
+
+    rows, total = nws.list_page(q="finished")
+
+    assert total == 0
+
+
+def test_identity_keys_includes_id_name_address_and_name_phone(fake_sheets):
+    row = _row(row_id="90277-abc123", name="Coast Music", address="719 10th St", phone="(310) 555-0100")
+
+    keys = nws.identity_keys(row)
+
+    assert ("id", "90277-abc123") in keys
+    assert ("name_addr", "coast music", "719 10th st") in keys
+    assert ("name_phone", "coast music", "3105550100") in keys
+
+
+def test_identity_keys_skips_address_and_phone_keys_when_blank(fake_sheets):
+    row = _row(row_id="90277-abc123", name="Coast Music", address="", phone="")
+
+    assert nws.identity_keys(row) == {("id", "90277-abc123")}
+
+
+def test_list_page_excludes_rows_matching_exclude_identity_keys(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="already-generated", name="Coast Music", address="719 10th St"))
+    no_website_rows.append(_row(row_id="still-queued", name="Other Studio", address="456 Main St"))
+
+    exclude = {("name_addr", "coast music", "719 10th st")}
+    rows, total = nws.list_page(exclude_identity_keys=exclude)
+
+    assert total == 1
+    assert rows[0]["id"] == "still-queued"
+
+
+def test_list_page_exclude_identity_keys_matches_by_id_too(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="already-generated", name="Coast Music"))
+    no_website_rows.append(_row(row_id="still-queued", name="Other Studio"))
+
+    rows, total = nws.list_page(exclude_identity_keys={("id", "already-generated")})
+
+    assert total == 1
+    assert rows[0]["id"] == "still-queued"
+
+
+def test_list_page_no_exclusion_when_set_is_empty_or_none(fake_sheets):
+    no_website_rows, _ = fake_sheets
+    no_website_rows.append(_row(row_id="a"))
+
+    rows_none, total_none = nws.list_page(exclude_identity_keys=None)
+    rows_empty, total_empty = nws.list_page(exclude_identity_keys=set())
+
+    assert total_none == 1
+    assert total_empty == 1
 
 
 def test_get_by_id_finds_matching_row(fake_sheets):
@@ -208,6 +311,20 @@ def test_mark_status_returns_false_when_row_missing(fake_sheets):
     assert nws.mark_status("nonexistent", nws.STATUS_SITE_GENERATED) is False
 
 
+def test_mark_status_to_contacted_keeps_row_in_source_tab(fake_sheets):
+    # Unlike archive_row(), marking contacted is a status change in place —
+    # the row must stay in No_Website_Schools so check-website/generate
+    # still work on it by id afterward.
+    no_website_rows, archive_rows = fake_sheets
+    no_website_rows.append(_row(row_id="a"))
+
+    ok = nws.mark_status("a", nws.STATUS_CONTACTED)
+
+    assert ok is True
+    assert no_website_rows[0]["status"] == "contacted"
+    assert archive_rows == []
+
+
 def test_archive_row_moves_row_and_records_reason(fake_sheets):
     no_website_rows, archive_rows = fake_sheets
     no_website_rows.append(_row(row_id="keep-me"))
@@ -232,6 +349,17 @@ def test_archive_row_moves_row_and_records_reason(fake_sheets):
 
 def test_archive_row_returns_false_when_row_missing(fake_sheets):
     assert nws.archive_row("nonexistent", reason="x") is False
+
+
+def test_archive_row_supports_do_not_contact_reason(fake_sheets):
+    no_website_rows, archive_rows = fake_sheets
+    no_website_rows.append(_row(row_id="dnc-me", name="Unwanted Lead"))
+
+    ok = nws.archive_row("dnc-me", reason=nws.REASON_DO_NOT_CONTACT)
+
+    assert ok is True
+    assert no_website_rows == []
+    assert archive_rows[0]["archived_reason"] == "do_not_contact"
 
 
 def test_known_place_ids_combines_both_tabs_and_skips_blanks(fake_sheets):
