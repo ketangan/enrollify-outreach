@@ -1,3 +1,11 @@
+import csv
+from itertools import product
+from unittest.mock import Mock
+
+import pytest
+
+from scripts import run_phase_6_sync as sync
+from src import gmail_client
 from src import drafter
 
 
@@ -56,7 +64,7 @@ def test_render_email_supports_brand_placeholders(monkeypatch):
         drafter,
         "_load_templates",
         lambda: {
-            "contact_form": {
+            "preschool__contact_form": {
                 "subject": "{{brand_name}} for {{school_name}}",
                 "observation": "I saw {{school_name}} uses a contact form.",
                 "body": (
@@ -91,7 +99,7 @@ def test_render_email_strips_long_google_places_descriptor(monkeypatch):
         drafter,
         "_load_templates",
         lambda: {
-            "contact_form": {
+            "lessons__contact_form": {
                 "subject": "{{brand_name}} for {{school_name}}",
                 "observation": "I was on {{school_name}}'s site.",
                 "body": "Hi {{owner_first_name}}, {{specific_observation}}",
@@ -114,224 +122,112 @@ def test_render_email_strips_long_google_places_descriptor(monkeypatch):
     assert raw_name not in rendered.html_body
 
 
-def test_render_email_strips_local_visit_claim_for_far_lead(monkeypatch):
-    monkeypatch.setattr(
-        drafter,
-        "_load_templates",
-        lambda: {
-            "contact_form": {
-                "subject": "Hello {{school_name}}",
-                "observation": "",
-                "body": (
-                    "<p>Hi {{owner_first_name}},</p>"
-                    "<p>I'm also in the LA area and can come by in person if helpful.</p>"
-                    "<p>Your enrollment flow looked worth a note.</p>"
-                ),
-            }
-        },
-    )
-    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
-    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
-    monkeypatch.setattr(
-        drafter.regions,
-        "_lookup_zip",
-        lambda zip_code: {
-            "90045": {"lat": 33.9516, "lng": -118.3980},
-            "93101": {"lat": 34.4208, "lng": -119.6982},
-        }.get(str(zip_code).zfill(5)),
-    )
 
-    rendered = drafter.render_email(
-        {
-            "enrollment_method": "contact_form_qualify",
-            "owner_name": "Jane Owner",
-            "name": "SoCal Piano Academy",
-            "category": "music",
-            "id": "lead-1",
-            "zip": "93101",
-        }
-    )
-
-    assert "LA area" not in rendered.html_body
-    assert "in person" not in rendered.html_body
-    assert "Your enrollment flow looked worth a note." in rendered.html_body
+def csv_rows(name):
+    with (drafter.config.PROJECT_ROOT / name).open(encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
 
 
-def test_render_email_keeps_local_visit_claim_for_near_lead(monkeypatch):
-    monkeypatch.setattr(
-        drafter,
-        "_load_templates",
-        lambda: {
-            "contact_form": {
-                "subject": "Hello {{school_name}}",
-                "observation": "",
-                "body": (
-                    "<p>Hi {{owner_first_name}},</p>"
-                    "<p>I'm also in the LA area and can come by in person if helpful.</p>"
-                ),
-            }
-        },
-    )
-    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
-    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
-    monkeypatch.setattr(
-        drafter.regions,
-        "_lookup_zip",
-        lambda zip_code: {
-            "90045": {"lat": 33.9516, "lng": -118.3980},
-            "90266": {"lat": 33.8895, "lng": -118.3998},
-        }.get(str(zip_code).zfill(5)),
-    )
-
-    rendered = drafter.render_email(
-        {
-            "enrollment_method": "contact_form_qualify",
-            "owner_name": "Jane Owner",
-            "name": "Coast Music",
-            "category": "music",
-            "id": "lead-1",
-            "zip": "90266",
-        }
-    )
-
-    assert "LA area" in rendered.html_body
-    assert "in person" in rendered.html_body
+TEMPLATES = csv_rows("pontora_email_templates_v5.csv")
+MAPPING = csv_rows("pontora_category_to_segment.csv")
+CATEGORIES = {"lessons": "music", "general": "tutoring", "preschool": "daycare", "sports": "swim"}
 
 
-def test_render_email_strips_plain_text_local_visit_sentence(monkeypatch):
-    monkeypatch.setattr(
-        drafter,
-        "_load_templates",
-        lambda: {
-            "contact_form": {
-                "subject": "Hello {{school_name}}",
-                "observation": "",
-                "body": (
-                    "Hi {{owner_first_name}}, I'm also in the LA area and can come by. "
-                    "Your enrollment flow looked worth a note."
-                ),
-            }
-        },
-    )
-    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
-    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
-    monkeypatch.setattr(
-        drafter.regions,
-        "_lookup_zip",
-        lambda zip_code: {
-            "90045": {"lat": 33.9516, "lng": -118.3980},
-            "94566": {"lat": 37.6656, "lng": -121.8747},
-        }.get(str(zip_code).zfill(5)),
-    )
-
-    rendered = drafter.render_email(
-        {
-            "enrollment_method": "contact_form_qualify",
-            "owner_name": "Jane Owner",
-            "name": "Creatif Pleasanton",
-            "category": "art",
-            "id": "lead-1",
-            "zip": "94566",
-        }
-    )
-
-    assert "LA area" not in rendered.html_body
-    assert "Your enrollment flow looked worth a note." in rendered.html_body
+@pytest.fixture
+def templates(monkeypatch):
+    rows = {r["template_key"]: dict(subject=r["subject"], body=r["body"], observation=r["specific_observation"])
+            for r in TEMPLATES}
+    monkeypatch.setattr(drafter, "_load_templates", lambda: rows)
+    return rows
 
 
-def test_local_visit_claim_problem_detects_surviving_far_claim(monkeypatch):
-    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
-    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
-    monkeypatch.setattr(
-        drafter.regions,
-        "_lookup_zip",
-        lambda zip_code: {
-            "90045": {"lat": 33.9516, "lng": -118.3980},
-            "93301": {"lat": 35.3733, "lng": -119.0187},
-        }.get(str(zip_code).zfill(5)),
-    )
-
-    problem = drafter.local_visit_claim_problem(
-        {"zip": "93301"},
-        "<p>I can come and visit your school if that helps.</p>",
-    )
-
-    assert problem.startswith("non_local_visit_claim_remaining:")
+@pytest.mark.parametrize("category,expected", [(r["category"], r["segment"]) for r in MAPPING] +
+                         [("", "general"), (None, "general"), (" Music ", "lessons"), ("theater", "general")])
+def test_category_mapping(category, expected):
+    assert drafter.segment_for(category) == expected
 
 
-def test_render_follow_up_appends_website_mock_addendum(monkeypatch):
-    monkeypatch.setattr(
-        drafter,
-        "_load_templates",
-        lambda: {
-            "follow_up": {
-                "subject": "Re: {{brand_name}}",
-                "observation": "",
-                "body": "Hi {{owner_first_name}},\n\nJust following up.",
-            },
-            "website_mock_followup_addendum": {
-                "subject": "",
-                "observation": "",
-                "body": "P.S. {{mock_links_html}}",
-            },
-        },
-    )
-
-    rendered = drafter.render_follow_up(
-        {
-            "id": "lead-1",
-            "name": "Lincoln Dance Academy",
-            "owner_name": "Jane Owner",
-            "website_mock_status": "generated",
-            "website_mock_payload": (
-                '[{"type":"music","version":"studio","label":"Studio concept",'
-                '"url":"https://mocks.mypontora.com/mocks/lead-1/music-studio/"}]'
-            ),
-        }
-    )
-
-    assert rendered.subject == "Re: Pontora"
-    assert "Just following up." in rendered.html_body
-    assert "P.S." in rendered.html_body
-    assert "Studio concept" in rendered.html_body
+@pytest.mark.parametrize("zip_code,expected", [
+    ("90012", True), ("92614", True), ("93001", True), ("94105", False), ("10001", False),
+    ("", False), (None, False), ("9001", False), ("90012-1234", True), ("90012xxxx", False),
+    ("91901", False), ("91801", True), ("92801", True), ("93101", True), ("foo90012", False),
+])
+def test_locality(zip_code, expected):
+    assert drafter.is_local(zip_code) == expected
 
 
-def test_render_follow_up_strips_local_visit_claim_for_far_lead(monkeypatch):
-    monkeypatch.setattr(
-        drafter,
-        "_load_templates",
-        lambda: {
-            "follow_up": {
-                "subject": "Re: {{brand_name}}",
-                "observation": "",
-                "body": (
-                    "<p>Hi {{owner_first_name}},</p>"
-                    "<p>I'm also in the LA area and can come by in person if helpful.</p>"
-                    "<p>Just following up.</p>"
-                ),
-            },
-        },
-    )
-    monkeypatch.setattr(drafter.config, "HOME_ZIP", "90045")
-    monkeypatch.setattr(drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
-    monkeypatch.setattr(
-        drafter.regions,
-        "_lookup_zip",
-        lambda zip_code: {
-            "90045": {"lat": 33.9516, "lng": -118.3980},
-            "93101": {"lat": 34.4208, "lng": -119.6982},
-        }.get(str(zip_code).zfill(5)),
-    )
+def test_all_template_keys_present():
+    expected = {f"{s}__{m}" for s, m in product(CATEGORIES, (*drafter.METHODS, "follow_up"))}
+    assert len(TEMPLATES) == len(expected) and {r["template_key"] for r in TEMPLATES} == expected
 
-    rendered = drafter.render_follow_up(
-        {
-            "id": "lead-1",
-            "name": "SoCal Piano Academy",
-            "owner_name": "Jane Owner",
-            "zip": "93101",
-        }
-    )
 
-    assert "LA area" not in rendered.html_body
-    assert "in person" not in rendered.html_body
-    assert "Just following up." in rendered.html_body
+@pytest.mark.parametrize("row", TEMPLATES, ids=lambda r: r["template_key"])
+@pytest.mark.parametrize("local", [True, False])
+def test_template_verbatim_and_sent_attribution(row, local, templates):
+    key, method, segment = row["template_key"], row["enrollment_method"], row["segment"]
+    school = "Example Academy"
+    lead = dict(id="example", name=school, zip="90012" if local else "10001", owner_name="",
+                enrollment_method=method, category=CATEGORIES[segment])
+    if method == "follow_up":
+        lead.update(template_key=f"{segment}__email", category="edited after sending")
+        rendered = drafter.render_follow_up(lead)
+    else:
+        rendered = drafter.render_email(lead)
+    expected = row["body"].replace("{{specific_observation}}", row["specific_observation"])
+    for field, value in dict(school_name=school, lead_id="example", owner_first_name=school + " team",
+                             website_mock_addendum="", based_in=drafter.LOCAL_BASE if local else drafter.REMOTE_BASE,
+                             meet_offer=drafter.LOCAL_OFFER if local else drafter.REMOTE_OFFER).items():
+        expected = expected.replace("{{" + field + "}}", value)
+    assert rendered.template_id == key
+    assert rendered.subject == row["subject"].replace("{{school_name}}", school)
+    assert rendered.html_body == expected
+    assert "{{" not in rendered.subject + rendered.html_body
+    msg = gmail_client.build_message("test@example.org", rendered.subject, rendered.html_body)
+    attribution = dict(template_key=key, lead_id="example", is_local=local)
+    assert gmail_client._sent_attribution(msg) == attribution
+    gmail_client.stamp_outreach_draft(msg, lead, key)
+    assert gmail_client._sent_attribution(msg) == attribution
+
+
+@pytest.mark.parametrize("method", [None, "", "unknown", "follow_up"])
+def test_unknown_first_method_is_logged(method, caplog):
+    assert drafter.render_email({"id": "lead42", "enrollment_method": method}) is None
+    assert "lead42" in caplog.text and "unknown enrollment_method" in caplog.text
+
+
+@pytest.mark.parametrize("field", ["subject", "body", "observation"])
+def test_unresolved_field_blocks_email(field, templates, caplog):
+    templates["general__email"][field] += "{{typo}}"
+    assert drafter.render_email(dict(name="Example School", id="sample42", enrollment_method="email")) is None
+    assert "sample42" in caplog.text and "typo" in caplog.text
+
+
+def test_unknown_follow_up_is_held(templates, caplog):
+    assert drafter.render_follow_up(dict(id="old42", category="sports")) is None
+    assert "old42" in caplog.text and "template_key" in caplog.text
+
+
+def test_website_mock_addendum(templates):
+    lead = dict(id="a", name="Example School", template_key="sports__contact_form", website_mock_status="generated",
+                website_mock_payload='[{"label":"Studio concept","url":"https://mocks.mypontora.com/mocks/a/studio/"}]')
+    templates["website_mock_followup_addendum"] = dict(body="P.S. {{mock_links_html}}")
+    assert "Studio concept" in drafter.render_follow_up(lead).html_body
+
+
+def test_actual_send_and_followup_use_independent_fields():
+    from datetime import datetime, timezone
+    lead = dict(id="a", _row_idx=2, status="awaiting_approval", category="edited", zip="10001")
+    fields = ("template_key", "is_local", "status", "sent_at", "sent_message_id", "follow_up_at",
+              "last_action", "follow_up_template_key", "follow_up_is_local", "follow_up_sent_at")
+    cols = {name: i for i, name in enumerate(fields)}
+    ws = Mock()
+    sm = gmail_client.SentMessage("<first>", "a@example.org", "Hello", datetime.now(timezone.utc), "g",
+                                  lead_id="a", template_key="sports__email", is_local=True)
+    sync._record_template_send(sm, lead, cols, ws, False)
+    sync._record_template_send(sm, lead, cols, ws, False)
+    assert ws.batch_update.call_count == 1
+    sm.template_key, sm.is_local, sm.message_id = "sports__follow_up", False, "<second>"
+    sync._record_template_send(sm, lead, cols, ws, False)
+    assert lead["template_key"] == "sports__email" and lead["is_local"] is True
+    assert lead["follow_up_template_key"] == "sports__follow_up" and lead["follow_up_is_local"] is False
+    assert lead["sent_message_id"] == "<first>" and lead["follow_up_sent_at"]

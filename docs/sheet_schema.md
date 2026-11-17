@@ -99,24 +99,19 @@ Our Phase 1 code writes rows here automatically when a new zip is processed.
 
 Row 1:
 ```
-template_id | subject | body | last_updated
+template_id | subject | body | observation | last_updated
 ```
 
-**Initial rows:**
+The 20 automated rows use the keys in `pontora_email_templates_v5.csv`. Import `specific_observation` into `observation`. Keep manual templates and `website_mock_followup_addendum` separately.
 
-| template_id | subject | body |
-|---|---|---|
-| contact_form | (Ketan fills in) | (Ketan fills in, with `{{placeholders}}`) |
-| email | ... | ... |
-| pdf_form | ... | ... |
-| follow_up | ... | ... |
-| website_mock_followup_addendum | blank | optional P.S. body appended to follow-up drafts for generated website mock candidates |
+The `Leads` tab records `template_key` and `is_local` for the first confirmed send, and `follow_up_template_key` and `follow_up_is_local` for the confirmed follow-up. Legacy sends without a known first template key are held out of follow-up drafting.
 
 **Supported placeholders:**
 - `{{owner_first_name}}` — e.g. "Jane"
 - `{{school_name}}` — e.g. "Lincoln Dance Academy"
 - `{{category}}` — e.g. "dance studio"
-- `{{specific_observation}}` — 1-2 sentence personalized note drafted by Claude
+- `{{specific_observation}}` — approved observation from the selected template
+- `{{based_in}}` and `{{meet_offer}}` — selected from the lead ZIP
 - `{{website_mock_addendum}}` — optional follow-up-only P.S. inserted when a lead has generated website mock URLs
 
 ## Setup checklist
@@ -128,4 +123,4 @@ template_id | subject | body | last_updated
 - [ ] Sheet shared with Google service account email as Editor
 - [ ] Sheet ID captured in `.env` (`GOOGLE_SHEET_ID`)
 - [ ] Ketan's existing "contacted" list pasted into `Already_Contacted`
-- [ ] 4 email templates filled in under `Templates` tab
+- [ ] 20 segmented templates filled in under `Templates` tab

@@ -4,16 +4,11 @@ Email template rendering for Phase 5.
 Reads templates from the Templates tab of the Google Sheet, fills in
 placeholders per lead, returns rendered subject + HTML body.
 
-Category-aware bullets: leads are bucketed into 'early_ed' (preschool,
-daycare, montessori — formal admissions, Brightwheel) and 'activities'
-(everything else — activity-based programs, generic scheduling tools).
-The template body uses {{feature_bullets}} which is rendered per-bucket.
-
 Greeting logic (_greeting_name):
   - Normal:                "John Smith"             → "John"
   - Stripped honorific:    "Dr. Sarah Lee"          → "Sarah"
   - Kept honorific (rank): "Grandmaster Kim Jong"   → "Grandmaster Kim"
-  - Junk name (rejected):  "Unnamed female founder" → "" (renders as 'there')
+  - Junk name (rejected):  "Unnamed female founder" → ""
 
 Junk-name detection:
   Phase 5 also rejects leads whose owner_name is junk and reroutes them
@@ -23,52 +18,47 @@ Junk-name detection:
 
 from __future__ import annotations
 
+import csv
+import html
 import logging
 import re
 import unicodedata
 from dataclasses import dataclass
+from urllib.parse import quote
 
-from src import config, regions, sheets, website_mocks
+from src import config, sheets, website_mocks
 from src.name_cleaner import clean_school_name
 
 logger = logging.getLogger(__name__)
 
-# Map Phase 3's enrollment_method to the template_id to use
+METHODS = ("contact_form", "email", "pdf_form", "third_party_form")
 ENROLLMENT_METHOD_TO_TEMPLATE = {
-    "contact_form_qualify": "contact_form",
-    "email_qualify": "email",
-    "pdf_form_qualify": "pdf_form",
-    "third_party_form_qualify": "third_party_form",
+    key: method for method in METHODS for key in (method, f"{method}_qualify")
 }
 
-
-# Category → bucket. Anything not listed defaults to 'activities'.
-CATEGORY_TO_BUCKET = {
-    "preschool": "early_ed",
-    "daycare": "early_ed",
-    "montessori": "early_ed",
-}
-
-FEATURE_BULLETS = {
-    "early_ed": (
-        "<li>Custom enrollment forms that match your branding and programs</li>"
-        "<li>Every inquiry and application organized in one searchable dashboard</li>"
-        "<li>Built-in follow-up so prospective families don't slip through the cracks</li>"
-        "<li>One-click exports to Brightwheel and other tools you may already use</li>"
-        "<li>No servers, software, or technical setup required</li>"
-    ),
-    "activities": (
-        "<li>Custom sign-up forms that match your branding and classes</li>"
-        "<li>Every inquiry and application organized in one searchable dashboard</li>"
-        "<li>Built-in follow-up so interested students don't slip through the cracks</li>"
-        "<li>One-click exports to your existing scheduling or billing tools</li>"
-        "<li>No servers, software, or technical setup required</li>"
-    ),
-}
+with (config.PROJECT_ROOT / "pontora_category_to_segment.csv").open(encoding="utf-8-sig", newline="") as f:
+    CATEGORY_SEGMENTS = {row["category"].strip().lower(): row["segment"] for row in csv.DictReader(f)}
 
 
-def _bucket_for(category: str) -> str:
-    return CATEGORY_TO_BUCKET.get(category.strip().lower(), "activities")
+def segment_for(category) -> str:
+    return CATEGORY_SEGMENTS.get(str(category or "").strip().lower(), "general")
+
+
+def initial_method(value) -> str | None:
+    return ENROLLMENT_METHOD_TO_TEMPLATE.get(str(value or "").strip())
+
+
+def saved_segment(key) -> str | None:
+    segment, _, method = str(key or "").partition("__")
+    if segment in CATEGORY_SEGMENTS.values() and method in METHODS:
+        return segment
+    return None
+
+
+def is_local(zip_code) -> bool:
+    value = str(zip_code or "").strip()
+    return bool(re.fullmatch(r"[0-9]{5}(?:-[0-9]{4})?", value)
+                and int(value[:3]) in config.LOCAL_ZIP_PREFIXES)
 
 
 @dataclass
@@ -168,7 +158,7 @@ def is_junk_owner_name(owner_name: str) -> bool:
     of sending 'Hi Unnamed,' emails.
     """
     if not owner_name:
-        return False  # empty handled separately by fallback to 'there'
+        return False  # empty handled separately by school team fallback
 
     name = owner_name.strip()
     if not name:
@@ -218,7 +208,7 @@ def greeting_quality_problem(owner_name: str, school_name: str = "") -> str:
     """
     Final pre-draft safety check for the value that would appear after "Hi".
 
-    Empty owner_name is allowed because the template falls back to "Hi there".
+    Empty owner_name is allowed because the template uses the school team greeting.
     Non-empty junk should be routed back to owner review instead of becoming an
     embarrassing Gmail draft.
 
@@ -334,7 +324,7 @@ def _load_templates() -> dict[str, dict]:
         if not tid:
             continue
         cache[tid] = {
-            "subject": str(row.get("subject", "")).strip(),
+            "subject": str(row.get("subject", "")),
             "body": str(row.get("body", "")),
             "observation": str(row.get("observation", "")),
         }
@@ -342,217 +332,85 @@ def _load_templates() -> dict[str, dict]:
     return cache
 
 
-def _render(text: str, ctx: dict) -> str:
-    """Simple {{key}} placeholder substitution."""
-    result = text
-    for k, v in ctx.items():
-        result = result.replace("{{" + k + "}}", str(v or ""))
-    return result
+PLACEHOLDER = re.compile(r"{{([^{}]*)}}")
 
 
-def _lead_zip(lead: dict) -> str:
-    raw_zip = str(lead.get("zip", "") or "")
-    match = re.search(r"\b(\d{5})(?:-\d{4})?\b", raw_zip)
-    if match:
-        return match.group(1)
-
-    address = str(lead.get("address", "") or "")
-    match = re.search(r"\b(\d{5})(?:-\d{4})?\b", address)
-    return match.group(1) if match else ""
-
-
-def _distance_from_home_miles(lead: dict) -> float | None:
-    home = regions._lookup_zip(str(config.HOME_ZIP).zfill(5))
-    lead_zip = _lead_zip(lead)
-    destination = regions._lookup_zip(lead_zip) if lead_zip else None
-    if not home or not destination:
-        return None
-
-    return regions._haversine_miles(
-        float(home["lat"]),
-        float(home["lng"]),
-        float(destination["lat"]),
-        float(destination["lng"]),
-    )
-
-
-def _allows_local_visit_claim(lead: dict) -> bool:
-    distance = _distance_from_home_miles(lead)
-    return distance is not None and distance <= config.LOCAL_VISIT_MAX_MILES
-
-
-def _strip_local_visit_claims(body: str) -> str:
-    if not body:
-        return body
-
-    def strip_tag_block(match: re.Match) -> str:
-        block = match.group(0)
-        text = re.sub(r"<[^>]+>", " ", block)
-        return "" if LOCAL_VISIT_CLAIM_RE.search(text) else block
-
-    result = body
-    for tag in ("p", "div", "li"):
-        result = re.sub(
-            rf"<{tag}\b[^>]*>.*?</{tag}>",
-            strip_tag_block,
-            result,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-
-    lines = result.splitlines()
-    if len(lines) > 1:
-        result = "\n".join(
-            line for line in lines if not LOCAL_VISIT_CLAIM_RE.search(line)
-        )
-
-    if LOCAL_VISIT_CLAIM_RE.search(result):
-        sentence_re = re.compile(
-            rf"[^.!?\n]*(?:{LOCAL_VISIT_CLAIM_RE.pattern})[^.!?\n]*(?:[.!?]|$)",
-            re.IGNORECASE,
-        )
-        result = sentence_re.sub("", result).strip()
-
-    return result
+def _render(text: str, ctx: dict[str, str]) -> str:
+    return PLACEHOLDER.sub(lambda match: ctx.get(match[1], match[0]), text)
 
 
 def local_visit_claim_problem(lead: dict, body: str) -> str:
-    if _allows_local_visit_claim(lead):
-        return ""
-    text = re.sub(r"<[^>]+>", " ", body or "")
-    if LOCAL_VISIT_CLAIM_RE.search(text):
-        distance = _distance_from_home_miles(lead)
-        distance_note = f"{distance:.0f}mi" if distance is not None else "unknown_distance"
-        return f"non_local_visit_claim_remaining:{distance_note}"
+    if not is_local(lead.get("zip")) and LOCAL_VISIT_CLAIM_RE.search(re.sub(r"<[^>]+>", " ", body)):
+        return "non_local_visit_claim_remaining:zip"
     return ""
 
 
-def _local_visit_context(lead: dict) -> dict:
-    distance = _distance_from_home_miles(lead)
-    allowed = distance is not None and distance <= config.LOCAL_VISIT_MAX_MILES
-    return {
-        "local_visit_line": (
-            "I'm also in the LA area, so I can come by in person if that is useful."
-            if allowed
-            else ""
-        ),
-        "local_visit_allowed": "true" if allowed else "false",
-        "distance_from_home_miles": f"{distance:.0f}" if distance is not None else "",
+LOCAL_BASE = "based here in LA"
+REMOTE_BASE = "based in Los Angeles"
+LOCAL_OFFER = "And since I'm in LA too, I'm happy to stop by for 15 minutes if that's easier than email."
+REMOTE_OFFER = "And if it's easier than email, I'm happy to do a quick 15-minute video call."
+
+
+def _render_key(lead: dict, key: str, *, follow_up: bool = False) -> RenderedEmail | None:
+    templates = _load_templates()
+    tpl = templates.get(key)
+    lead_id = str(lead.get("id") or "").strip()
+    if not tpl:
+        logger.warning("Skipping lead %r: missing template %s", lead_id, key)
+        return None
+    school = clean_school_name(
+        str(lead.get("name") or "").strip(), city=lead.get("city") or "", state=lead.get("state") or ""
+    )
+    for field, value in (("lead_id", lead_id), ("school_name", school),
+                         ("subject", tpl["subject"]), ("body", tpl["body"])):
+        if not value.strip():
+            logger.warning("Skipping lead %r (%s): missing %s", lead_id, key, field)
+            return None
+
+    local = is_local(lead.get("zip"))
+    ctx = {
+        "school_name": school,
+        "owner_first_name": _greeting_name(lead.get("owner_name") or "") or f"{school} team",
+        "lead_id": lead_id,
+        "based_in": LOCAL_BASE if local else REMOTE_BASE,
+        "meet_offer": LOCAL_OFFER if local else REMOTE_OFFER,
+        "category": str(lead.get("category") or "school").replace("_", " "),
+        "brand_name": config.BRAND_NAME,
+        "product_domain": config.PRODUCT_DOMAIN,
+        "product_url": config.PRODUCT_URL,
+        "demo_url": config.DEMO_URL,
     }
+    body_ctx = {k: html.escape(v, quote=False) for k, v in ctx.items()}
+    # The ID is inserted into a URL query parameter inside an HTML attribute.
+    body_ctx["lead_id"] = quote(lead_id, safe="")
+    if tpl["observation"].strip():
+        body_ctx["specific_observation"] = _render(tpl["observation"], body_ctx)
+        ctx["specific_observation"] = _render(tpl["observation"], ctx)
+    if follow_up:
+        addendum = templates.get(website_mocks.MOCK_TEMPLATE_ID, {}).get("body", "")
+        body_ctx["website_mock_addendum"] = website_mocks.render_followup_addendum(lead, addendum)
+    subject = _render(tpl["subject"], ctx)
+    body = _render(tpl["body"], body_ctx)
+    combined = subject + "\n" + body
+    if "{{" in combined or "}}" in combined:
+        logger.warning("Skipping lead %r (%s): unresolved field(s) %s", lead_id, key,
+                       ", ".join(PLACEHOLDER.findall(combined)) or "malformed placeholder")
+        return None
+    return RenderedEmail(subject, body, key)
 
 
 def render_email(lead: dict) -> RenderedEmail | None:
-    """
-    Render the email for a single lead dict.
-    Returns None if no template matches or the lead is missing required fields.
-    """
-    enrollment_method = lead.get("enrollment_method", "")
-    template_id = ENROLLMENT_METHOD_TO_TEMPLATE.get(enrollment_method)
-    if not template_id:
-        logger.warning("No template for enrollment_method=%r", enrollment_method)
+    method = initial_method(lead.get("enrollment_method"))
+    if not method:
+        logger.warning("Skipping lead %r: unknown enrollment_method %r", lead.get("id"), lead.get("enrollment_method"))
         return None
+    return _render_key(lead, f"{segment_for(lead.get('category'))}__{method}")
 
-    templates = _load_templates()
-    tpl = templates.get(template_id)
-    if not tpl:
-        logger.error("Template %r not found in Templates tab", template_id)
+
+def render_follow_up(lead: dict) -> RenderedEmail | None:
+    segment = saved_segment(lead.get("template_key"))
+    if not segment:
+        logger.warning("Skipping follow-up for lead %r: missing or invalid original template_key %r",
+                       lead.get("id"), lead.get("template_key"))
         return None
-
-    owner_name = str(lead.get("owner_name", "")).strip()
-    school_name = clean_school_name(
-        str(lead.get("name", "")).strip(),
-        city=str(lead.get("city", "")).strip(),
-        state=str(lead.get("state", "")).strip(),
-    )
-    category = str(lead.get("category", "")).strip() or "school"
-    lead_id = str(lead.get("id", "")).strip()
-
-    # Greeting name (handles honorifics + junk-name detection)
-    greeting = _greeting_name(owner_name) or "there"
-    category_display = category.replace("_", " ")
-
-    bucket = _bucket_for(category)
-    feature_bullets = FEATURE_BULLETS[bucket]
-
-    observation_ctx = {"school_name": school_name}
-    observation = _render(tpl["observation"], observation_ctx)
-
-    body_ctx = {
-        "owner_first_name": greeting,
-        "school_name": school_name,
-        "category": category_display,
-        "specific_observation": observation,
-        "lead_id": lead_id,
-        "feature_bullets": feature_bullets,
-        "brand_name": config.BRAND_NAME,
-        "product_domain": config.PRODUCT_DOMAIN,
-        "product_url": config.PRODUCT_URL,
-        "demo_url": config.DEMO_URL,
-    }
-    body_ctx.update(_local_visit_context(lead))
-    body = _render(tpl["body"], body_ctx)
-    if not _allows_local_visit_claim(lead):
-        body = _strip_local_visit_claims(body)
-    subject = _render(tpl["subject"], body_ctx)
-
-    return RenderedEmail(
-        subject=subject,
-        html_body=body,
-        template_id=template_id,
-    )
-
-
-def render_follow_up(lead: dict, greeting_override: str | None = None) -> RenderedEmail | None:
-    """Render the follow-up template for a lead."""
-    templates = _load_templates()
-    tpl = templates.get("follow_up")
-    if not tpl:
-        logger.error("follow_up template not found")
-        return None
-
-    owner_name = str(lead.get("owner_name", "")).strip()
-    school_name = clean_school_name(
-        str(lead.get("name", "")).strip(),
-        city=str(lead.get("city", "")).strip(),
-        state=str(lead.get("state", "")).strip(),
-    )
-    greeting = _greeting_name(owner_name) or "there"
-    lead_id = str(lead.get("id", "")).strip()
-
-    ctx = {
-        "owner_first_name": greeting,
-        "school_name": school_name,
-        "lead_id": lead_id,
-        "brand_name": config.BRAND_NAME,
-        "product_domain": config.PRODUCT_DOMAIN,
-        "product_url": config.PRODUCT_URL,
-        "demo_url": config.DEMO_URL,
-        "website_mock_addendum": "",
-    }
-    ctx.update(_local_visit_context(lead))
-
-    addendum_template = (templates.get(website_mocks.MOCK_TEMPLATE_ID) or {}).get("body", "")
-    mock_addendum = website_mocks.render_followup_addendum(lead, addendum_template)
-    ctx["website_mock_addendum"] = mock_addendum
-
-    body = _render(tpl["body"], ctx)
-
-    if mock_addendum and "{{website_mock_addendum}}" not in tpl["body"]:
-        body = body.rstrip() + "\n\n" + mock_addendum
-
-    if not _allows_local_visit_claim(lead):
-        body = _strip_local_visit_claims(body)
-
-    if greeting_override:
-        body = re.sub(
-            r"^.*?(?=<br\s*/?>\s*<br\s*/?>|\n\n)",
-            greeting_override,
-            body,
-            count=1,
-            flags=re.DOTALL,
-        )
-
-    return RenderedEmail(
-        subject=_render(tpl["subject"], ctx),
-        html_body=body,
-        template_id="follow_up",
-    )
+    return _render_key(lead, f"{segment}__follow_up", follow_up=True)

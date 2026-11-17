@@ -317,6 +317,7 @@ def test_followup_dry_run_skips_missing_gmail_original_without_rendering(monkeyp
         "owner_name",
         "last_action",
         "notes",
+        "template_key",
     ]
     row = [
         "sent",
@@ -329,6 +330,7 @@ def test_followup_dry_run_skips_missing_gmail_original_without_rendering(monkeyp
         "Jane Owner",
         "",
         "",
+        "preschool__email",
     ]
 
     class FakeWorksheet:
@@ -363,6 +365,7 @@ def test_followup_real_run_marks_missing_gmail_original_as_skipped(monkeypatch):
         "owner_name",
         "last_action",
         "notes",
+        "template_key",
     ]
     row = [
         "sent",
@@ -375,6 +378,7 @@ def test_followup_real_run_marks_missing_gmail_original_as_skipped(monkeypatch):
         "Jane Owner",
         "",
         "",
+        "preschool__email",
     ]
     updates = []
     summaries = []
@@ -439,18 +443,7 @@ def test_phase5_quality_gate_blocks_prefiltered_bad_ready_lead():
     assert result.reason == "prefilter:known_chain:ec los angeles"
 
 
-def test_phase5_local_visit_safety_blocks_far_surviving_claim(monkeypatch):
-    monkeypatch.setattr(run_phase_5.drafter.config, "HOME_ZIP", "90045")
-    monkeypatch.setattr(run_phase_5.drafter.config, "LOCAL_VISIT_MAX_MILES", 40)
-    monkeypatch.setattr(
-        run_phase_5.drafter.regions,
-        "_lookup_zip",
-        lambda zip_code: {
-            "90045": {"lat": 33.9516, "lng": -118.3980},
-            "93301": {"lat": 35.3733, "lng": -119.0187},
-        }.get(str(zip_code).zfill(5)),
-    )
-
+def test_phase5_local_visit_safety_blocks_far_surviving_claim():
     rendered = run_phase_5.drafter.RenderedEmail(
         subject="Test",
         html_body="<p>I can come and visit your school if helpful.</p>",

@@ -17,7 +17,7 @@ Manual add:
 
   Email is what actually gates "ready to send" — Phase 5 (drafting) hard-requires
   best_email to render anything; owner_name is optional everywhere and just
-  improves the greeting (falls back to "there" if left blank — see drafter.py).
+  improves the greeting (falls back to the school team if left blank — see drafter.py).
 """
 
 from __future__ import annotations
@@ -400,7 +400,7 @@ def leads_add_submit(
 
     if best_email and not enrollment_method:
         # An email with no enrollment method can't be drafted — Phase 5
-        # picks its email template solely off enrollment_method (see
+        # picks its email template using category and enrollment_method (see
         # drafter.ENROLLMENT_METHOD_TO_TEMPLATE), so this combination has
         # no template to render against.
         return RedirectResponse(

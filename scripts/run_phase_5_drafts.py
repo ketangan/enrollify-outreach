@@ -120,7 +120,7 @@ def _collect_ready_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
     """Return list of dicts for rows with status=ready_to_send, oldest discovered first."""
     ready = []
     for i, row in enumerate(all_rows[1:], start=2):
-        if len(row) <= max(col.values()):
+        if len(row) <= col["status"]:
             continue
         if row[col["status"]] != "ready_to_send":
             continue
@@ -409,6 +409,7 @@ def main():
 
         # Invalid enrollment_method check
         if em not in VALID_ENROLLMENT_METHODS:
+            logger.warning("Skipping lead %r: unknown enrollment_method %r", lead.get("id"), em)
             rerouted.append({
                 "school": _display_school_name(lead),
                 "enrollment_method": em or "(empty)",
@@ -626,6 +627,7 @@ def main():
             subject=rendered.subject,
             html_body=rendered.html_body,
         )
+        gmail_client.stamp_outreach_draft(msg, lead, rendered.template_id)
         success, err = gmail_client.upload_draft(msg)
 
         if not success:

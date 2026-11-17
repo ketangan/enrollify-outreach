@@ -27,7 +27,11 @@ from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
 
-from src import config
+from urllib.parse import parse_qs, urlsplit
+
+from bs4 import BeautifulSoup
+
+from src import config, drafter
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +137,9 @@ class SentMessage:
     thread_id: str = ""
     in_reply_to: str = ""
     references: list[str] | None = None
+    template_key: str = ""
+    lead_id: str = ""
+    is_local: bool | None = None
 
 
 @dataclass
@@ -522,6 +529,58 @@ def fetch_drafts(since_days: int = 90) -> list[DraftMessage]:
     return drafts
 
 
+def stamp_outreach_draft(msg: EmailMessage, lead: dict, template_key: str) -> None:
+    msg["X-Pontora-Template"] = template_key
+    msg["X-Pontora-Lead"] = str(lead["id"]).strip()
+    msg["X-Pontora-Local"] = "yes" if drafter.is_local(lead.get("zip")) else "no"
+
+
+def _sent_attribution(msg: email.message.Message) -> dict:
+    key = (msg.get("X-Pontora-Template") or "").strip()
+    lead_id = (msg.get("X-Pontora-Lead") or "").strip()
+    local = (msg.get("X-Pontora-Local") or "").strip()
+    segment, _, method = key.partition("__")
+    if (segment in drafter.CATEGORY_SEGMENTS.values() and method in (*drafter.METHODS, "follow_up")
+            and lead_id and local in ("yes", "no")):
+        return dict(template_key=key, lead_id=lead_id, is_local=local == "yes")
+
+    # Gmail's editor can rebuild a draft and drop custom headers. Its campaign
+    # links and the rendered location wording identify the same send.
+    for part in msg.walk():
+        if part.get_content_type() != "text/html" or part.get_content_disposition() == "attachment":
+            continue
+        raw = part.get_payload(decode=True) or b""
+        if b"utm_campaign=" not in raw:
+            continue
+        soup = BeautifulSoup(raw.decode(part.get_content_charset() or "utf-8", errors="replace"), "html.parser")
+        for quoted in soup.select("blockquote, .gmail_quote"):
+            quoted.decompose()
+        text = " ".join(soup.stripped_strings)
+        for anchor in soup.select("a[href]"):
+            href = anchor["href"]
+            if not href.startswith("https://mypontora.com/"):
+                continue
+            params = parse_qs(urlsplit(href).query)
+            campaign = params.get("utm_campaign", [""])[0]
+            lead_id = params.get("utm_content", [""])[0]
+            if not lead_id or params.get("utm_source") != ["outreach"]:
+                continue
+            if campaign.startswith("followup_"):
+                segment = campaign.removeprefix("followup_")
+                method = "follow_up"
+                local_phrase, remote_phrase = drafter.LOCAL_OFFER, drafter.REMOTE_OFFER
+            elif campaign.startswith("first_"):
+                segment, _, method = campaign.removeprefix("first_").partition("_")
+                if method not in drafter.METHODS:
+                    continue
+                local_phrase, remote_phrase = drafter.LOCAL_BASE, drafter.REMOTE_BASE
+            else:
+                continue
+            if segment in drafter.CATEGORY_SEGMENTS.values() and (local_phrase in text) != (remote_phrase in text):
+                return dict(template_key=f"{segment}__{method}", lead_id=lead_id, is_local=local_phrase in text)
+    return {}
+
+
 def fetch_sent_messages(since_days: int = 30) -> list[SentMessage]:
     """Pull recent Gmail Sent items."""
     service = get_service()
@@ -554,6 +613,7 @@ def fetch_sent_messages(since_days: int = 30) -> list[SentMessage]:
                 thread_id=str(resource.get("threadId", "")),
                 in_reply_to=(msg.get("In-Reply-To") or "").strip(),
                 references=re.findall(r"<[^>]+>", references_raw),
+                **_sent_attribution(msg),
             )
         )
     return results

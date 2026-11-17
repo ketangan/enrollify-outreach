@@ -240,9 +240,9 @@ def _rows_to_leads(all_rows: list[list[str]], col: dict[str, int]) -> list[dict]
     """Convert raw worksheet values to lead dicts with their Sheet row number."""
     leads = []
     for i, row in enumerate(all_rows[1:], start=2):
-        if len(row) <= max(col.values()):
+        if not any(row):
             continue
-        lead = {h: row[idx] for h, idx in col.items() if idx < len(row)}
+        lead = {h: row[idx] if idx < len(row) else "" for h, idx in col.items()}
         lead["_row_idx"] = i
         leads.append(lead)
     return leads
@@ -326,6 +326,35 @@ def _send_bounce_alert(school_name: str, to_email: str, reason: str) -> None:
         to_email,
         reason[:300],
     )
+
+
+def _record_template_send(sm, lead, col, worksheet, dry_run):
+    """Record the template carried by the message. Replaying Sent is idempotent."""
+    key = sm.template_key
+    follow_up = key.endswith("__follow_up")
+    field = "follow_up_template_key" if follow_up else "template_key"
+    if lead.get(field):
+        return False
+    if not follow_up and lead.get("sent_message_id") not in ("", None, sm.message_id):
+        logger.warning("Skipping conflicting original message for lead %s", sm.lead_id)
+        return False
+    values = {field: key, ("follow_up_is_local" if follow_up else "is_local"): sm.is_local}
+    if follow_up:
+        values["follow_up_sent_at"] = sm.sent_at.isoformat()
+        if lead.get("status") == "sent":
+            values["last_action"] = "phase6_followup_sent_detected"
+    else:
+        values.update(sent_at=sm.sent_at.isoformat(), sent_message_id=sm.message_id)
+        if lead.get("status") in {"awaiting_approval", "sent", "ready_to_send"}:
+            values.update(status="sent", last_action="phase6_sent_detected",
+                          follow_up_at=(sm.sent_at + timedelta(days=FOLLOW_UP_DAYS)).date().isoformat())
+    if not dry_run:
+        worksheet.batch_update([
+            {"range": rowcol_to_a1(lead["_row_idx"], col[name] + 1), "values": [[value]]}
+            for name, value in values.items()
+        ], value_input_option="RAW")
+    lead.update(values)
+    return True
 
 
 def _build_followup_message_map(
@@ -421,6 +450,22 @@ def main():
     sent_updates = 0
     follow_up_updates = 0
 
+    # Attribute identifiable campaign messages first, before legacy recipient-only matching.
+    # Sent can be returned newest-first and several schools can use the same address.
+    by_id = {}
+    for lead in leads_list:
+        by_id.setdefault(lead.get("id", ""), []).append(lead)
+    for sm in sorted((m for m in sent_msgs if m.template_key), key=lambda m: m.sent_at):
+        matches = by_id.get(sm.lead_id, [])
+        if len(matches) != 1:
+            logger.warning("Skipping ambiguous or missing lead %s for sent template %s", sm.lead_id, sm.template_key)
+            continue
+        if _record_template_send(sm, matches[0], col, leads_ws, args.dry_run):
+            if sm.template_key.endswith("__follow_up"):
+                follow_up_updates += 1
+            else:
+                sent_updates += 1
+
     original_message_ids = {
         lead.get("sent_message_id", "").strip()
         for lead in leads_list
@@ -430,6 +475,8 @@ def main():
     follow_up_message_map = _build_followup_message_map(sent_msgs, original_message_ids)
 
     for sm in sent_msgs:
+        if sm.template_key:
+            continue
         candidates = by_email.get(sm.to_email.lower(), [])
         if not candidates:
             continue
@@ -456,6 +503,8 @@ def main():
 
         target = None
         for lead in candidates:
+            if lead.get("last_action", "").startswith("phase5_drafted:") and "__" in lead["last_action"]:
+                continue  # A different, untagged message cannot confirm this v5 draft.
             current_status = lead.get("status", "")
             if current_status == "awaiting_approval":
                 target = lead

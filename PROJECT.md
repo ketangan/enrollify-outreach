@@ -172,7 +172,7 @@ If the OAuth app is in testing mode, Gmail refresh tokens may expire. If that be
 
 ## Email Templates
 
-Templates live in the Google Sheet `Templates` tab. They should use Pontora wording and can use these placeholders:
+The Google Sheet `Templates` tab stores the live copy. Initial drafts use the category segment and normalized enrollment method. Follow-ups require the original sent `template_key`. They should use Pontora wording and can use these placeholders:
 
 ```text
 {{owner_first_name}}
@@ -180,7 +180,8 @@ Templates live in the Google Sheet `Templates` tab. They should use Pontora word
 {{category}}
 {{specific_observation}}
 {{lead_id}}
-{{feature_bullets}}
+{{based_in}}
+{{meet_offer}}
 {{brand_name}}
 {{product_domain}}
 {{product_url}}

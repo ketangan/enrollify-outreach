@@ -8,7 +8,7 @@ A lead is eligible for follow-up if:
   - sent_message_id is present
   - has not already had a follow-up sent (follow_up_sent_at empty)
 
-Uses the follow_up template from the Templates tab.
+Uses the saved first-email segment to select the follow-up template from the Templates tab.
 Drafts land in Gmail as proper replies (threaded via In-Reply-To).
 After drafting, sends an internal summary email to Ketan.
 
@@ -184,8 +184,9 @@ def _followup_already_handled(last_action: str) -> bool:
 def _collect_due_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
     due = []
     for i, row in enumerate(all_rows[1:], start=2):
-        if len(row) <= max(col.values()):
+        if not row:
             continue
+        row = row + [""] * (len(col) - len(row))
         if row[col["status"]] != "sent":
             continue
         if not row[col["sent_message_id"]].strip():
@@ -198,6 +199,9 @@ def _collect_due_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
             continue
         lead = {h: row[idx] for h, idx in col.items() if idx < len(row)}
         lead["_row_idx"] = i
+        if not drafter.saved_segment(lead.get("template_key")):
+            logger.warning("Skipping follow-up for lead %r: missing or invalid original template_key", lead.get("id"))
+            continue
         due.append(lead)
     # Oldest sent_at first (most overdue leads get prioritized)
     due.sort(key=lambda l: l.get("sent_at", ""))
@@ -233,7 +237,7 @@ def main():
 
     required = [
         "status", "best_email", "name", "sent_at", "sent_message_id",
-        "follow_up_at", "follow_up_sent_at", "owner_name", "last_action", "notes",
+        "follow_up_at", "follow_up_sent_at", "owner_name", "last_action", "notes", "template_key",
     ]
     missing = [c for c in required if c not in col]
     if missing:
@@ -271,7 +275,6 @@ def main():
         logger.info("[%d/%d] %s", idx, len(batch), lead.get("name", "")[:60])
 
         sent_message_id = lead.get("sent_message_id", "")
-        original_body = ""
         thread_id = gmail_client.find_sent_thread_id(sent_message_id)
         if not thread_id:
             logger.warning(
@@ -296,13 +299,8 @@ def main():
             })
             continue
 
-        if not args.dry_run:
-            # Try to extract the actual greeting from the original sent email.
-            original_body = gmail_client.fetch_sent_email_body(sent_message_id)
-        greeting = gmail_client.extract_first_line(original_body) if original_body else ""
-        
-        rendered = drafter.render_follow_up(lead, greeting_override=greeting if greeting else None)
-        
+        rendered = drafter.render_follow_up(lead)
+
         if rendered is None:
             failures.append({"school": _display_school_name(lead), "error": "render_failed"})
             continue
@@ -357,6 +355,7 @@ def main():
             in_reply_to_message_id=lead.get("sent_message_id", ""),
         )
 
+        gmail_client.stamp_outreach_draft(msg, lead, rendered.template_id)
         ok, err = gmail_client.upload_draft(msg, thread_id=thread_id)
         if not ok:
             logger.error("  draft upload failed: %s", err)

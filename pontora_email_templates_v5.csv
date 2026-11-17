@@ -1,0 +1,361 @@
+template_key,segment,enrollment_method,subject,body,specific_observation
+preschool__contact_form,preschool,contact_form,Enrollment at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious what happens after they hit submit. Does it go straight into a system you like, or does someone on your team follow up by hand to schedule a tour and collect paperwork?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from tour requests and applications to enrollment and family records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample enrollment form for {{school_name}} using your actual programs. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_preschool_contact_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_preschool_contact_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families start by filling out a contact form to ask about tours and enrollment.
+preschool__email,preschool,email,Enrollment at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious how that's holding up. Is someone on your team going back and forth to set up tours, send forms, and keep track of which families are still missing something?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from tour requests and applications to enrollment and family records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample enrollment form for {{school_name}} using your actual programs. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_preschool_email&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_preschool_email&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families start enrollment by emailing the school directly.
+preschool__pdf_form,preschool,pdf_form,Enrollment at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious how that works on your end. Do families usually send it back complete, or does someone end up chasing missing pages and typing everything into a spreadsheet?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from tour requests and applications to enrollment and family records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample enrollment form for {{school_name}} using your actual programs. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_preschool_pdf_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_preschool_pdf_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>","I was on {{school_name}}'s website and noticed that enrollment starts with a PDF packet families download, fill out, and send back."
+preschool__third_party_form,preschool,third_party_form,Enrollment at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious whether that connects to anything on your end, or whether responses land in a spreadsheet someone has to sort through to schedule tours and follow up.<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from tour requests and applications to enrollment and family records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample enrollment form for {{school_name}} using your actual programs. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_preschool_third_party_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_preschool_third_party_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families start enrollment through an online form.
+preschool__follow_up,preschool,follow_up,Re: Enrollment at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+Following up on my note about {{school_name}}. Here's the short version:<br><br>
+
+<b>What it is:</b> one place for inquiries, tours, applications, enrollment and family records, set up for you.<br>
+<b>What it takes to try:</b> nothing up front. There's a 30-day free trial with no credit card, and we do the full setup.<br>
+<b>Easiest next step:</b> reply <b>""yes""</b> and I'll build a free sample enrollment form for {{school_name}} with your real programs.<br><br>
+
+Prefer to look first? Here's <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=followup_preschool&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations. {{meet_offer}}<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=followup_preschool&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+
+{{website_mock_addendum}}
+</div>",
+lessons__contact_form,lessons,contact_form,Trial classes at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious what happens next. Does someone reply by hand to find the right class, set up a trial, and collect payment?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class sign-ups, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample sign-up page for {{school_name}} using your actual classes. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_lessons_contact_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a studio's week on Pontora.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_lessons_contact_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families interested in classes start by filling out a contact form.
+lessons__email,lessons,email,Trial classes at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious how much back-and-forth that turns into: finding a class with space, setting up a trial, then chasing registration and payment.<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class sign-ups, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample sign-up page for {{school_name}} using your actual classes. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_lessons_email&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a studio's week on Pontora.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_lessons_email&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families interested in classes are asked to email you to get started.
+lessons__pdf_form,lessons,pdf_form,Trial classes at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious how that works on your end. Does someone type each one into a spreadsheet and then follow up separately on class placement and payment?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class sign-ups, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample sign-up page for {{school_name}} using your actual classes. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_lessons_pdf_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a studio's week on Pontora.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_lessons_pdf_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>","I was on {{school_name}}'s website and noticed that registration starts with a PDF form families print, fill out, and send back."
+lessons__third_party_form,lessons,third_party_form,Trial classes at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious whether that's connected to your class schedule and payments, or whether someone has to match each response to a class and follow up on payment by hand.<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class sign-ups, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample sign-up page for {{school_name}} using your actual classes. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_lessons_third_party_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a studio's week on Pontora.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_lessons_third_party_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families register for classes through an online form.
+lessons__follow_up,lessons,follow_up,Re: Trial classes at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+Following up on my note about {{school_name}}. Here's the short version:<br><br>
+
+<b>What it is:</b> one place for inquiries, trial classes, bookings, payments and student records, set up for you.<br>
+<b>What it takes to try:</b> nothing up front. There's a 30-day free trial with no credit card, and we do the full setup.<br>
+<b>Easiest next step:</b> reply <b>""yes""</b> and I'll build a free sample sign-up page for {{school_name}} with your real classes.<br><br>
+
+Prefer to look first? Here's <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=followup_lessons&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">a 2-minute video</a> of a studio's week on Pontora. {{meet_offer}}<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=followup_lessons&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+
+{{website_mock_addendum}}
+</div>",
+sports__contact_form,sports,contact_form,Sign-ups at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious what happens after they hit submit. Does someone follow up by hand to find an open spot, confirm the trial, and collect payment?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class schedules, capacity, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample trial-class booking page for {{school_name}} using your actual schedule. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_sports_contact_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to bookings and payments.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_sports_contact_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families interested in a trial class fill out a contact form to get started.
+sports__email,sports,email,Sign-ups at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious how much back-and-forth that creates, especially when classes fill up and someone has to track who's coming and who's paid.<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class schedules, capacity, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample trial-class booking page for {{school_name}} using your actual schedule. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_sports_email&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to bookings and payments.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_sports_email&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families are asked to email you to set up a trial or sign up.
+sports__pdf_form,sports,pdf_form,Sign-ups at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious how that works on your end. Does someone type each one in and then separately keep track of class spots and payments?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class schedules, capacity, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample trial-class booking page for {{school_name}} using your actual schedule. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_sports_pdf_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to bookings and payments.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_sports_pdf_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that sign-up starts with a PDF registration form families print and send back.
+sports__third_party_form,sports,third_party_form,Sign-ups at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious whether that's connected to your class schedule and payments, or whether someone has to check capacity and chase payments separately.<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class schedules, capacity, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample trial-class booking page for {{school_name}} using your actual schedule. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_sports_third_party_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to bookings and payments.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_sports_third_party_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families sign up through an online form.
+sports__follow_up,sports,follow_up,Re: Sign-ups at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+Following up on my note about {{school_name}}. Here's the short version:<br><br>
+
+<b>What it is:</b> one place for inquiries, trial classes, class capacity, payments and student records, set up for you.<br>
+<b>What it takes to try:</b> nothing up front. There's a 30-day free trial with no credit card, and we do the full setup.<br>
+<b>Easiest next step:</b> reply <b>""yes""</b> and I'll build a free sample trial-class booking page for {{school_name}} with your real schedule.<br><br>
+
+Prefer to look first? Here's <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=followup_sports&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">a 2-minute video</a> of a week on Pontora, from first inquiry to bookings and payments. {{meet_offer}}<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=followup_sports&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+
+{{website_mock_addendum}}
+</div>",
+general__contact_form,general,contact_form,Question about {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious what happens after they hit submit. Does it go straight into a system you like, or does someone on your team follow up by hand to get them signed up?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry to bookings or enrollment, payments and day-to-day records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample sign-up form for {{school_name}} using your actual programs. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_general_contact_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_general_contact_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families get started by filling out a contact form.
+general__email,general,email,Question about {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious how that's holding up. Is someone on your team going back and forth with each family and keeping track of who's still missing something?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry to bookings or enrollment, payments and day-to-day records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample sign-up form for {{school_name}} using your actual programs. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_general_email&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_general_email&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families are asked to email you to get started.
+general__pdf_form,general,pdf_form,Question about {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious how that works on your end. Do they usually come back complete, or does someone end up chasing missing details and typing everything into a spreadsheet?<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry to bookings or enrollment, payments and day-to-day records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample sign-up form for {{school_name}} using your actual programs. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_general_pdf_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_general_pdf_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>","I was on {{school_name}}'s website and noticed that sign-up starts with a PDF form families download, fill out, and send back."
+general__third_party_form,general,third_party_form,Question about {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+{{specific_observation}} Curious whether that connects to anything on your end, or whether responses land in a spreadsheet someone has to sort through and follow up on.<br><br>
+
+I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry to bookings or enrollment, payments and day-to-day records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
+
+Two easy ways to see if it's a fit:<br><br>
+
+<b>1.</b> Reply <b>""yes""</b> and I'll build a free sample sign-up form for {{school_name}} using your actual programs. No call needed.<br><br>
+
+<b>2.</b> Prefer to look first? <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=first_general_third_party_form&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">Watch a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations.<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=first_general_third_party_form&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+</div>",I was on {{school_name}}'s website and noticed that families sign up through an online form.
+general__follow_up,general,follow_up,Re: Question about {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
+Hi {{owner_first_name}},<br><br>
+
+Following up on my note about {{school_name}}. Here's the short version:<br><br>
+
+<b>What it is:</b> one place for inquiries, bookings or enrollment, payments and family records, set up for you.<br>
+<b>What it takes to try:</b> nothing up front. There's a 30-day free trial with no credit card, and we do the full setup.<br>
+<b>Easiest next step:</b> reply <b>""yes""</b> and I'll build a free sample sign-up form for {{school_name}} with your real programs.<br><br>
+
+Prefer to look first? Here's <a href=""https://mypontora.com/demo?utm_source=outreach&utm_medium=email&utm_campaign=followup_general&utm_content={{lead_id}}"" style=""color:#0b55c4;font-weight:bold;"">a 2-minute video</a> of a week on Pontora, from first inquiry to everyday operations. {{meet_offer}}<br><br>
+
+Best,<br><br>
+<b>Ketan Gandhi</b><br>
+<span style=""color:#576176;"">Co-founder, Pontora · Los Angeles</span><br>
+<a href=""https://mypontora.com/?utm_source=outreach&utm_medium=email&utm_campaign=followup_general&utm_content={{lead_id}}"" style=""color:#0b55c4;text-decoration:none;"">mypontora.com</a>
+
+{{website_mock_addendum}}
+</div>",
