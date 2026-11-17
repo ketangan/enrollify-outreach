@@ -92,7 +92,7 @@ Best,<br><br>
 lessons__contact_form,lessons,contact_form,Trial classes at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
 Hi {{owner_first_name}},<br><br>
 
-{{specific_observation}} Curious what happens next. Does someone reply by hand to find the right class, set up a trial, and collect payment?<br><br>
+{{specific_observation}} Once the form comes in, how do you help the family choose a class, book a trial, and pay?<br><br>
 
 I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class sign-ups, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
 
@@ -146,7 +146,7 @@ Best,<br><br>
 lessons__third_party_form,lessons,third_party_form,Trial classes at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
 Hi {{owner_first_name}},<br><br>
 
-{{specific_observation}} Curious whether that's connected to your class schedule and payments, or whether someone has to match each response to a class and follow up on payment by hand.<br><br>
+{{specific_observation}} Can you see from the form which class a family wants and whether they've paid, or do you check those details somewhere else?<br><br>
 
 I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class sign-ups, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
 
@@ -182,7 +182,7 @@ Best,<br><br>
 sports__contact_form,sports,contact_form,Sign-ups at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
 Hi {{owner_first_name}},<br><br>
 
-{{specific_observation}} Curious what happens after they hit submit. Does someone follow up by hand to find an open spot, confirm the trial, and collect payment?<br><br>
+{{specific_observation}} After a family fills out the form, how do they find an open spot, book a trial, and pay?<br><br>
 
 I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry and trial class to class schedules, capacity, payments and student records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
 
