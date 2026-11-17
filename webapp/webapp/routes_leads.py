@@ -17,7 +17,7 @@ Manual add:
 
   Email is what actually gates "ready to send" — Phase 5 (drafting) hard-requires
   best_email to render anything; owner_name is optional everywhere and just
-  improves the greeting (falls back to the school team if left blank — see drafter.py).
+  improves the greeting (falls back to "Hi there," if left blank — see drafter.py).
 """
 
 from __future__ import annotations

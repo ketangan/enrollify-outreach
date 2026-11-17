@@ -174,7 +174,7 @@ def test_template_verbatim_and_sent_attribution(row, local, templates):
     else:
         rendered = drafter.render_email(lead)
     expected = row["body"].replace("{{specific_observation}}", row["specific_observation"])
-    for field, value in dict(school_name=school, lead_id="example", owner_first_name=school + " team",
+    for field, value in dict(school_name=school, lead_id="example", owner_first_name="there",
                              website_mock_addendum="", based_in=drafter.LOCAL_BASE if local else drafter.REMOTE_BASE,
                              meet_offer=drafter.LOCAL_OFFER if local else drafter.REMOTE_OFFER).items():
         expected = expected.replace("{{" + field + "}}", value)

@@ -2,7 +2,7 @@ template_key,segment,enrollment_method,subject,body,specific_observation
 preschool__contact_form,preschool,contact_form,Enrollment at {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
 Hi {{owner_first_name}},<br><br>
 
-{{specific_observation}} Curious what happens after they hit submit. Does it go straight into a system you like, or does someone on your team follow up by hand to schedule a tour and collect paperwork?<br><br>
+{{specific_observation}} Once the form comes in, how do you schedule a tour and collect the paperwork?<br><br>
 
 I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from tour requests and applications to enrollment and family records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
 
@@ -272,7 +272,7 @@ Best,<br><br>
 general__contact_form,general,contact_form,Question about {{school_name}},"<div style=""font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f1830;"">
 Hi {{owner_first_name}},<br><br>
 
-{{specific_observation}} Curious what happens after they hit submit. Does it go straight into a system you like, or does someone on your team follow up by hand to get them signed up?<br><br>
+{{specific_observation}} Once the form comes in, how do you help the family finish signing up?<br><br>
 
 I'm Ketan, one of the co-founders of Pontora, {{based_in}}. We built Pontora because most software for this is made for large organizations: expensive, complicated, and a lot to manage. It covers everything from first inquiry to bookings or enrollment, payments and day-to-day records. It's affordable, we set it up for you, and it's shaped around how {{school_name}} already works. It's already running at schools in Southern California.<br><br>
 

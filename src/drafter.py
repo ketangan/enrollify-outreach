@@ -158,7 +158,7 @@ def is_junk_owner_name(owner_name: str) -> bool:
     of sending 'Hi Unnamed,' emails.
     """
     if not owner_name:
-        return False  # empty handled separately by school team fallback
+        return False  # empty handled separately by generic greeting
 
     name = owner_name.strip()
     if not name:
@@ -208,7 +208,7 @@ def greeting_quality_problem(owner_name: str, school_name: str = "") -> str:
     """
     Final pre-draft safety check for the value that would appear after "Hi".
 
-    Empty owner_name is allowed because the template uses the school team greeting.
+    Empty owner_name is allowed because the template uses “Hi there,”.
     Non-empty junk should be routed back to owner review instead of becoming an
     embarrassing Gmail draft.
 
@@ -370,7 +370,7 @@ def _render_key(lead: dict, key: str, *, follow_up: bool = False) -> RenderedEma
     local = is_local(lead.get("zip"))
     ctx = {
         "school_name": school,
-        "owner_first_name": _greeting_name(lead.get("owner_name") or "") or f"{school} team",
+        "owner_first_name": _greeting_name(lead.get("owner_name") or "") or "there",
         "lead_id": lead_id,
         "based_in": LOCAL_BASE if local else REMOTE_BASE,
         "meet_offer": LOCAL_OFFER if local else REMOTE_OFFER,
