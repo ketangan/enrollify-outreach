@@ -105,7 +105,7 @@ def test_candidate_updates_preserve_note_and_do_not_touch_core_status():
     assert "status" not in updates
 
 
-def test_suggested_updates_are_not_generation_candidates():
+def test_suggested_updates_queue_generation():
     updates = website_mocks.suggested_updates(
         "music",
         category="music",
@@ -114,10 +114,10 @@ def test_suggested_updates_are_not_generation_candidates():
         existing_notes="existing",
     )
 
-    assert updates["website_mock_candidate"] == "suggested"
+    assert updates["website_mock_candidate"] == "yes"
     assert updates["website_mock_type"] == "music"
-    assert updates["website_mock_status"] == "needs_review"
+    assert updates["website_mock_status"] == "not_started"
     assert updates["last_action"] == "website_mock_suggested"
-    assert website_mocks.is_mock_suggested(updates)
-    assert not website_mocks.is_mock_candidate(updates)
+    assert not website_mocks.is_mock_suggested(updates)
+    assert website_mocks.is_mock_candidate(updates)
     assert "hosted on wixsite.com" in updates["website_mock_notes"]

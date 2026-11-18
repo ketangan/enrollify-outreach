@@ -145,8 +145,8 @@ def test_classification_returns_existing_homepage_without_additional_fetches(mon
     monkeypatch.setattr(classifier, "local_classify", lambda *_: classifier.Classification("email_qualify", "local:email", False))
     result = classifier.classify_lead(page.url, None)
     updates = website_review.review_updates(lead(website=page.url), result.homepage)
-    assert updates["website_mock_candidate"] == "suggested"
-    assert updates["website_mock_status"] == "needs_review"
+    assert updates["website_mock_candidate"] == "yes"
+    assert updates["website_mock_status"] == "not_started"
     fetch.assert_called_once_with(page.url)
 
 
@@ -197,8 +197,8 @@ def test_phase3_saves_suggestion_without_changing_pipeline_or_manual_names(monke
         assert row["status"] == "ready_for_owner_lookup"
         assert row["last_action"] == "phase3_classified"
         if not review_failure:
-            assert row["website_mock_candidate"] == "suggested"
-            assert row["website_mock_status"] == "needs_review"
+            assert row["website_mock_candidate"] == "yes"
+            assert row["website_mock_status"] == "not_started"
 
 
 def test_daily_scanner_main_advances_on_next_run(monkeypatch):

@@ -4649,7 +4649,10 @@ def _render_mock_html(lead: dict, variant: website_mocks.MockVariant) -> str:
 def _candidate_rows(rows: list[dict], force: bool) -> list[dict]:
     candidates = []
     for row in rows:
-        if not website_mocks.is_mock_candidate(row):
+        # Include suggestions recorded before automatic generation was enabled.
+        if not (website_mocks.is_mock_candidate(row) or website_mocks.is_mock_suggested(row)):
+            continue
+        if _clean(row.get("website_mock_candidate")).lower() == "no" or _clean(row.get("do_not_contact_reason")):
             continue
         if _clean(row.get("status")) in {
             "do_not_contact",
@@ -4957,11 +4960,11 @@ def main() -> None:
                 category=_clean(lead.get("category")),
             ),
             "website_mock_versions": _clean(lead.get("website_mock_versions")) or "auto",
+            "website_mock_candidate": "yes",
             "website_mock_status": "generated",
             "website_mock_payload": json.dumps(payload, separators=(",", ":")),
             "website_mock_generated_at": now.isoformat(),
             "website_mock_notes": website_mocks.append_note(existing_notes, note),
-            "last_action": "website_mock_generated",
         }
 
     _write_index(output_dir, rendered_for_index)

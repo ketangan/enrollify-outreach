@@ -348,13 +348,13 @@ def followup_mock_hold(lead: dict) -> str:
             return ""
         return "Generated mock needs a published link for this school"
     if is_mock_suggested(lead):
-        return "Website mock awaiting approval or skip"
+        return "Website mock awaiting automatic publication"
     if is_mock_candidate(lead) or status:
-        return "Approved website mock awaiting publication"
+        return "Website mock awaiting automatic publication"
     if candidate == "no":
         return ""
     if _clean(lead.get("website_mock_scan_result")) == "suggested":
-        return "Website mock awaiting approval or skip"
+        return "Website mock awaiting automatic publication"
     site = _clean(lead.get("website"))
     if site and (site != _clean(lead.get("website_mock_scan_url")) or
                  lead.get("website_mock_scan_result") not in {"not_suggested", "blocked"}):
@@ -460,14 +460,14 @@ def suggested_updates(
     clean_confidence = _clean(confidence) or "medium"
     clean_reason = _clean(reason) or "website looks dated or hard to use"
     note = (
-        f"Suggested website mock on {now.date().isoformat()}; "
+        f"Queued website mock on {now.date().isoformat()}; "
         f"type={normalized}; confidence={clean_confidence}; reason={clean_reason}."
     )
     return {
-        "website_mock_candidate": "suggested",
+        "website_mock_candidate": "yes",
         "website_mock_type": normalized,
         "website_mock_versions": "auto",
-        "website_mock_status": "needs_review",
+        "website_mock_status": "not_started",
         "website_mock_notes": append_note(existing_notes, note),
         "last_action": "website_mock_suggested",
     }
