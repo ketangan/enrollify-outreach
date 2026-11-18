@@ -277,6 +277,13 @@ def main():
             break
         logger.info("[%d/%d] %s", idx, len(due), lead.get("name", "")[:60])
 
+        hold = website_mocks.followup_mock_hold(lead)
+        if hold:
+            logger.info("  holding follow-up: %s", hold)
+            skipped.append({"school": _display_school_name(lead), "email": lead.get("best_email", ""),
+                            "reason": hold})
+            continue
+
         sent_message_id = lead.get("sent_message_id", "")
         thread_id = gmail_client.find_sent_thread_id(sent_message_id)
         if not thread_id:
