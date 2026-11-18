@@ -1417,3 +1417,10 @@ def test_no_variant_repeats_a_section_kicker_on_the_same_page():
             assert len(kickers) == len(set(kickers)), (
                 f"{mock_type}/{variant.version_id} repeats a section-kicker: {kickers}"
             )
+
+
+def test_existing_mock_suggestions_enter_generation_automatically():
+    suggested = {"website_mock_candidate": "suggested", "website_mock_status": "needs_review"}
+    skipped = dict(suggested, website_mock_status="skip")
+    blocked = dict(suggested, do_not_contact_reason="opted out")
+    assert generate_website_mocks._candidate_rows([suggested, skipped, blocked], force=False) == [suggested]
