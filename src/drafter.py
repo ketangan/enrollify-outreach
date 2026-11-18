@@ -18,6 +18,8 @@ Junk-name detection:
 
 from __future__ import annotations
 
+from bs4 import BeautifulSoup
+
 import csv
 import html
 import logging
@@ -417,4 +419,14 @@ def render_follow_up(lead: dict) -> RenderedEmail | None:
 
 
 def render_segment_follow_up(lead: dict, segment: str) -> RenderedEmail | None:
-    return _render_key(lead, f"{segment}__follow_up", follow_up=True)
+    if website_mocks.followup_mock_hold(lead):
+        return None
+    rendered = _render_key(lead, f"{segment}__follow_up", follow_up=True)
+    mocks = website_mocks.generated_mock_links(lead)
+    if rendered and mocks:
+        anchors = BeautifulSoup(rendered.html_body, "html.parser").select("a[href]")
+        urls = {anchor["href"] for anchor in anchors}
+        if any(mock["url"] not in urls for mock in mocks):
+            logger.warning("Holding follow-up for %s: published mock link missing from email", lead.get("id"))
+            return None
+    return rendered

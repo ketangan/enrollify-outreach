@@ -331,6 +331,37 @@ def generated_mock_links(lead: dict) -> list[dict]:
     return parse_payload(lead.get("website_mock_payload"))
 
 
+def followup_mock_hold(lead: dict) -> str:
+    status = _clean(lead.get("website_mock_status")).lower()
+    candidate = _clean(lead.get("website_mock_candidate")).lower()
+    if status == "skip":
+        return ""
+    if status == "generated":
+        links = generated_mock_links(lead)
+        expected_path = "/mocks/" + _clean(lead.get("id")) + "/"
+        try:
+            urls = [urlsplit(item["url"]) for item in links]
+        except ValueError:
+            urls = []
+        if urls and all(url.scheme == "https" and url.hostname and url.path.startswith(expected_path)
+                        for url in urls):
+            return ""
+        return "Generated mock needs a published link for this school"
+    if is_mock_suggested(lead):
+        return "Website mock awaiting approval or skip"
+    if is_mock_candidate(lead) or status:
+        return "Approved website mock awaiting publication"
+    if candidate == "no":
+        return ""
+    if _clean(lead.get("website_mock_scan_result")) == "suggested":
+        return "Website mock awaiting approval or skip"
+    site = _clean(lead.get("website"))
+    if site and (site != _clean(lead.get("website_mock_scan_url")) or
+                 lead.get("website_mock_scan_result") not in {"not_suggested", "blocked"}):
+        return "Website mock assessment pending"
+    return ""
+
+
 def generated_mock_preview_links(lead: dict) -> list[dict]:
     preview_links = []
     for item in generated_mock_links(lead):

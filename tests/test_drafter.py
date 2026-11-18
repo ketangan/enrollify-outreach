@@ -243,3 +243,19 @@ def test_offline_methods_preserve_segment_for_followup_and_pass_location_check(m
     assert not drafter.local_visit_claim_problem(lead, initial.html_body)
     followup = drafter.render_follow_up(dict(lead, template_key=initial.template_id))
     assert followup.template_id == f"{segment}__follow_up"
+
+
+def test_followup_waits_for_mock_decision_and_inclusion(templates):
+    lead = dict(id="a", name="Example School", template_key="sports__contact_form")
+    for fields in (
+        {"website_mock_candidate": "suggested"},
+        {"website_mock_candidate": "yes", "website_mock_status": "not_started"},
+        {"website_mock_status": "generated", "website_mock_payload": "[]"},
+        {"website": "https://example.org", "website_mock_scan_result": "error"},
+    ):
+        assert drafter.render_follow_up(dict(lead, **fields)) is None
+    assert drafter.render_follow_up(dict(lead, website_mock_status="skip"))
+    lead.update(website_mock_status="generated",
+                website_mock_payload=[{"url": "https://mocks.mypontora.com/mocks/a/demo/"}])
+    templates["sports__follow_up"]["body"] = "An email with no mock link."
+    assert drafter.render_follow_up(lead) is None
