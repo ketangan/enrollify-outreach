@@ -61,6 +61,8 @@ ENROLLMENT_METHOD_OPTIONS = [
     "email_qualify",
     "pdf_form_qualify",
     "third_party_form_qualify",
+    "phone_qualify",
+    "in_person_qualify",
     "online_system_exclude",
 ]
 

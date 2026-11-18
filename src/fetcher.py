@@ -177,6 +177,7 @@ class FetchedPage:
     raw_html_snippet: str = ""  # short snippet for pattern-matching vendor URLs
     error: str = ""
     website_names: list[str] = field(default_factory=list)
+    form_fields: list[list[str]] = field(default_factory=list)
 
 
 def _clean_url(url: str) -> str:
@@ -287,6 +288,20 @@ def fetch(url: str) -> FetchedPage:
         if len(links) >= 60:
             break
 
+    # Input placeholders often carry the only visible clue that this is an
+    # inquiry form. Keep field descriptions, never values entered in a form.
+    form_fields = []
+    for form in soup.find_all("form", limit=10):
+        fields = []
+        for control in form.select("input, textarea, select"):
+            kind = str(control.get("type") or control.name).lower()
+            if kind in {"hidden", "submit", "button", "reset"} or control.has_attr("disabled"):
+                continue
+            label = control.get("placeholder") or control.get("aria-label") or control.get("name", "")
+            fields.append(f"{kind} {label}".strip()[:80])
+        if fields:
+            form_fields.append(fields[:16])
+
     # Extract text
     text = _normalize_visible_text(soup.get_text(" ", strip=True))
     if canva_text:
@@ -310,7 +325,22 @@ def fetch(url: str) -> FetchedPage:
         outbound_links=links,
         raw_html_snippet=raw_snippet,
         website_names=website_names,
+        form_fields=form_fields,
     )
+
+
+def find_contact_url(pages: list[FetchedPage]) -> str:
+    """Find the school's contact page even when admissions and class links rank higher."""
+    for page in pages:
+        for link in page.outbound_links:
+            href = link["href"]
+            if not _same_site(pages[0].url, href):
+                continue
+            if re.search(r"\bcontact\b", link["text"], re.I) or re.search(
+                r"/contact(?:[-_/?.]|$)", urlparse(href).path, re.I
+            ):
+                return href
+    return ""
 
 
 def find_enrollment_links(page: FetchedPage, max_links: int = 3) -> list[str]:

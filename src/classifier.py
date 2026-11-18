@@ -10,6 +10,8 @@ Output enum:
 - online_system_exclude
 - contact_form_qualify
 - email_qualify
+- phone_qualify
+- in_person_qualify
 - pdf_form_qualify
 - third_party_form_qualify
 - needs_enrollment_system_classification  (formerly needs_manual_review for Phase 3 fallback)
@@ -48,7 +50,7 @@ RATE_LIMIT_RETRY_FLOOR_SECONDS = 2  # never sleep less than 2s per attempt
 
 # Strong signals that a site has an online enrollment system
 ONLINE_SYSTEM_KEYWORDS = [
-    "register now", "enroll online", "apply online", "online registration",
+    "enroll online", "apply online", "online registration",
     "online application", "student portal", "parent portal", "parent login",
     "my account", "sign in to register", "create an account", "pay tuition online",
     "tuition express",
@@ -378,7 +380,7 @@ SYSTEM_PROMPT = """You are an enrollment-process classifier for small activity-b
 Given a school's website content, determine how prospective families begin the enrollment process.
 
 Respond with ONLY a JSON object (no markdown, no prose):
-{"status": "<online_system_exclude | contact_form_qualify | email_qualify | pdf_form_qualify | third_party_form_qualify | needs_enrollment_system_classification>", "reason": "<1-sentence explanation citing specific evidence>"}
+{"status": "<online_system_exclude | contact_form_qualify | email_qualify | pdf_form_qualify | third_party_form_qualify | phone_qualify | in_person_qualify | needs_enrollment_system_classification>", "reason": "<1-sentence explanation citing specific evidence>"}
 
 Classification rules (apply in order — pick the first that fits):
 
@@ -409,11 +411,14 @@ Classification rules (apply in order — pick the first that fits):
 
 3. pdf_form_qualify — if enrollment requires downloading a PDF form AND no online system exists
 
-4. contact_form_qualify — if the only path to enrollment is a generic contact/inquiry form on their own domain (no online enrollment, no PDF, no third-party form)
+4. contact_form_qualify — if families can start a class, tour, or enrollment inquiry through the school's contact form, including a hosted general inquiry form linked by the school. Prefer this when the school also accepts calls or finishes registration at its office. A contact link or phone number alone is insufficient. Ignore unrelated forms for newsletters, logins, employment, existing-member support or third-party directory messages.
 
 5. email_qualify — if the only path is emailing the school directly (no form, no online system, no PDF)
 
-6. needs_enrollment_system_classification — ONLY if:
+6. phone_qualify — only if the school explicitly asks prospective families to call to begin (including to arrange a trial or tour) and there is no usable parent inquiry form or earlier qualifying route. A number in the footer is not evidence. If the family starts by calling, use phone even if paperwork is completed later at the office.
+7. in_person_qualify — only if the school explicitly directs new families to visit the office or front desk to apply or sign up and there is no usable inquiry form or earlier qualifying route. A street address or the fact that classes meet onsite is not evidence.
+For either offline method, cite the actual instructions. If a plausible form or enrollment page was unavailable, or the site provides too little information, keep the lead in review.
+8. needs_enrollment_system_classification — ONLY if:
    - The site couldn't be classified because content is missing/broken/cookie-wall/domain-not-connected
    - No enrollment mechanism of any kind is mentioned anywhere
 
@@ -512,6 +517,8 @@ def llm_classify(
     for p in pages:
         if p.text:
             combined_text.append(f"--- {p.url} ---\n{p.text}")
+        for fields in p.form_fields:
+            combined_text.append(f"Form on {p.url}: {', '.join(fields)}")
         for idx, link in enumerate(p.outbound_links):
             label = f"[{link['text']}] {link['href']}"
             if label in seen_links:
@@ -587,6 +594,8 @@ def llm_classify(
         "email_qualify",
         "pdf_form_qualify",
         "third_party_form_qualify",
+        "phone_qualify",
+        "in_person_qualify",
         "needs_enrollment_system_classification",
         "needs_manual_review",  # accepted but normalized below
     }
@@ -700,10 +709,24 @@ def classify_lead(
         return verdict
 
     sub_urls = fetcher.find_enrollment_links(home, max_links=2)
-    for sub_url in sub_urls:
-        sub = fetcher.fetch(sub_url)
-        if not sub.error:
-            pages.append(sub)
+    requested = {home.url.rstrip("/")}
+    incomplete = False
+
+    def inspect(url: str) -> None:
+        nonlocal incomplete
+        if not url or url.rstrip("/") in requested:
+            return
+        requested.add(url.rstrip("/"))
+        page = fetcher.fetch(url)
+        if page.error or not (page.text.strip() or page.form_fields):
+            incomplete = True
+            return
+        requested.add(page.url.rstrip("/"))
+        pages.append(page)
+
+    for url in sub_urls:
+        inspect(url)
+    inspect(fetcher.find_contact_url(pages))
 
     verdict = local_classify(pages)
     if verdict:
@@ -721,5 +744,10 @@ def classify_lead(
             "website": website,
         },
     )
+    if incomplete and verdict.status in {"phone_qualify", "in_person_qualify"}:
+        verdict = Classification(
+            CLASSIFY_FALLBACK_STATUS, "enrollment_or_contact_page_unverified",
+            used_llm=verdict.used_llm, pages_fetched=len(pages),
+        )
     verdict.homepage = home
     return verdict
