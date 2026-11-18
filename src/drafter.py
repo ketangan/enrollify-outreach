@@ -413,4 +413,8 @@ def render_follow_up(lead: dict) -> RenderedEmail | None:
         logger.warning("Skipping follow-up for lead %r: missing or invalid original template_key %r",
                        lead.get("id"), lead.get("template_key"))
         return None
+    return render_segment_follow_up(lead, segment)
+
+
+def render_segment_follow_up(lead: dict, segment: str) -> RenderedEmail | None:
     return _render_key(lead, f"{segment}__follow_up", follow_up=True)

@@ -199,9 +199,6 @@ def _collect_due_leads(col: dict, all_rows: list[list[str]]) -> list[dict]:
             continue
         lead = {h: row[idx] for h, idx in col.items() if idx < len(row)}
         lead["_row_idx"] = i
-        if not drafter.saved_segment(lead.get("template_key")):
-            logger.warning("Skipping follow-up for lead %r: missing or invalid original template_key", lead.get("id"))
-            continue
         due.append(lead)
     # Oldest sent_at first (most overdue leads get prioritized)
     due.sort(key=lambda l: l.get("sent_at", ""))
@@ -219,6 +216,8 @@ def main():
                         help="Max follow-ups (default: DEFAULT_DAILY_EMAIL_CAP)")
     parser.add_argument("--no-summary", action="store_true",
                         help="Skip sending the follow-up summary email")
+    parser.add_argument("--due-date", type=date.fromisoformat, action="append",
+                        help="Only draft for this scheduled date (repeatable)")
     args = parser.parse_args()
 
     config.validate()
@@ -245,11 +244,13 @@ def main():
         sys.exit(1)
 
     due = _collect_due_leads(col, all_rows)
+    if args.due_date:
+        dates = {day.isoformat() for day in args.due_date}
+        due = [lead for lead in due if lead["follow_up_at"][:10] in dates]
     cap = args.limit if args.limit is not None else config.DEFAULT_DAILY_EMAIL_CAP
-    batch = due[:cap]
 
-    logger.info("Follow-ups due: %d. Processing %d (cap=%d).", len(due), len(batch), cap)
-    if not batch:
+    logger.info("Follow-ups due: %d. Draft cap: %d.", len(due), cap)
+    if not due or cap <= 0:
         return
 
     audit_context = None
@@ -271,8 +272,10 @@ def main():
     failures = []
     skipped = []
 
-    for idx, lead in enumerate(batch, start=1):
-        logger.info("[%d/%d] %s", idx, len(batch), lead.get("name", "")[:60])
+    for idx, lead in enumerate(due, start=1):
+        if len(drafts) >= cap:
+            break
+        logger.info("[%d/%d] %s", idx, len(due), lead.get("name", "")[:60])
 
         sent_message_id = lead.get("sent_message_id", "")
         thread_id = gmail_client.find_sent_thread_id(sent_message_id)
@@ -299,7 +302,19 @@ def main():
             })
             continue
 
-        rendered = drafter.render_follow_up(lead)
+        if drafter.saved_segment(lead.get("template_key")):
+            rendered = drafter.render_follow_up(lead)
+        else:
+            original = gmail_client.legacy_followup_original(thread_id, lead)
+            if not original:
+                skipped.append({"school": _display_school_name(lead), "email": lead.get("best_email", ""),
+                                "reason": "thread changed or original recipient could not be verified"})
+                continue
+            recovered_key, subject = original
+            segment = drafter.saved_segment(recovered_key) or "general"
+            rendered = drafter.render_segment_follow_up(lead, segment)
+            if rendered:
+                rendered.subject = "Re: " + subject
 
         if rendered is None:
             failures.append({"school": _display_school_name(lead), "error": "render_failed"})

@@ -345,3 +345,25 @@ def test_sync_upgrades_replied_lead_to_dnc_by_sender_when_campaign_context(monke
     assert "do_not_contact" in written_values
     assert "phase6_dnc_reply_detected" in written_values
     assert any(str(value).startswith("reply_dnc:existing_system") for value in written_values)
+
+
+def test_legacy_followup_requires_untouched_original_thread(monkeypatch):
+    from email.message import EmailMessage
+    from unittest.mock import MagicMock
+    from src import gmail_client
+
+    original = EmailMessage()
+    original["Message-ID"] = "<original@example.org>"
+    original["To"] = "office@example.org"
+    original["Subject"] = "Original subject"
+    original.set_content("Legacy email")
+    thread = {"messages": [{"id": "original", "labelIds": ["SENT"]}]}
+    service = MagicMock()
+    service.users().threads().get().execute.return_value = thread
+    service.users().messages().get().execute.return_value = {"raw": gmail_client._encode_message(original)}
+    monkeypatch.setattr(gmail_client, "get_service", lambda: service)
+    lead = {"sent_message_id": "<original@example.org>", "best_email": "office@example.org"}
+    assert gmail_client.legacy_followup_original("thread", lead) == ("", "Original subject")
+    assert gmail_client.legacy_followup_original("thread", dict(lead, best_email="other@example.org")) is None
+    thread["messages"].append({"id": "reply", "labelIds": ["INBOX"]})
+    assert gmail_client.legacy_followup_original("thread", lead) is None

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import email
+import email.header
 import email.utils
 import logging
 import re
@@ -724,6 +725,34 @@ def fetch_sent_email_body(message_id: str) -> str:
 
     logger.warning("Sent Gmail message not found for message-id %s", message_id[:50])
     return ""
+
+
+def legacy_followup_original(thread_id: str, lead: dict):
+    """Only reuse an untouched sent thread addressed to this lead."""
+    service = get_service()
+    thread = _execute_with_retry(service.users().threads().get(
+        userId="me", id=thread_id, format="minimal",
+    ))
+    messages = thread.get("messages", [])
+    if len(messages) != 1 or "SENT" not in messages[0].get("labelIds", []):
+        return None
+    resource = _execute_with_retry(service.users().messages().get(
+        userId="me", id=messages[0]["id"], format="raw",
+    ))
+    original = _message_from_gmail_resource(resource)
+    if not original or original.get("Message-ID", "").strip("<> ") != lead["sent_message_id"].strip("<> "):
+        return None
+    recipients = email.utils.getaddresses(original.get_all("To", []))
+    if [addr.lower() for _, addr in recipients] != [lead["best_email"].strip().lower()]:
+        return None
+    attribution = _sent_attribution(original)
+    if attribution and (attribution.get("lead_id") != lead.get("id")
+                        or not drafter.saved_segment(attribution.get("template_key"))):
+        return None
+    subject = str(email.header.make_header(email.header.decode_header(original.get("Subject", ""))))
+    if not subject.strip():
+        return None
+    return attribution.get("template_key", ""), subject
 
 
 def find_sent_thread_id(message_id: str) -> str:
