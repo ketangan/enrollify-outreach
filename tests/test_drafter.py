@@ -231,3 +231,15 @@ def test_actual_send_and_followup_use_independent_fields():
     assert lead["template_key"] == "sports__email" and lead["is_local"] is True
     assert lead["follow_up_template_key"] == "sports__follow_up" and lead["follow_up_is_local"] is False
     assert lead["sent_message_id"] == "<first>" and lead["follow_up_sent_at"]
+
+
+@pytest.mark.parametrize("method", ["phone", "in_person"])
+@pytest.mark.parametrize("segment,category", CATEGORIES.items())
+def test_offline_methods_preserve_segment_for_followup_and_pass_location_check(method, segment, category, templates):
+    lead = dict(id="manual-intake", name="Example School", zip="10001",
+                category=category, enrollment_method=f"{method}_qualify")
+    initial = drafter.render_email(lead)
+    assert initial.template_id == f"{segment}__{method}"
+    assert not drafter.local_visit_claim_problem(lead, initial.html_body)
+    followup = drafter.render_follow_up(dict(lead, template_key=initial.template_id))
+    assert followup.template_id == f"{segment}__follow_up"

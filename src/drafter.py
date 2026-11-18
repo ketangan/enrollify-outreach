@@ -31,7 +31,7 @@ from src.name_cleaner import clean_school_name
 
 logger = logging.getLogger(__name__)
 
-METHODS = ("contact_form", "email", "pdf_form", "third_party_form")
+METHODS = ("contact_form", "email", "pdf_form", "third_party_form", "phone", "in_person")
 ENROLLMENT_METHOD_TO_TEMPLATE = {
     key: method for method in METHODS for key in (method, f"{method}_qualify")
 }

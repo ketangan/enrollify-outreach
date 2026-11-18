@@ -57,8 +57,9 @@ closed_no_reply, already_contacted, do_not_contact
 
 ### Dropdown: `enrollment_method`
 ```
-online_system_exclude, email_or_phone_qualify, pdf_form_qualify,
-contact_form_qualify, needs_manual_review
+online_system_exclude, contact_form_qualify, third_party_form_qualify,
+pdf_form_qualify, email_qualify, phone_qualify, in_person_qualify,
+needs_enrollment_system_classification
 ```
 
 ### Dropdown: `email_confidence`

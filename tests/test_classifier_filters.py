@@ -450,3 +450,41 @@ def test_name_prefilter_excludes_public_schools_and_large_chains():
         )
         assert result.status == "online_system_exclude"
         assert result.reason.startswith("prefilter:")
+
+
+def test_contact_form_fields_reach_classifier_even_after_other_priority_links(monkeypatch):
+    from types import SimpleNamespace
+
+    site = "https://school.example"
+    pages = {
+        site: '<a href="/classes">Classes</a><a href="/tuition">Tuition</a>'
+              '<a href="/contact">Contact us</a>Call to arrange a trial.',
+        site + "/classes": "Weekly classes for kids",
+        site + "/tuition": "Group lesson rates",
+        site + "/contact": '<form><input type="email" placeholder="Parent email">'
+                           '<textarea name="message"></textarea></form>',
+    }
+    def get(url, **kwargs):
+        return SimpleNamespace(status_code=200, url=url, headers={"Content-Type": "text/html"},
+                               text=pages[url])
+    def model(client, evidence):
+        assert "Form on https://school.example/contact: email Parent email, textarea message" in evidence
+        return SimpleNamespace(content=[SimpleNamespace(text='{"status":"contact_form_qualify","reason":"parent inquiry form"}')])
+
+    monkeypatch.setattr(fetcher.requests, "get", get)
+    monkeypatch.setattr(classifier, "_call_llm_with_retry", model)
+    assert classifier.classify_lead(site, None).status == "contact_form_qualify"
+
+
+def test_unread_contact_page_blocks_offline_classification(monkeypatch):
+    site = "https://school.example"
+    for method in ("phone_qualify", "in_person_qualify"):
+        home = FetchedPage(site, 200, text="Call or visit our office to start lessons.",
+                           outbound_links=[{"text": "Contact", "href": site + "/contact"}])
+        monkeypatch.setattr(fetcher, "fetch", lambda url: home if url == site else
+                            FetchedPage(url, 503, error="http_503"))
+        monkeypatch.setattr(classifier, "llm_classify", lambda *args, **kwargs:
+                            classifier.Classification(method, "fixture", True))
+        assert classifier.classify_lead(site, None).status == classifier.CLASSIFY_FALLBACK_STATUS
+        home.outbound_links.clear()
+        assert classifier.classify_lead(site, None).status == method
