@@ -10,14 +10,15 @@ jobs:
   schedule-date:
     runs-on: ubuntu-latest
     outputs:
-      pacific_date: ${{ steps.today.outputs.pacific_date }}
+      open: ${{ steps.today.outputs.open }}
     steps:
+      - uses: actions/checkout@v4
       - id: today
-        run: echo "pacific_date=$(TZ=America/Los_Angeles date +%F)" >> "$GITHUB_OUTPUT"
+        run: python3 scripts/outreach_calendar.py
 
   run-daily:
     needs: schedule-date
-    if: github.event_name != 'schedule' || needs.schedule-date.outputs.pacific_date != '2026-11-17'
+    if: needs.schedule-date.outputs.open == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
