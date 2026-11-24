@@ -2,10 +2,8 @@ name: Daily Pontora Outreach
 
 on:
   schedule:
-    # 7:30 AM Pacific = 14:30 UTC (during PDT, daylight time)
-    # Note: GitHub runs on UTC. During PST (winter), this will be 6:30 AM your time.
-    # Adjust the cron in November/March if that matters.
-    - cron: '30 14 * * 1-5'   # Mon-Fri at 14:30 UTC
+    - cron: '7 4 * * 1-5'
+      timezone: 'America/Los_Angeles'
   workflow_dispatch:           # also allow manual trigger from GitHub UI
 
 jobs:
